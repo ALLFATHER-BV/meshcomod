@@ -2,7 +2,7 @@
 #include <string.h>
 
 MultiTransportCompanionInterface::MultiTransportCompanionInterface()
-  : _tcp_port(0), _tcp_started(false), _isEnabled(false), _broadcast(false), _last_reply_target(REPLY_TARGET_USB) {
+  : _tcp_port(0), _tcp_started(false), _tcp_enabled(true), _isEnabled(false), _broadcast(false), _last_reply_target(REPLY_TARGET_USB) {
   for (size_t i = 0; i < sizeof(_client_ids) / sizeof(_client_ids[0]); i++)
     _client_ids[i][0] = '\0';
 }
@@ -14,10 +14,26 @@ void MultiTransportCompanionInterface::begin(Stream& usb_serial, uint16_t tcp_po
 }
 
 void MultiTransportCompanionInterface::startTcpServer() {
-  if (!_tcp_started && _tcp_port != 0) {
+  if (_tcp_enabled && !_tcp_started && _tcp_port != 0) {
     _tcp.begin(_tcp_port);
     _tcp_started = true;
   }
+}
+
+void MultiTransportCompanionInterface::stopTcpServer() {
+  if (_tcp_started) {
+    _tcp.stop();
+    _tcp_started = false;
+  }
+  _tcp_enabled = false;
+}
+
+void MultiTransportCompanionInterface::enableTcp() {
+  _tcp_enabled = true;
+}
+
+void MultiTransportCompanionInterface::disableTcp() {
+  stopTcpServer();
 }
 
 void MultiTransportCompanionInterface::enable() {

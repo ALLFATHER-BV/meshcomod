@@ -13,6 +13,7 @@
 #define KEY_NEXT           0xF1
 #define KEY_PREV           0xF2
 #define KEY_CONTEXT_MENU   0xF3
+#define KEY_LONG_ENTER     0xF4   // long press (boot button); used e.g. NETWORK tab to disable TCP
 
 class UIScreen {
 protected:

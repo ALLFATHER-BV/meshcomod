@@ -19,7 +19,7 @@ Upstream: **[github.com/meshcore-dev/MeshCore](https://github.com/meshcore-dev/M
   - Build env: `heltec_v4_companion_radio_usb_tcp`  
   - TCP server on port **5000** (configurable), multiple clients  
   - WiFi credentials are **not** stored in the repo; set env vars `WIFI_SSID` and `WIFI_PWD` before building (see Build below).
-  - Extra tab with network details
+  - **Network (TCP) tab** on the device UI: shows TCP status, IP, port, and **SSID** of the connected WiFi. **Long press** the boot button on this tab to **disable or enable TCP** (same idea as disabling Bluetooth on the Bluetooth tab). Footer shows "ON: long press" or "OFF: long press" depending on current state.
 
 - **Features (multi-transport)**  
   - **Push to all clients** — RX log, new messages, contact adverts, path updates, and other unsolicited events are sent to **every** connected client (USB and all TCP), so each app sees live updates.  

@@ -19,7 +19,13 @@ public:
 
   // USB uses Serial (or other Stream). TCP server port is stored; call startTcpServer() after WiFi.begin().
   void begin(Stream& usb_serial, uint16_t tcp_port = TCP_COMPANION_DEFAULT_PORT);
-  void startTcpServer();  // call once after WiFi.begin() (idempotent)
+  void startTcpServer();  // call once after WiFi.begin() (idempotent); no-op if TCP disabled
+  void stopTcpServer();   // stop TCP server and disconnect clients; prevents startTcpServer until enableTcp()
+
+  void enableTcp() override;
+  void disableTcp() override;
+  bool isTcpEnabled() const override { return _tcp_enabled; }
+
   void setBroadcastResponses(bool enable) { _broadcast = enable; }
 
   void enable() override;
@@ -42,6 +48,7 @@ private:
   TCPCompanionServer _tcp;
   uint16_t _tcp_port;
   bool _tcp_started;
+  bool _tcp_enabled;   // if false, startTcpServer() no-ops until enableTcp()
   bool _isEnabled;
   bool _broadcast;           // if true, also send responses to all other clients
   int _last_reply_target;    // REPLY_TARGET_USB or TCP client index

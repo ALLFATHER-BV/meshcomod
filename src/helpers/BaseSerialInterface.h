@@ -21,6 +21,11 @@ public:
   virtual size_t writeFrameToAll(const uint8_t src[], size_t len) { return writeFrame(src, len); }
   virtual size_t checkRecvFrame(uint8_t dest[]) = 0;
 
+  // TCP only (multi-transport): enable/disable TCP server; no-op for single transport.
+  virtual void enableTcp() { }
+  virtual void disableTcp() { }
+  virtual bool isTcpEnabled() const { return true; }
+
   // Per-client history: identity of the connection that sent the last frame (set before handleCmdFrame).
   virtual void setCurrentClientId(const char* id) { (void)id; }
   virtual void getCurrentClientId(char* dest, size_t max_len) const {
