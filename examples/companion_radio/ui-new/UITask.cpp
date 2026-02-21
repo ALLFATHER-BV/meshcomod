@@ -52,18 +52,23 @@ public:
   }
 
   int render(DisplayDriver& display) override {
-    // meshcomod title (replaces MeshCore logo)
+    // original MeshCore logo at top
+    const int logo_w = 128, logo_h = 13;
+    display.setColor(DisplayDriver::LIGHT);
+    display.drawXbm((display.width() - logo_w) / 2, 2, meshcore_logo, logo_w, logo_h);
+
+    // meshcomod addon line below logo
     display.setColor(DisplayDriver::BLUE);
-    display.setTextSize(2);
-    display.drawTextCentered(display.width()/2, 4, "MESHCOMOD");
+    display.setTextSize(1);
+    display.drawTextCentered(display.width() / 2, 18, "MESHCOMOD addon");
 
     // version info
     display.setColor(DisplayDriver::LIGHT);
     display.setTextSize(2);
-    display.drawTextCentered(display.width()/2, 22, _version_info);
+    display.drawTextCentered(display.width() / 2, 28, _version_info);
 
     display.setTextSize(1);
-    display.drawTextCentered(display.width()/2, 42, FIRMWARE_BUILD_DATE);
+    display.drawTextCentered(display.width() / 2, 46, FIRMWARE_BUILD_DATE);
 
     return 1000;
   }

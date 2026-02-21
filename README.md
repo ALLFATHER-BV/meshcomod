@@ -1,6 +1,6 @@
 # meshcomod
 
-**Custom MeshCore firmware for Heltec WiFi LoRa 32 V4** — a spinoff of [MeshCore](https://github.com/meshcore-dev/MeshCore), trimmed to this device only, with extra companion targets (USB+TCP).
+**MeshCore addon for Heltec WiFi LoRa 32 V4** — an addon on top of [MeshCore](https://github.com/meshcore-dev/MeshCore) firmware, trimmed to this device only, with extra companion targets (USB+TCP).
 
 Upstream: **[github.com/meshcore-dev/MeshCore](https://github.com/meshcore-dev/MeshCore)** (MeshCore is a lightweight multi-hop LoRa mesh; see their repo for full docs, clients, and flasher.)
 
@@ -17,10 +17,14 @@ Upstream: **[github.com/meshcore-dev/MeshCore](https://github.com/meshcore-dev/M
   - WiFi credentials are **not** stored in the repo; set env vars `WIFI_SSID` and `WIFI_PWD` before building (see Build below).
   - Extra tab with network details
 
+- **Features (multi-transport)**  
+  - **Push to all clients** — RX log, new messages, contact adverts, path updates, and other unsolicited events are sent to **every** connected client (USB and all TCP), so each app sees live updates.  
+  - **No duplicate RX log on sync** — When one client loads or syncs history, only that client gets the sync responses; the other clients do not see those frames again, so the RX log does not duplicate on the device that didn’t trigger the sync.
+
 - **Build script**  
   `build.sh` can use `python3 -m platformio` when `pio` is not in PATH.
 
-Otherwise this is the same codebase as MeshCore; we sync from upstream and add our customizations on top.
+Otherwise this is the same codebase as MeshCore; we sync from upstream and add our addon customizations on top.
 
 ---
 
