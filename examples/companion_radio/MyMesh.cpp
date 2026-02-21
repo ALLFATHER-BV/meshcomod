@@ -266,7 +266,7 @@ static bool clientIdEqual(const char* a, const char* b) {
   return strcmp(a, b) == 0;
 }
 
-// Delivers full history (RX log, contact msgs, channel msgs) to every client; no filtering.
+// Delivers history to client for sync. Channel messages are excluded (delivered via push only); contact msgs, RX log, adverts, etc. are returned.
 int MyMesh::getNextFromHistoryForClient(const char* client_id, uint8_t frame[]) {
   if (history_count <= 0) return 0;
   const char* cid = (client_id && client_id[0]) ? client_id : "";
@@ -294,6 +294,12 @@ int MyMesh::getNextFromHistoryForClient(const char* client_id, uint8_t frame[]) 
     int idx = (tail + i) % HISTORY_RING_SIZE;
     const HistoryEntry& e = history_ring[idx];
     if (e.seq > last) {
+      // Channel messages are delivered only via real-time push; skip them in sync to avoid sync errors for clients without channel support.
+      if (e.buf[0] == RESP_CODE_CHANNEL_MSG_RECV || e.buf[0] == RESP_CODE_CHANNEL_MSG_RECV_V3) {
+        history_clients[slot].last_delivered_seq = e.seq;
+        last = e.seq;
+        continue;
+      }
       memcpy(frame, e.buf, e.len);
       history_clients[slot].last_delivered_seq = e.seq;
       return e.len;
@@ -593,6 +599,7 @@ void MyMesh::onChannelMessageRecv(const mesh::GroupChannel &channel, mesh::Packe
   addToHistoryRing(out_frame, i);
 
   if (_serial->isConnected()) {
+    _serial->writeFrameToAll(out_frame, i);  // push full channel message to all clients (USB, BLE, TCP)
     uint8_t frame[1];
     frame[0] = PUSH_CODE_MSG_WAITING; // send push 'tickle'
     _serial->writeFrameToAll(frame, 1);

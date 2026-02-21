@@ -46,6 +46,7 @@ public:
   bool isBleEnabled() const { return _serial->isBleEnabled(); }
   void enableBle() { _serial->enableBle(); }
   void disableBle() { _serial->disableBle(); }
+  bool getBlePeerAddress(char* buf, size_t len) const { return _serial->getBlePeerAddress(buf, len); }
   virtual void msgRead(int msgcount) = 0;
   virtual void newMsg(uint8_t path_len, const char* from_name, const char* text, int msgcount) = 0;
   virtual void notify(UIEventType t = UIEventType::none) = 0;

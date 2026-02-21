@@ -94,6 +94,8 @@ void SerialBLEInterface::onConnect(BLEServer* pServer) {
 void SerialBLEInterface::onConnect(BLEServer* pServer, esp_ble_gatts_cb_param_t *param) {
   BLE_DEBUG_PRINTLN("onConnect(), conn_id=%d, mtu=%d", param->connect.conn_id, pServer->getPeerMTU(param->connect.conn_id));
   last_conn_id = param->connect.conn_id;
+  memcpy(_peer_bda, param->connect.remote_bda, 6);
+  _peer_bda_valid = true;
 }
 
 void SerialBLEInterface::onMtuChanged(BLEServer* pServer, esp_ble_gatts_cb_param_t* param) {
@@ -102,6 +104,7 @@ void SerialBLEInterface::onMtuChanged(BLEServer* pServer, esp_ble_gatts_cb_param
 
 void SerialBLEInterface::onDisconnect(BLEServer* pServer) {
   BLE_DEBUG_PRINTLN("onDisconnect()");
+  _peer_bda_valid = false;
   if (_isEnabled) {
     adv_restart_time = millis() + ADVERT_RESTART_DELAY;
 
@@ -249,4 +252,14 @@ size_t SerialBLEInterface::checkRecvFrame(uint8_t dest[]) {
 
 bool SerialBLEInterface::isConnected() const {
   return deviceConnected;  //pServer != NULL && pServer->getConnectedCount() > 0;
+}
+
+bool SerialBLEInterface::getConnectedPeerAddress(char* buf, size_t len) const {
+  if (!buf || len == 0) return false;
+  buf[0] = '\0';
+  if (!_peer_bda_valid) return false;
+  if (len < 18) return false;  // "XX:XX:XX:XX:XX:XX" + null
+  snprintf(buf, len, "%02X:%02X:%02X:%02X:%02X:%02X",
+           _peer_bda[0], _peer_bda[1], _peer_bda[2], _peer_bda[3], _peer_bda[4], _peer_bda[5]);
+  return true;
 }

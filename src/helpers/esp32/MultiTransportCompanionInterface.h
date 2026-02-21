@@ -33,6 +33,7 @@ public:
   void disableBle() override;
   bool isBleEnabled() const override { return _ble_enabled; }
   bool hasBleCapability() const override { return true; }
+  bool getBlePeerAddress(char* buf, size_t len) const override;
 #endif
 
   void enableTcp() override;

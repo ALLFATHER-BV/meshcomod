@@ -58,6 +58,14 @@ void MultiTransportCompanionInterface::disableBle() {
   _ble_enabled = false;
   _ble.disable();
 }
+
+bool MultiTransportCompanionInterface::getBlePeerAddress(char* buf, size_t len) const {
+  if (!_ble_begun || !_ble_enabled) {
+    if (buf && len > 0) buf[0] = '\0';
+    return false;
+  }
+  return _ble.getConnectedPeerAddress(buf, len);
+}
 #endif
 
 void MultiTransportCompanionInterface::enable() {

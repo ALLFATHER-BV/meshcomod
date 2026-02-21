@@ -288,8 +288,15 @@ public:
         y += 12;
         if (_task->isBleEnabled()) {
           display.setColor(DisplayDriver::GREEN);
-          snprintf(tmp, sizeof(tmp), "Pin: %lu", (unsigned long)the_mesh.getBLEPin());
-          display.drawTextCentered(display.width() / 2, y, tmp);
+          char peer[24];
+          if (_task->getBlePeerAddress(peer, sizeof(peer)) && peer[0] != '\0') {
+            display.drawTextCentered(display.width() / 2, y, "Connected device:");
+            y += 11;
+            display.drawTextCentered(display.width() / 2, y, peer);
+          } else {
+            snprintf(tmp, sizeof(tmp), "Pin: %lu", (unsigned long)the_mesh.getBLEPin());
+            display.drawTextCentered(display.width() / 2, y, tmp);
+          }
         } else {
           display.setColor(DisplayDriver::RED);
           display.drawTextCentered(display.width() / 2, y, "BLE disabled");
