@@ -266,6 +266,7 @@ static bool clientIdEqual(const char* a, const char* b) {
   return strcmp(a, b) == 0;
 }
 
+// Delivers full history (RX log, contact msgs, channel msgs) to every client; no filtering.
 int MyMesh::getNextFromHistoryForClient(const char* client_id, uint8_t frame[]) {
   if (history_count <= 0) return 0;
   const char* cid = (client_id && client_id[0]) ? client_id : "";
