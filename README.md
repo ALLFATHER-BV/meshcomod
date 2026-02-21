@@ -33,6 +33,7 @@ Otherwise this is the same codebase as MeshCore; we sync from upstream and add o
 ### Known bugs
 
 - **Sent messages** — Messages sent from one client may not appear on the other device (e.g. the other companion client) in all cases; the firmware pushes them to history and notifies all clients, but behaviour can depend on sync timing or the client app.
+- **Channel messages** — Sent channel messages are not pushed to other clients (to avoid wrong channel / "text as sender" when a client has no channel support, e.g. HA). If a client without channel support syncs and receives channel messages from history (e.g. received over the air), it may show "Failed to sync" or display them incorrectly; such clients should ignore or skip channel message frame types.
 
 ---
 

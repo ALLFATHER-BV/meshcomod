@@ -1137,32 +1137,9 @@ void MyMesh::handleCmdFrame(size_t len) {
       bool success = getChannel(channel_idx, channel);
       if (success && sendGroupMessage(msg_timestamp, channel.channel, _prefs.node_name, text, len - i)) {
         writeOKFrame();
-        // Add sent channel message to history and notify all clients
-        {
-          int j = 0;
-          if (app_target_ver >= 3) {
-            out_frame[j++] = RESP_CODE_CHANNEL_MSG_RECV_V3;
-            out_frame[j++] = 0; // SNR N/A for sent
-            out_frame[j++] = 0;
-            out_frame[j++] = 0;
-          } else {
-            out_frame[j++] = RESP_CODE_CHANNEL_MSG_RECV;
-          }
-          out_frame[j++] = channel_idx;
-          out_frame[j++] = 0xFF;  // path_len
-          out_frame[j++] = TXT_TYPE_PLAIN;
-          memcpy(&out_frame[j], &msg_timestamp, 4);
-          j += 4;
-          int tlen_ch = (int)(len - i);
-          if (j + tlen_ch > MAX_FRAME_SIZE) tlen_ch = MAX_FRAME_SIZE - j;
-          memcpy(&out_frame[j], text, tlen_ch);
-          j += tlen_ch;
-          addToHistoryRing(out_frame, j);
-          if (_serial->isConnected()) {
-            uint8_t tickle[1] = { PUSH_CODE_MSG_WAITING };
-            _serial->writeFrameToAll(tickle, 1);
-          }
-        }
+        // Sent channel messages are not added to shared history / broadcast: channel_idx and
+        // frame format are device-specific and clients (e.g. HA) without channel support can
+        // misparse or show "text as sender"; also avoids failed-to-sync when versions differ.
       } else {
         writeErrFrame(ERR_CODE_NOT_FOUND); // bad channel_idx
       }
