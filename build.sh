@@ -93,14 +93,17 @@ get_pio_envs_ending_with_string() {
 }
 
 # get platform flag for a given environment
-# $1 should be the environment name
+# $1 should be the environment name; prints nothing if JSON parse fails (e.g. control chars in config)
 get_platform_for_env() {
   local env_name=$1
   echo "$PIO_CONFIG_JSON" | python3 -c "
 import sys, json, re
-data = json.load(sys.stdin)
+try:
+    data = json.load(sys.stdin)
+except (json.JSONDecodeError, ValueError):
+    sys.exit(1)
 for section, options in data:
-    if section == 'env:$env_name':
+    if section == 'env:' + sys.argv[1]:
         for key, value in options:
             if key == 'build_flags':
                 for flag in value:
@@ -108,7 +111,7 @@ for section, options in data:
                     if match:
                         print(match.group(1))
                         sys.exit(0)
-"
+" "$env_name" 2>/dev/null
 }
 
 # disable all debug logging flags if DISABLE_DEBUG=1 is set
@@ -120,8 +123,12 @@ disable_debug_flags() {
 
 # build firmware for the provided pio env in $1
 build_firmware() {
-  # get env platform for post build actions
+  # get env platform for post build actions (mergebin, etc.)
   ENV_PLATFORM=($(get_platform_for_env $1))
+  # fallback: if JSON parse failed (e.g. control chars in paths), assume ESP32 for heltec_v4
+  if [ -z "$ENV_PLATFORM" ] && [[ "$1" == *heltec_v4* ]]; then
+    ENV_PLATFORM=ESP32_PLATFORM
+  fi
 
   # get git commit sha
   COMMIT_HASH=$(git rev-parse --short HEAD)
@@ -157,6 +164,18 @@ build_firmware() {
     pio run -t mergebin -e $1
     cp .pio/build/$1/firmware.bin out/${FIRMWARE_FILENAME}.bin 2>/dev/null || true
     cp .pio/build/$1/firmware-merged.bin out/${FIRMWARE_FILENAME}-merged.bin 2>/dev/null || true
+    echo ""
+    echo "  ═══════════════════════════════════════════"
+    echo "  Firmware built successfully"
+    echo "  ═══════════════════════════════════════════"
+    echo ""
+    echo "  Merged image (flash at 0x0):"
+    echo "    .pio/build/$1/firmware-merged.bin"
+    [ -f "out/${FIRMWARE_FILENAME}-merged.bin" ] && echo "    out/${FIRMWARE_FILENAME}-merged.bin"
+    echo ""
+    echo "  Flashing this firmware is at your own risk."
+    echo "  If you see anything weird, please let the repo owner know."
+    echo ""
   fi
 
 }

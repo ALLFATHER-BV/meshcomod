@@ -52,10 +52,10 @@ public:
   }
 
   int render(DisplayDriver& display) override {
-    // meshcore logo
+    // meshcomod title (replaces MeshCore logo)
     display.setColor(DisplayDriver::BLUE);
-    int logoWidth = 128;
-    display.drawXbm((display.width() - logoWidth) / 2, 3, meshcore_logo, logoWidth, 13);
+    display.setTextSize(2);
+    display.drawTextCentered(display.width()/2, 4, "MESHCOMOD");
 
     // version info
     display.setColor(DisplayDriver::LIGHT);

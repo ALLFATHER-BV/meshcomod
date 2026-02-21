@@ -4,7 +4,7 @@
 
 Upstream: **[github.com/meshcore-dev/MeshCore](https://github.com/meshcore-dev/MeshCore)** (MeshCore is a lightweight multi-hop LoRa mesh; see their repo for full docs, clients, and flasher.)
 
-> **Experimental — use at your own risk.** This firmware is not officially supported. Flashing custom firmware may have unexpected effects; you are responsible for your use of it. No warranty is provided.
+> **Experimental — use at your own risk.** This firmware is not officially supported. Flashing custom firmware may have unexpected effects; you are responsible for your use of it. No warranty is provided.  
 
 ---
 
@@ -14,7 +14,8 @@ Upstream: **[github.com/meshcore-dev/MeshCore](https://github.com/meshcore-dev/M
   Firmware that supports **simultaneous USB and TCP** companion connections (e.g. Home Assistant on USB, Web App or CLI on TCP).  
   - Build env: `heltec_v4_companion_radio_usb_tcp`  
   - TCP server on port **5000** (configurable), multiple clients  
-  - Set `WIFI_SSID` and `WIFI_PWD` in `variants/heltec_v4/platformio.ini` for that env, then build and flash  
+  - WiFi credentials are **not** stored in the repo; set env vars `WIFI_SSID` and `WIFI_PWD` before building (see Build below).
+  - Extra tab with network details
 
 - **Build script**  
   `build.sh` can use `python3 -m platformio` when `pio` is not in PATH.
@@ -30,14 +31,11 @@ git clone https://github.com/ALLFATHER-BV/meshcomod.git
 cd meshcomod
 ```
 
-Set WiFi in `variants/heltec_v4/platformio.ini` for env `heltec_v4_companion_radio_usb_tcp`:
-
-- `WIFI_SSID='"YourSSID"'`
-- `WIFI_PWD='"YourPassword"'`
-
-Then:
+Set WiFi via **environment variables**:
 
 ```bash
+export WIFI_SSID=YourNetworkName
+export WIFI_PWD=YourPassword
 export FIRMWARE_VERSION=v1.13.0
 sh build.sh build-firmware heltec_v4_companion_radio_usb_tcp
 python3 -m platformio run -t mergebin -e heltec_v4_companion_radio_usb_tcp
