@@ -1087,6 +1087,34 @@ void MyMesh::handleCmdFrame(size_t len) {
         memcpy(&out_frame[2], &expected_ack, 4);
         memcpy(&out_frame[6], &est_timeout, 4);
         _serial->writeFrame(out_frame, 10);
+
+        // Add sent message to history and notify all clients (so other client sees it too)
+        {
+          int j = 0;
+          if (app_target_ver >= 3) {
+            out_frame[j++] = RESP_CODE_CONTACT_MSG_RECV_V3;
+            out_frame[j++] = 0; // SNR N/A for sent
+            out_frame[j++] = 0;
+            out_frame[j++] = 0;
+          } else {
+            out_frame[j++] = RESP_CODE_CONTACT_MSG_RECV;
+          }
+          memcpy(&out_frame[j], self_id.pub_key, 6);  // from = self (so app shows as "You sent")
+          j += 6;
+          out_frame[j++] = 0xFF;  // path_len
+          out_frame[j++] = txt_type;
+          memcpy(&out_frame[j], &msg_timestamp, 4);
+          j += 4;
+          int tlen2 = tlen;
+          if (j + tlen2 > MAX_FRAME_SIZE) tlen2 = MAX_FRAME_SIZE - j;
+          memcpy(&out_frame[j], text, tlen2);
+          j += tlen2;
+          addToHistoryRing(out_frame, j);
+          if (_serial->isConnected()) {
+            uint8_t tickle[1] = { PUSH_CODE_MSG_WAITING };
+            _serial->writeFrameToAll(tickle, 1);
+          }
+        }
       }
     } else {
       writeErrFrame(recipient == NULL
@@ -1109,6 +1137,32 @@ void MyMesh::handleCmdFrame(size_t len) {
       bool success = getChannel(channel_idx, channel);
       if (success && sendGroupMessage(msg_timestamp, channel.channel, _prefs.node_name, text, len - i)) {
         writeOKFrame();
+        // Add sent channel message to history and notify all clients
+        {
+          int j = 0;
+          if (app_target_ver >= 3) {
+            out_frame[j++] = RESP_CODE_CHANNEL_MSG_RECV_V3;
+            out_frame[j++] = 0; // SNR N/A for sent
+            out_frame[j++] = 0;
+            out_frame[j++] = 0;
+          } else {
+            out_frame[j++] = RESP_CODE_CHANNEL_MSG_RECV;
+          }
+          out_frame[j++] = channel_idx;
+          out_frame[j++] = 0xFF;  // path_len
+          out_frame[j++] = TXT_TYPE_PLAIN;
+          memcpy(&out_frame[j], &msg_timestamp, 4);
+          j += 4;
+          int tlen_ch = (int)(len - i);
+          if (j + tlen_ch > MAX_FRAME_SIZE) tlen_ch = MAX_FRAME_SIZE - j;
+          memcpy(&out_frame[j], text, tlen_ch);
+          j += tlen_ch;
+          addToHistoryRing(out_frame, j);
+          if (_serial->isConnected()) {
+            uint8_t tickle[1] = { PUSH_CODE_MSG_WAITING };
+            _serial->writeFrameToAll(tickle, 1);
+          }
+        }
       } else {
         writeErrFrame(ERR_CODE_NOT_FOUND); // bad channel_idx
       }

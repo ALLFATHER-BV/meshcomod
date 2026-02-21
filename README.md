@@ -30,6 +30,10 @@ Upstream: **[github.com/meshcore-dev/MeshCore](https://github.com/meshcore-dev/M
 
 Otherwise this is the same codebase as MeshCore; we sync from upstream and add our addon customizations on top.
 
+### Known bugs
+
+- **Sent messages** — Messages sent from one client may not appear on the other device (e.g. the other companion client) in all cases; the firmware pushes them to history and notifies all clients, but behaviour can depend on sync timing or the client app.
+
 ---
 
 ## Build (Heltec V4 USB+TCP)
