@@ -1,6 +1,6 @@
 # meshcomod
 
-**MeshCore addon for Heltec WiFi LoRa 32 V4** — an addon on top of [MeshCore](https://github.com/meshcore-dev/MeshCore) firmware, trimmed to this device only, with extra companion targets (USB+TCP).
+**MeshCore addon for Heltec WiFi LoRa 32 V4** — an addon on top of [MeshCore](https://github.com/meshcore-dev/MeshCore) firmware, trimmed to this device only. **One build supports three companion transports: USB, Bluetooth, and TCP** (choose any combination; toggle BLE and TCP from the device UI).
 
 Upstream: **[github.com/meshcore-dev/MeshCore](https://github.com/meshcore-dev/MeshCore)** (MeshCore is a lightweight multi-hop LoRa mesh; see their repo for full docs, clients, and flasher.)
 
@@ -14,12 +14,13 @@ Upstream: **[github.com/meshcore-dev/MeshCore](https://github.com/meshcore-dev/M
 
 ## What's different in meshcomod
 
-- **Heltec V4 USB + TCP companion**  
-  Firmware that supports **simultaneous USB and TCP** companion connections (e.g. Home Assistant on USB, Web App or CLI on TCP).  
+- **Heltec V4: USB + Bluetooth + TCP in one build**  
+  A single firmware image supports **USB, Bluetooth, and TCP** companion connections at the same time (e.g. Home Assistant on USB, MeshCore app on BLE, Web/CLI on TCP). You can use one, two, or all three; BLE and TCP can be turned on or off from the device UI.
+
   - Build env: `heltec_v4_companion_radio_usb_tcp`  
-  - TCP server on port **5000** (configurable), multiple clients  
-  - WiFi credentials are **not** stored in the repo; set env vars `WIFI_SSID` and `WIFI_PWD` before building (see Build below).
-  - **Network (TCP) tab** on the device UI: shows TCP status, IP, port, and **SSID** of the connected WiFi. **Long press** the boot button on this tab to **disable or enable TCP** (same idea as disabling Bluetooth on the Bluetooth tab). Footer shows "ON: long press" or "OFF: long press" depending on current state.
+  - **USB** — always on when the device is on.  
+  - **Bluetooth** — default PIN **123456** (configurable via `BLE_PIN_CODE`). **Bluetooth tab**: shows "BLE", pairing PIN when on, or "BLE disabled". **Long press** on this tab to enable or disable BLE; footer shows "ON: long press" / "OFF: long press".  
+  - **TCP** — server on port **5000** (configurable), multiple clients. WiFi credentials are **not** stored in the repo; set env vars `WIFI_SSID` and `WIFI_PWD` before building (see Build below). **Network (TCP) tab**: shows TCP status, IP, port, and **SSID**. **Long press** on this tab to enable or disable TCP; footer shows "ON: long press" / "OFF: long press".
 
 - **Features (multi-transport)**  
   - **Push to all clients** — RX log, new messages, contact adverts, path updates, and other unsolicited events are sent to **every** connected client (USB and all TCP), so each app sees live updates.  
@@ -37,7 +38,7 @@ Otherwise this is the same codebase as MeshCore; we sync from upstream and add o
 
 ---
 
-## Build (Heltec V4 USB+TCP)
+## Build (Heltec V4 — USB + Bluetooth + TCP)
 
 ```bash
 git clone https://github.com/ALLFATHER-BV/meshcomod.git
@@ -54,7 +55,7 @@ sh build.sh build-firmware heltec_v4_companion_radio_usb_tcp
 python3 -m platformio run -t mergebin -e heltec_v4_companion_radio_usb_tcp
 ```
 
-Flash the merged `.bin` from `.pio/build/heltec_v4_companion_radio_usb_tcp/firmware-merged.bin` using [flasher.meshcore.co.uk](https://flasher.meshcore.co.uk) (select **Custom firmware** and upload the merged file) or esptool at 0x0. Connect over USB as usual, or over TCP to the device's IP on port 5000.
+Flash the merged `.bin` from `.pio/build/heltec_v4_companion_radio_usb_tcp/firmware-merged.bin` using [flasher.meshcore.co.uk](https://flasher.meshcore.co.uk) (select **Custom firmware** and upload the merged file) or esptool at 0x0. Connect over **USB**, **Bluetooth** (PIN 123456), and/or **TCP** (device IP, port 5000).
 
 **Black screen after flashing?** If the display stays black, you need to flash the **merged** firmware (the single `.bin` that includes bootloader and partitions). Flashing the merged image will **erase the device** and you will lose all contacts and other data currently on the companion — there is no way to preserve them when switching to merged. Use the merged build only when necessary (e.g. display not coming up with the normal flasher flow).
 

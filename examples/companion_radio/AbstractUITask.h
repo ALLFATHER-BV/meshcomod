@@ -42,6 +42,10 @@ public:
   bool isTcpEnabled() const { return _serial->isTcpEnabled(); }
   void enableTcp() { _serial->enableTcp(); }
   void disableTcp() { _serial->disableTcp(); }
+  bool hasBleCapability() const { return _serial->hasBleCapability(); }
+  bool isBleEnabled() const { return _serial->isBleEnabled(); }
+  void enableBle() { _serial->enableBle(); }
+  void disableBle() { _serial->disableBle(); }
   virtual void msgRead(int msgcount) = 0;
   virtual void newMsg(uint8_t path_len, const char* from_name, const char* text, int msgcount) = 0;
   virtual void notify(UIEventType t = UIEventType::none) = 0;

@@ -215,7 +215,10 @@ void setup() {
   board.setInhibitSleep(true);
   // Defer WiFi until first loop() so setup() always completes (display + USB come up even if WiFi would crash/hang)
   serial_interface.begin(Serial, TCP_PORT);
-  serial_interface.setBroadcastResponses(true);  // RX log, channel messages, etc. go to all clients (USB + TCP), not only last sender
+  serial_interface.setBroadcastResponses(true);  // RX log, channel messages, etc. go to all clients (USB + TCP [+ BLE]), not only last sender
+#if defined(BLE_PIN_CODE)
+  serial_interface.beginBle(BLE_NAME_PREFIX, the_mesh.getNodePrefs()->node_name, the_mesh.getBLEPin());
+#endif
 #elif defined(WIFI_SSID)
   board.setInhibitSleep(true);   // prevent sleep when WiFi is active
   WiFi.begin(WIFI_SSID, WIFI_PWD);

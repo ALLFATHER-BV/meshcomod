@@ -2,7 +2,11 @@
 #include <string.h>
 
 MultiTransportCompanionInterface::MultiTransportCompanionInterface()
-  : _tcp_port(0), _tcp_started(false), _tcp_enabled(true), _isEnabled(false), _broadcast(false), _last_reply_target(REPLY_TARGET_USB) {
+  : _tcp_port(0), _tcp_started(false), _tcp_enabled(true), _isEnabled(false), _broadcast(false), _last_reply_target(REPLY_TARGET_USB)
+#ifdef BLE_PIN_CODE
+  , _ble_begun(false), _ble_enabled(false)
+#endif
+{
   for (size_t i = 0; i < sizeof(_client_ids) / sizeof(_client_ids[0]); i++)
     _client_ids[i][0] = '\0';
 }
@@ -36,25 +40,59 @@ void MultiTransportCompanionInterface::disableTcp() {
   stopTcpServer();
 }
 
+#ifdef BLE_PIN_CODE
+void MultiTransportCompanionInterface::beginBle(const char* prefix, char* name, uint32_t pin_code) {
+  _ble.begin(prefix, name, pin_code);
+  _ble_begun = true;
+  _ble_enabled = true;
+  _ble.enable();
+}
+
+void MultiTransportCompanionInterface::enableBle() {
+  if (!_ble_begun) return;
+  _ble_enabled = true;
+  _ble.enable();
+}
+
+void MultiTransportCompanionInterface::disableBle() {
+  _ble_enabled = false;
+  _ble.disable();
+}
+#endif
+
 void MultiTransportCompanionInterface::enable() {
   _isEnabled = true;
   _usb.enable();
   _last_reply_target = REPLY_TARGET_USB;
+#ifdef BLE_PIN_CODE
+  if (_ble_begun && _ble_enabled)
+    _ble.enable();
+#endif
 }
 
 void MultiTransportCompanionInterface::disable() {
   _isEnabled = false;
   _usb.disable();
+#ifdef BLE_PIN_CODE
+  _ble.disable();
+#endif
 }
 
 bool MultiTransportCompanionInterface::isConnected() const {
   if (_usb.isConnected()) return true;
+#ifdef BLE_PIN_CODE
+  if (_ble_begun && _ble_enabled && _ble.isConnected()) return true;
+#endif
   if (!_tcp_started) return false;
   return _tcp.connectedCount() > 0;
 }
 
 bool MultiTransportCompanionInterface::isWriteBusy() const {
-  return _usb.isWriteBusy();
+  if (_usb.isWriteBusy()) return true;
+#ifdef BLE_PIN_CODE
+  if (_ble_begun && _ble_enabled && _ble.isWriteBusy()) return true;
+#endif
+  return false;
 }
 
 size_t MultiTransportCompanionInterface::checkRecvFrame(uint8_t dest[]) {
@@ -77,6 +115,16 @@ size_t MultiTransportCompanionInterface::checkRecvFrame(uint8_t dest[]) {
     }
   }
 
+#ifdef BLE_PIN_CODE
+  if (_ble_begun && _ble_enabled) {
+    len = _ble.checkRecvFrame(dest);
+    if (len > 0) {
+      _last_reply_target = REPLY_TARGET_BLE;
+      return len;
+    }
+  }
+#endif
+
   return 0;
 }
 
@@ -85,6 +133,10 @@ size_t MultiTransportCompanionInterface::writeFrame(const uint8_t src[], size_t 
   // Single-target only (command responses, sync history). Never broadcast.
   if (_last_reply_target == REPLY_TARGET_USB)
     return _usb.writeFrame(src, len);
+#ifdef BLE_PIN_CODE
+  if (_last_reply_target == REPLY_TARGET_BLE && _ble_begun && _ble_enabled)
+    return _ble.writeFrame(src, len);
+#endif
   if (_tcp_started)
     return _tcp.writeToClient(_last_reply_target, src, len);
   return 0;
@@ -95,9 +147,23 @@ size_t MultiTransportCompanionInterface::writeFrameToAll(const uint8_t src[], si
   if (!_broadcast)
     return writeFrame(src, len);
   size_t written = _usb.writeFrame(src, len);
+#ifdef BLE_PIN_CODE
+  if (_ble_begun && _ble_enabled && written == len)
+    _ble.writeFrame(src, len);
+#endif
   if (_tcp_started && written == len)
     _tcp.writeToAllClients(src, len);
   return written;
+}
+
+int MultiTransportCompanionInterface::_clientIdSlot() const {
+#ifdef BLE_PIN_CODE
+  if (_last_reply_target == REPLY_TARGET_USB) return 0;
+  if (_last_reply_target == REPLY_TARGET_BLE) return 1;
+  return _last_reply_target + 2;  // TCP 0..N -> slots 2..
+#else
+  return _last_reply_target + 1;
+#endif
 }
 
 void MultiTransportCompanionInterface::setCurrentClientId(const char* id) {
@@ -124,7 +190,11 @@ void MultiTransportCompanionInterface::getCurrentClientId(char* dest, size_t max
     dest[max_len - 1] = '\0';
     return;
   }
+#ifdef BLE_PIN_CODE
+  static const char* const default_ids[] = { "usb", "ble", "tcp0", "tcp1", "tcp2" };
+#else
   static const char* const default_ids[] = { "usb", "tcp0", "tcp1", "tcp2" };
+#endif
   size_t n = sizeof(default_ids) / sizeof(default_ids[0]);
   if ((size_t)slot < n) {
     strncpy(dest, default_ids[slot], max_len - 1);

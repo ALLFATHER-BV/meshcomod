@@ -279,12 +279,33 @@ public:
       sprintf(tmp, "Noise floor: %d", radio_driver.getNoiseFloor());
       display.print(tmp);
     } else if (_page == HomePage::BLUETOOTH) {
-      display.setColor(DisplayDriver::GREEN);
-      display.drawXbm((display.width() - 32) / 2, 18,
-          _task->isSerialEnabled() ? bluetooth_on : bluetooth_off,
-          32, 32);
-      display.setTextSize(1);
-      display.drawTextCentered(display.width() / 2, 64 - 11, "toggle: " PRESS_LABEL);
+      if (_task->hasBleCapability()) {
+        // TCP-style layout: title, state, PIN when on, footer with long-press hint
+        display.setColor(DisplayDriver::BLUE);
+        display.setTextSize(1);
+        int y = 10;
+        display.drawTextCentered(display.width() / 2, y, "BLE");
+        y += 12;
+        if (_task->isBleEnabled()) {
+          display.setColor(DisplayDriver::GREEN);
+          snprintf(tmp, sizeof(tmp), "Pin: %lu", (unsigned long)the_mesh.getBLEPin());
+          display.drawTextCentered(display.width() / 2, y, tmp);
+        } else {
+          display.setColor(DisplayDriver::RED);
+          display.drawTextCentered(display.width() / 2, y, "BLE disabled");
+        }
+        y = 64 - 11;
+        display.setColor(DisplayDriver::LIGHT);
+        display.drawTextCentered(display.width() / 2, y, _task->isBleEnabled() ? "OFF: long press" : "ON: long press");
+      } else {
+        display.setColor(DisplayDriver::GREEN);
+        bool on = _task->isSerialEnabled();
+        display.drawXbm((display.width() - 32) / 2, 18,
+            on ? bluetooth_on : bluetooth_off,
+            32, 32);
+        display.setTextSize(1);
+        display.drawTextCentered(display.width() / 2, 64 - 11, "toggle: " PRESS_LABEL);
+      }
 #ifdef MULTI_TRANSPORT_COMPANION
     } else if (_page == HomePage::NETWORK) {
       display.setColor(DisplayDriver::BLUE);
@@ -465,8 +486,8 @@ public:
       }
       return true;
     }
-    if (c == KEY_ENTER && _page == HomePage::BLUETOOTH) {
-      if (_task->isSerialEnabled()) {  // toggle Bluetooth on/off
+    if (c == KEY_ENTER && _page == HomePage::BLUETOOTH && !_task->hasBleCapability()) {
+      if (_task->isSerialEnabled()) {
         _task->disableSerial();
       } else {
         _task->enableSerial();
@@ -511,6 +532,16 @@ public:
       return true;
     }
 #endif
+    if (c == KEY_LONG_ENTER && _page == HomePage::BLUETOOTH && _task->hasBleCapability()) {
+      if (_task->isBleEnabled()) {
+        _task->disableBle();
+        _task->showAlert("BLE disabled", 1500);
+      } else {
+        _task->enableBle();
+        _task->showAlert("BLE enabled", 1500);
+      }
+      return true;
+    }
     return false;
   }
 };

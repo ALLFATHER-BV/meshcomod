@@ -26,6 +26,12 @@ public:
   virtual void disableTcp() { }
   virtual bool isTcpEnabled() const { return true; }
 
+  // BLE only (multi-transport with BLE): enable/disable BLE; no-op when BLE not available.
+  virtual void enableBle() { }
+  virtual void disableBle() { }
+  virtual bool isBleEnabled() const { return false; }
+  virtual bool hasBleCapability() const { return false; }
+
   // Per-client history: identity of the connection that sent the last frame (set before handleCmdFrame).
   virtual void setCurrentClientId(const char* id) { (void)id; }
   virtual void getCurrentClientId(char* dest, size_t max_len) const {
