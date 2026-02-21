@@ -1,6 +1,6 @@
 # meshcomod
 
-**Custom MeshCore firmware** — a spinoff of [MeshCore](https://github.com/meshcore-dev/MeshCore) with extra features and build targets.
+**Custom MeshCore firmware for Heltec WiFi LoRa 32 V4** — a spinoff of [MeshCore](https://github.com/meshcore-dev/MeshCore), trimmed to this device only, with extra companion targets (USB+TCP).
 
 Upstream: **[github.com/meshcore-dev/MeshCore](https://github.com/meshcore-dev/MeshCore)** (MeshCore is a lightweight multi-hop LoRa mesh; see their repo for full docs, clients, and flasher.)
 

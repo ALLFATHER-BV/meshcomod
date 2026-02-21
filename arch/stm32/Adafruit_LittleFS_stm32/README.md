@@ -1,1 +1,0 @@
-This is LittleFS from Adafruit, stripped from things that makes it not compile with stm32 (refs to TinyUSB and free_rtos, mostly)
