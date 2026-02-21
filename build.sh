@@ -125,8 +125,8 @@ disable_debug_flags() {
 build_firmware() {
   # get env platform for post build actions (mergebin, etc.)
   ENV_PLATFORM=($(get_platform_for_env $1))
-  # fallback: if JSON parse failed (e.g. control chars in paths), assume ESP32 for heltec_v4
-  if [ -z "$ENV_PLATFORM" ] && [[ "$1" == *heltec_v4* ]]; then
+  # fallback: if JSON parse failed (e.g. control chars in paths), assume ESP32 for heltec_v4/v3
+  if [ -z "$ENV_PLATFORM" ] && [[ "$1" == *heltec_v4* || "$1" == *heltec_v3* || "$1" == *Heltec_v3* ]]; then
     ENV_PLATFORM=ESP32_PLATFORM
   fi
 
