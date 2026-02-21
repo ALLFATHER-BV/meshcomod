@@ -63,6 +63,16 @@
 #define OFFLINE_QUEUE_SIZE 16
 #endif
 
+#ifndef HISTORY_RING_SIZE
+#define HISTORY_RING_SIZE 128
+#endif
+#ifndef MAX_HISTORY_CLIENTS
+#define MAX_HISTORY_CLIENTS 8
+#endif
+#ifndef MAX_CLIENT_ID_LEN
+#define MAX_CLIENT_ID_LEN 31
+#endif
+
 #ifndef BLE_NAME_PREFIX
 #define BLE_NAME_PREFIX "MeshCore-"
 #endif
@@ -164,10 +174,12 @@ private:
   void writeOKFrame();
   void writeErrFrame(uint8_t err_code);
   void writeDisabledFrame();
-  void writeContactRespFrame(uint8_t code, const ContactInfo &contact);
+  void writeContactRespFrame(uint8_t code, const ContactInfo &contact, bool to_all = false);
   void updateContactFromFrame(ContactInfo &contact, uint32_t& last_mod, const uint8_t *frame, int len);
   void addToOfflineQueue(const uint8_t frame[], int len);
   int getFromOfflineQueue(uint8_t frame[]);
+  void addToHistoryRing(const uint8_t frame[], int len);
+  int getNextFromHistoryForClient(const char* client_id, uint8_t frame[]);
   int getBlobByKey(const uint8_t key[], int key_len, uint8_t dest_buf[]) override { 
     return _store->getBlobByKey(key, key_len, dest_buf);
   }
@@ -218,6 +230,23 @@ private:
   };
   int offline_queue_len;
   Frame offline_queue[OFFLINE_QUEUE_SIZE];
+
+  // Per-client history: ring buffer of frames + per-client read position
+  struct HistoryEntry {
+    uint8_t len;
+    uint8_t buf[MAX_FRAME_SIZE];
+    uint32_t seq;
+  };
+  struct ClientHistoryState {
+    char client_id[MAX_CLIENT_ID_LEN + 1];
+    uint32_t last_delivered_seq;
+  };
+  HistoryEntry history_ring[HISTORY_RING_SIZE];
+  int history_count;
+  int history_head;
+  uint32_t history_next_seq;
+  ClientHistoryState history_clients[MAX_HISTORY_CLIENTS];
+  int history_num_clients;
 
   struct AckTableEntry {
     unsigned long msg_sent;

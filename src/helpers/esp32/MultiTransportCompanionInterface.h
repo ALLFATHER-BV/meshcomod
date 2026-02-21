@@ -28,9 +28,16 @@ public:
   bool isConnected() const override;
   bool isWriteBusy() const override;
   size_t writeFrame(const uint8_t src[], size_t len) override;
+  size_t writeFrameToAll(const uint8_t src[], size_t len) override;
   size_t checkRecvFrame(uint8_t dest[]) override;
 
+  void setCurrentClientId(const char* id) override;
+  void getCurrentClientId(char* dest, size_t max_len) const override;
+
 private:
+  int _clientIdSlot() const { return _last_reply_target + 1; }
+  static const size_t _max_client_id_len = 32;
+
   ArduinoSerialInterface _usb;
   TCPCompanionServer _tcp;
   uint16_t _tcp_port;
@@ -38,4 +45,5 @@ private:
   bool _isEnabled;
   bool _broadcast;           // if true, also send responses to all other clients
   int _last_reply_target;    // REPLY_TARGET_USB or TCP client index
+  char _client_ids[1 + TCP_COMPANION_MAX_CLIENTS][_max_client_id_len];
 };

@@ -116,6 +116,9 @@ void setup() {
 
   board.begin();
 
+  // Short delay so I2C/power is stable before display init (avoids black screen on some boards)
+  delay(100);
+
 #ifdef DISPLAY_CLASS
   DisplayDriver* disp = NULL;
   if (display.begin()) {
@@ -126,6 +129,15 @@ void setup() {
   #endif
     disp->drawTextCentered(disp->width() / 2, 28, "Loading...");
     disp->endFrame();
+  } else {
+    // Retry once after power may have settled
+    delay(200);
+    if (display.begin()) {
+      disp = &display;
+      disp->startFrame();
+      disp->drawTextCentered(disp->width() / 2, 28, "Loading...");
+      disp->endFrame();
+    }
   }
 #endif
 
@@ -203,6 +215,7 @@ void setup() {
   board.setInhibitSleep(true);
   // Defer WiFi until first loop() so setup() always completes (display + USB come up even if WiFi would crash/hang)
   serial_interface.begin(Serial, TCP_PORT);
+  serial_interface.setBroadcastResponses(true);  // RX log, channel messages, etc. go to all clients (USB + TCP), not only last sender
 #elif defined(WIFI_SSID)
   board.setInhibitSleep(true);   // prevent sleep when WiFi is active
   WiFi.begin(WIFI_SSID, WIFI_PWD);
@@ -233,7 +246,10 @@ void loop() {
   static bool wifi_started = false;
   if (!wifi_started) {
     wifi_started = true;
-    WiFi.begin(WIFI_SSID, WIFI_PWD);
+    // Only start WiFi if credentials look set (avoid hang/crash with empty inject)
+    if (strlen(WIFI_SSID) > 0) {
+      WiFi.begin(WIFI_SSID, WIFI_PWD);
+    }
   }
   serial_interface.startTcpServer();  // start TCP server after WiFi (idempotent)
 #endif

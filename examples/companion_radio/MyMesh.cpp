@@ -2,6 +2,7 @@
 
 #include <Arduino.h> // needed for PlatformIO
 #include <Mesh.h>
+#include <string.h>
 
 #define CMD_APP_START                 1
 #define CMD_SEND_TXT_MSG              2
@@ -154,7 +155,7 @@ void MyMesh::writeDisabledFrame() {
   _serial->writeFrame(buf, 1);
 }
 
-void MyMesh::writeContactRespFrame(uint8_t code, const ContactInfo &contact) {
+void MyMesh::writeContactRespFrame(uint8_t code, const ContactInfo &contact, bool to_all) {
   int i = 0;
   out_frame[i++] = code;
   memcpy(&out_frame[i], contact.id.pub_key, PUB_KEY_SIZE);
@@ -174,7 +175,10 @@ void MyMesh::writeContactRespFrame(uint8_t code, const ContactInfo &contact) {
   i += 4;
   memcpy(&out_frame[i], &contact.lastmod, 4);
   i += 4;
-  _serial->writeFrame(out_frame, i);
+  if (to_all)
+    _serial->writeFrameToAll(out_frame, i);
+  else
+    _serial->writeFrame(out_frame, i);
 }
 
 void MyMesh::updateContactFromFrame(ContactInfo &contact, uint32_t& last_mod, const uint8_t *frame, int len) {
@@ -244,6 +248,59 @@ int MyMesh::getFromOfflineQueue(uint8_t frame[]) {
   return 0; // queue is empty
 }
 
+void MyMesh::addToHistoryRing(const uint8_t frame[], int len) {
+  if (len <= 0 || len > MAX_FRAME_SIZE) return;
+  HistoryEntry& e = history_ring[history_head];
+  e.len = (uint8_t)len;
+  memcpy(e.buf, frame, len);
+  e.seq = history_next_seq++;
+  history_head = (history_head + 1) % HISTORY_RING_SIZE;
+  if (history_count < HISTORY_RING_SIZE) {
+    history_count++;
+  }
+}
+
+static bool clientIdEqual(const char* a, const char* b) {
+  if (!a) a = "";
+  if (!b) b = "";
+  return strcmp(a, b) == 0;
+}
+
+int MyMesh::getNextFromHistoryForClient(const char* client_id, uint8_t frame[]) {
+  if (history_count <= 0) return 0;
+  const char* cid = (client_id && client_id[0]) ? client_id : "";
+
+  // Find or create client state
+  int slot = -1;
+  for (int i = 0; i < history_num_clients; i++) {
+    if (clientIdEqual(history_clients[i].client_id, cid)) {
+      slot = i;
+      break;
+    }
+  }
+  if (slot < 0) {
+    if (history_num_clients >= MAX_HISTORY_CLIENTS) return 0;
+    slot = history_num_clients++;
+    strncpy(history_clients[slot].client_id, cid, MAX_CLIENT_ID_LEN);
+    history_clients[slot].client_id[MAX_CLIENT_ID_LEN] = '\0';
+    history_clients[slot].last_delivered_seq = history_next_seq > (uint32_t)history_count
+      ? history_next_seq - (uint32_t)history_count : 0;
+  }
+
+  uint32_t last = history_clients[slot].last_delivered_seq;
+  int tail = (history_head - history_count + HISTORY_RING_SIZE) % HISTORY_RING_SIZE;
+  for (int i = 0; i < history_count; i++) {
+    int idx = (tail + i) % HISTORY_RING_SIZE;
+    const HistoryEntry& e = history_ring[idx];
+    if (e.seq > last) {
+      memcpy(frame, e.buf, e.len);
+      history_clients[slot].last_delivered_seq = e.seq;
+      return e.len;
+    }
+  }
+  return 0;
+}
+
 float MyMesh::getAirtimeBudgetFactor() const {
   return _prefs.airtime_factor;
 }
@@ -262,7 +319,7 @@ uint8_t MyMesh::getExtraAckTransmitCount() const {
 }
 
 void MyMesh::logRxRaw(float snr, float rssi, const uint8_t raw[], int len) {
-  if (_serial->isConnected() && len + 3 <= MAX_FRAME_SIZE) {
+  if (len + 3 <= MAX_FRAME_SIZE) {
     int i = 0;
     out_frame[i++] = PUSH_CODE_LOG_RX_DATA;
     out_frame[i++] = (int8_t)(snr * 4);
@@ -270,7 +327,10 @@ void MyMesh::logRxRaw(float snr, float rssi, const uint8_t raw[], int len) {
     memcpy(&out_frame[i], raw, len);
     i += len;
 
-    _serial->writeFrame(out_frame, i);
+    addToHistoryRing(out_frame, i);
+    if (_serial->isConnected()) {
+      _serial->writeFrameToAll(out_frame, i);
+    }
   }
 }
 
@@ -313,25 +373,25 @@ void MyMesh::onContactOverwrite(const uint8_t* pub_key) {
   if (_serial->isConnected()) {
     out_frame[0] = PUSH_CODE_CONTACT_DELETED;
     memcpy(&out_frame[1], pub_key, PUB_KEY_SIZE);
-    _serial->writeFrame(out_frame, 1 + PUB_KEY_SIZE);
+    _serial->writeFrameToAll(out_frame, 1 + PUB_KEY_SIZE);
   }
 }
 
 void MyMesh::onContactsFull() {
   if (_serial->isConnected()) {
     out_frame[0] = PUSH_CODE_CONTACTS_FULL;
-    _serial->writeFrame(out_frame, 1);
+    _serial->writeFrameToAll(out_frame, 1);
   }
 }
 
 void MyMesh::onDiscoveredContact(ContactInfo &contact, bool is_new, uint8_t path_len, const uint8_t* path) {
   if (_serial->isConnected()) {
     if (is_new) {
-      writeContactRespFrame(PUSH_CODE_NEW_ADVERT, contact);
+      writeContactRespFrame(PUSH_CODE_NEW_ADVERT, contact, true);
     } else {
       out_frame[0] = PUSH_CODE_ADVERT;
       memcpy(&out_frame[1], contact.id.pub_key, PUB_KEY_SIZE);
-      _serial->writeFrame(out_frame, 1 + PUB_KEY_SIZE);
+      _serial->writeFrameToAll(out_frame, 1 + PUB_KEY_SIZE);
     }
   } else {
 #ifdef DISPLAY_CLASS
@@ -381,7 +441,7 @@ int MyMesh::getRecentlyHeard(AdvertPath dest[], int max_num) {
 void MyMesh::onContactPathUpdated(const ContactInfo &contact) {
   out_frame[0] = PUSH_CODE_PATH_UPDATED;
   memcpy(&out_frame[1], contact.id.pub_key, PUB_KEY_SIZE);
-  _serial->writeFrame(out_frame, 1 + PUB_KEY_SIZE); // NOTE: app may not be connected
+  _serial->writeFrameToAll(out_frame, 1 + PUB_KEY_SIZE); // NOTE: app may not be connected
 
   dirty_contacts_expiry = futureMillis(LAZY_CONTACTS_WRITE_DELAY);
 }
@@ -394,7 +454,7 @@ ContactInfo*  MyMesh::processAck(const uint8_t *data) {
       memcpy(&out_frame[1], data, 4);
       uint32_t trip_time = _ms->getMillis() - expected_ack_table[i].msg_sent;
       memcpy(&out_frame[5], &trip_time, 4);
-      _serial->writeFrame(out_frame, 9);
+      _serial->writeFrameToAll(out_frame, 9);
 
       // NOTE: the same ACK can be received multiple times!
       expected_ack_table[i].ack = 0; // clear expected hash, now that we have received ACK
@@ -431,19 +491,19 @@ void MyMesh::queueMessage(const ContactInfo &from, uint8_t txt_type, mesh::Packe
   }
   memcpy(&out_frame[i], text, tlen);
   i += tlen;
-  addToOfflineQueue(out_frame, i);
+  addToHistoryRing(out_frame, i);
 
   if (_serial->isConnected()) {
     uint8_t frame[1];
     frame[0] = PUSH_CODE_MSG_WAITING; // send push 'tickle'
-    _serial->writeFrame(frame, 1);
+    _serial->writeFrameToAll(frame, 1);
   }
 
 #ifdef DISPLAY_CLASS
   // we only want to show text messages on display, not cli data
   bool should_display = txt_type == TXT_TYPE_PLAIN || txt_type == TXT_TYPE_SIGNED_PLAIN;
   if (should_display && _ui) {
-    _ui->newMsg(path_len, from.name, text, offline_queue_len);
+    _ui->newMsg(path_len, from.name, text, history_count);
     if (!_serial->isConnected()) {
       _ui->notify(UIEventType::contactMessage);
     }
@@ -529,12 +589,12 @@ void MyMesh::onChannelMessageRecv(const mesh::GroupChannel &channel, mesh::Packe
   }
   memcpy(&out_frame[i], text, tlen);
   i += tlen;
-  addToOfflineQueue(out_frame, i);
+  addToHistoryRing(out_frame, i);
 
   if (_serial->isConnected()) {
     uint8_t frame[1];
     frame[0] = PUSH_CODE_MSG_WAITING; // send push 'tickle'
-    _serial->writeFrame(frame, 1);
+    _serial->writeFrameToAll(frame, 1);
   } else {
 #ifdef DISPLAY_CLASS
     if (_ui) _ui->notify(UIEventType::channelMessage);
@@ -547,7 +607,7 @@ void MyMesh::onChannelMessageRecv(const mesh::GroupChannel &channel, mesh::Packe
   if (getChannel(channel_idx, channel_details)) {
     channel_name = channel_details.name;
   }
-  if (_ui) _ui->newMsg(path_len, channel_name, text, offline_queue_len);
+  if (_ui) _ui->newMsg(path_len, channel_name, text, history_count);
 #endif
 }
 
@@ -789,6 +849,10 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   _iter_started = false;
   _cli_rescue = false;
   offline_queue_len = 0;
+  history_count = 0;
+  history_head = 0;
+  history_next_seq = 0;
+  history_num_clients = 0;
   app_target_ver = 0;
   clearPendingReqs();
   next_ack_idx = 0;
@@ -932,8 +996,19 @@ void MyMesh::handleCmdFrame(size_t len) {
     _serial->writeFrame(out_frame, i);
   } else if (cmd_frame[0] == CMD_APP_START &&
              len >= 8) { // sent when app establishes connection, respond with node ID
-    //  cmd_frame[1..7]  reserved future
-    char *app_name = (char *)&cmd_frame[8];
+    // Optional client_id: byte 1 = length (0 = none), bytes 2..1+len = client_id. Then app_name.
+    char* app_name;
+    if (len >= 2 && cmd_frame[1] > 0 && len >= 2 + (size_t)cmd_frame[1]) {
+      uint8_t cid_len = cmd_frame[1];
+      if (cid_len > MAX_CLIENT_ID_LEN) cid_len = MAX_CLIENT_ID_LEN;
+      char cid_buf[MAX_CLIENT_ID_LEN + 1];
+      memcpy(cid_buf, &cmd_frame[2], cid_len);
+      cid_buf[cid_len] = '\0';
+      _serial->setCurrentClientId(cid_buf);
+      app_name = (char*)&cmd_frame[2 + cmd_frame[1]];
+    } else {
+      app_name = (char*)&cmd_frame[8];
+    }
     cmd_frame[len] = 0; // make app_name null terminated
     MESH_DEBUG_PRINTLN("App %s connected", app_name);
 
@@ -1213,11 +1288,13 @@ void MyMesh::handleCmdFrame(size_t len) {
       writeErrFrame(ERR_CODE_ILLEGAL_ARG);
     }
   } else if (cmd_frame[0] == CMD_SYNC_NEXT_MESSAGE) {
-    int out_len;
-    if ((out_len = getFromOfflineQueue(out_frame)) > 0) {
+    char client_id[MAX_CLIENT_ID_LEN + 1];
+    _serial->getCurrentClientId(client_id, sizeof(client_id));
+    int out_len = getNextFromHistoryForClient(client_id, out_frame);
+    if (out_len > 0) {
       _serial->writeFrame(out_frame, out_len);
 #ifdef DISPLAY_CLASS
-      if (_ui) _ui->msgRead(offline_queue_len);
+      if (_ui) _ui->msgRead(history_count);
 #endif
     } else {
       out_frame[0] = RESP_CODE_NO_MORE_MESSAGES;
