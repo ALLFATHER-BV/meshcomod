@@ -3171,7 +3171,8 @@ WiFi firmware requires you to compile it yourself, as you need to set the wifi s
 Set the environment variables with quotes and then build/flash:
 <code>export WIFI_SSID="Your SSID" WIFI_PWD="YourPassword"</code>
 For open networks use:
-<code>export WIFI_SSID="Your SSID" WIFI_PWD=""</code></p>
+<code>export WIFI_SSID="Your SSID" WIFI_PWD=""</code>
+Note: WiFi companion mode supports <strong>2.4 GHz</strong> only (not 5 GHz-only SSIDs).</p>
 <h3 id="77-q-i-have-a-station-g2-or-a-heltec-v4-or-an-ikoka-stick-or-a-radio-with-a-ebyte-e22-900m30s-or-a-e22-900m33s-module-what-should-their-transmit-power-be-set-to">7.7. Q: I have a Station G2, or a Heltec V4, or an Ikoka Stick, or a radio with a EByte E22-900M30S or a E22-900M33S module, what should their transmit power be set to?</h3>
 <p><strong>A:</strong>
 For companion radios, you can set these radios' transmit power in the smartphone app.  For repeater and room server radios, you can set their transmit power using the command line command <code>set tx</code>.  You can get their current value using command line comand <code>get tx</code></p>
