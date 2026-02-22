@@ -128,6 +128,25 @@
 
 #define MAX_SIGN_DATA_LEN               (8 * 1024) // 8K
 
+#ifndef COMPANION_SYNC_DEBUG
+#define COMPANION_SYNC_DEBUG 0
+#endif
+
+#if COMPANION_SYNC_DEBUG
+#define SYNC_DEBUG_PRINTLN(F, ...) Serial.printf("SYNCDBG: " F "\n", ##__VA_ARGS__)
+struct SyncDebugCounters {
+  uint32_t req;
+  uint32_t had_frame;
+  uint32_t no_more;
+  uint32_t write_ok;
+  uint32_t write_fail;
+  uint32_t retries;
+};
+static SyncDebugCounters g_sync_dbg = {0, 0, 0, 0, 0, 0};
+#else
+#define SYNC_DEBUG_PRINTLN(...) do {} while (0)
+#endif
+
 // Auto-add config bitmask
 // Bit 0: If set, overwrite oldest non-favourite contact when contacts file is full
 // Bits 1-4: these indicate which contact types to auto-add when manual_contact_mode = 0x01
@@ -294,6 +313,19 @@ int MyMesh::getNextFromHistoryForClient(const char* client_id, uint8_t frame[], 
     int idx = (tail + i) % HISTORY_RING_SIZE;
     const HistoryEntry& e = history_ring[idx];
     if (e.seq > last) {
+      // Sync stream should return only chat/channel message frames.
+      // Other push types (e.g. RX log 0x88) are delivered live via push and can confuse client sync parsers.
+      uint8_t code = e.buf[0];
+      bool is_sync_message =
+        code == RESP_CODE_CONTACT_MSG_RECV ||
+        code == RESP_CODE_CONTACT_MSG_RECV_V3 ||
+        code == RESP_CODE_CHANNEL_MSG_RECV ||
+        code == RESP_CODE_CHANNEL_MSG_RECV_V3;
+      if (!is_sync_message) {
+        if (do_advance) history_clients[slot].last_delivered_seq = e.seq;
+        last = e.seq;
+        continue;
+      }
       memcpy(frame, e.buf, e.len);
       if (out_seq) *out_seq = e.seq;
       if (do_advance) history_clients[slot].last_delivered_seq = e.seq;
@@ -337,7 +369,7 @@ uint8_t MyMesh::getClientTargetVer(const char* client_id) const {
       return proto_clients[i].target_ver;
     }
   }
-  // Unknown clients are assumed modern unless they declare otherwise.
+  // Unknown clients default to modern format.
   return 0xFF;
 }
 
@@ -551,7 +583,6 @@ void MyMesh::queueMessage(const ContactInfo &from, uint8_t txt_type, mesh::Packe
   addToHistoryRing(out_frame, i);
 
   if (_serial->isConnected()) {
-    _serial->writeFrameToAll(out_frame, i);
     uint8_t frame[1];
     frame[0] = PUSH_CODE_MSG_WAITING; // send push 'tickle'
     _serial->writeFrameToAll(frame, 1);
@@ -909,6 +940,7 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   history_next_seq = 0;
   history_num_clients = 0;
   proto_num_clients = 0;
+  app_target_ver = 0;
   clearPendingReqs();
   next_ack_idx = 0;
   sign_data = NULL;
@@ -1031,9 +1063,10 @@ void MyMesh::startInterface(BaseSerialInterface &serial) {
 
 void MyMesh::handleCmdFrame(size_t len) {
   if (cmd_frame[0] == CMD_DEVICE_QEURY && len >= 2) { // sent when app establishes connection
+    app_target_ver = cmd_frame[1];                    // which version of protocol does app understand
     char client_id[MAX_CLIENT_ID_LEN + 1];
     _serial->getCurrentClientId(client_id, sizeof(client_id));
-    setClientTargetVer(client_id, cmd_frame[1]);      // remember protocol version per client
+    setClientTargetVer(client_id, cmd_frame[1]);      // version per connected client
 
     int i = 0;
     out_frame[i++] = RESP_CODE_DEVICE_INFO;
@@ -1164,7 +1197,6 @@ void MyMesh::handleCmdFrame(size_t len) {
           j += tlen2;
           addToHistoryRing(out_frame, j);
           if (_serial->isConnected()) {
-            _serial->writeFrameToAll(out_frame, j);
             uint8_t tickle[1] = { PUSH_CODE_MSG_WAITING };
             _serial->writeFrameToAll(tickle, 1);
           }
@@ -1375,9 +1407,16 @@ void MyMesh::handleCmdFrame(size_t len) {
   } else if (cmd_frame[0] == CMD_SYNC_NEXT_MESSAGE) {
     char client_id[MAX_CLIENT_ID_LEN + 1];
     _serial->getCurrentClientId(client_id, sizeof(client_id));
+#if COMPANION_SYNC_DEBUG
+    g_sync_dbg.req++;
+#endif
     uint32_t sent_seq = 0;
     int out_len = getNextFromHistoryForClient(client_id, out_frame, &sent_seq, false);
     const bool had_history_frame = (out_len > 0);
+#if COMPANION_SYNC_DEBUG
+    if (had_history_frame) g_sync_dbg.had_frame++;
+    else g_sync_dbg.no_more++;
+#endif
     uint8_t send_buf[MAX_FRAME_SIZE];
     const uint8_t* send_ptr = out_frame;
     if (out_len <= 0) {
@@ -1393,8 +1432,29 @@ void MyMesh::handleCmdFrame(size_t len) {
     size_t to_send = (size_t)out_len;
     // Retry write so transient full buffers (TCP/BLE) don't cause client timeout
     const int max_retries = 10;
+    bool sent_ok = false;
     for (int r = 0; r < max_retries; r++) {
       if (_serial->writeFrame(send_ptr, to_send) == to_send) {
+        sent_ok = true;
+#if COMPANION_SYNC_DEBUG
+        g_sync_dbg.write_ok++;
+        g_sync_dbg.retries += (uint32_t)r;
+        SYNC_DEBUG_PRINTLN("resp client=%s had=%d code=%u len=%u seq=%lu retry=%d",
+                           client_id, had_history_frame ? 1 : 0,
+                           (unsigned)send_ptr[0], (unsigned)to_send,
+                           (unsigned long)sent_seq, r);
+        if (r > 0) {
+          SYNC_DEBUG_PRINTLN("retry_ok client=%s retries=%d had=%d len=%u seq=%lu",
+                             client_id, r, had_history_frame ? 1 : 0, (unsigned)to_send,
+                             (unsigned long)sent_seq);
+        }
+        if ((g_sync_dbg.req % 100u) == 0u) {
+          SYNC_DEBUG_PRINTLN("summary req=%lu had=%lu no_more=%lu ok=%lu fail=%lu retries=%lu",
+                             (unsigned long)g_sync_dbg.req, (unsigned long)g_sync_dbg.had_frame,
+                             (unsigned long)g_sync_dbg.no_more, (unsigned long)g_sync_dbg.write_ok,
+                             (unsigned long)g_sync_dbg.write_fail, (unsigned long)g_sync_dbg.retries);
+        }
+#endif
         if (had_history_frame) commitHistoryForClient(client_id, sent_seq);
 #ifdef DISPLAY_CLASS
         if (_ui && had_history_frame) _ui->msgRead(history_count);
@@ -1403,6 +1463,14 @@ void MyMesh::handleCmdFrame(size_t len) {
       }
       if (r < max_retries - 1) delay(25);
     }
+#if COMPANION_SYNC_DEBUG
+    if (!sent_ok) {
+      g_sync_dbg.write_fail++;
+      SYNC_DEBUG_PRINTLN("write_fail client=%s had=%d len=%u seq=%lu req=%lu",
+                         client_id, had_history_frame ? 1 : 0, (unsigned)to_send, (unsigned long)sent_seq,
+                         (unsigned long)g_sync_dbg.req);
+    }
+#endif
   } else if (cmd_frame[0] == CMD_SET_RADIO_PARAMS) {
     int i = 1;
     uint32_t freq;

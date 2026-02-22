@@ -37,8 +37,8 @@ Otherwise this is the same codebase as MeshCore; we sync from upstream and add o
 
 ### Known bugs
 
-- **Sent messages** — Messages sent from one client may not appear on the other device (e.g. the other companion client) in all cases; the firmware pushes them to history and notifies all clients, but behaviour can depend on sync timing or the client app.
-- **Channel messages** — Real-time push and sync both include channel messages and go to all transports (USB, BLE, TCP). Clients without channel support (e.g. HA) must ignore or skip frames with response codes 0x08 and 0x11 to avoid "Failed to sync" or incorrect display.
+- **Legacy/no-channel clients** — If a client does not implement channel chat, it should ignore channel message frames (0x08, 0x11).
+- **Debug monitoring over USB** — When using the USB companion transport, serial terminals show binary companion frames; use BLE/TCP for app traffic if you need clean USB debug logs.
 
 ---
 

@@ -216,6 +216,7 @@ private:
   bool _iter_started;
   bool _cli_rescue;
   char cli_command[80];
+  uint8_t app_target_ver;
   uint8_t *sign_data;
   uint32_t sign_data_len;
   unsigned long dirty_contacts_expiry;
