@@ -25,7 +25,8 @@ class SerialBLEInterface : public BaseSerialInterface, BLESecurityCallbacks, BLE
     uint8_t buf[MAX_FRAME_SIZE];
   };
 
-  #define FRAME_QUEUE_SIZE  4
+  // Larger queue reduces dropped push/tickle frames during short BLE congestion bursts.
+  #define FRAME_QUEUE_SIZE  12
   int recv_queue_len;
   Frame recv_queue[FRAME_QUEUE_SIZE];
   int send_queue_len;

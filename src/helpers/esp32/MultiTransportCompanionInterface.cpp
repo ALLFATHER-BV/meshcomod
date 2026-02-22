@@ -154,14 +154,14 @@ size_t MultiTransportCompanionInterface::writeFrameToAll(const uint8_t src[], si
   if (len > MAX_FRAME_SIZE) return 0;
   if (!_broadcast)
     return writeFrame(src, len);
-  size_t written = _usb.writeFrame(src, len);
+  _usb.writeFrame(src, len);
 #ifdef BLE_PIN_CODE
-  if (_ble_begun && _ble_enabled && written == len)
+  if (_ble_begun && _ble_enabled)
     _ble.writeFrame(src, len);
 #endif
-  if (_tcp_started && written == len)
+  if (_tcp_started)
     _tcp.writeToAllClients(src, len);
-  return written;
+  return len;
 }
 
 int MultiTransportCompanionInterface::_clientIdSlot() const {

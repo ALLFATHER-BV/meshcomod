@@ -907,6 +907,7 @@ def on_notification_received(data):
 3. **Message Handling**:
    - Send `CMD_SYNC_NEXT_MESSAGE` when `PUSH_CODE_MSG_WAITING` is received
    - Implement message deduplication to avoid display the same message twice
+   - Sync responses may include channel message frames (0x08, 0x11); clients that do not implement channel chat should skip those packet types when processing sync
 
 4. **Channel Management**:
     - Fetch all channel slots even if you encounter an empty slot

@@ -4,6 +4,23 @@
 #define RECV_STATE_HDR_FOUND   1
 #define RECV_STATE_LEN1_FOUND  2
 #define RECV_STATE_LEN2_FOUND  3
+#define TCP_WRITE_TIMEOUT_MS   120
+
+static bool writeAllBytes(WiFiClient& client, const uint8_t* buf, size_t len, uint32_t timeout_ms) {
+  size_t sent = 0;
+  uint32_t start = millis();
+  while (sent < len) {
+    if (!client.connected()) return false;
+    size_t n = client.write(buf + sent, len - sent);
+    if (n > 0) {
+      sent += n;
+      continue;
+    }
+    if (millis() - start >= timeout_ms) return false;
+    delay(1);
+  }
+  return true;
+}
 
 TCPCompanionServer::TCPCompanionServer() : _server(WiFiServer()), _port(0) {
   for (int i = 0; i < TCP_COMPANION_MAX_CLIENTS; i++) {
@@ -133,21 +150,19 @@ size_t TCPCompanionServer::writeToClient(int client_index, const uint8_t src[], 
   hdr[1] = (len & 0xFF);
   hdr[2] = (len >> 8);
   WiFiClient* cl = &_clients[client_index].client;
-  size_t n = cl->write(hdr, 3);
-  if (n == 3) n += cl->write(src, len);
-  return (n == 3 + len) ? len : 0;
+  if (!writeAllBytes(*cl, hdr, 3, TCP_WRITE_TIMEOUT_MS) ||
+      !writeAllBytes(*cl, src, len, TCP_WRITE_TIMEOUT_MS)) {
+    // Prevent stream framing desync after partial writes.
+    disconnectClient(client_index);
+    return 0;
+  }
+  return len;
 }
 
 void TCPCompanionServer::writeToAllClients(const uint8_t src[], size_t len) {
-  if (len > MAX_FRAME_SIZE) return;
-  uint8_t hdr[3];
-  hdr[0] = '>';
-  hdr[1] = (len & 0xFF);
-  hdr[2] = (len >> 8);
+  if (len == 0 || len > MAX_FRAME_SIZE) return;
   for (int i = 0; i < TCP_COMPANION_MAX_CLIENTS; i++) {
-    if (_clients[i].in_use && _clients[i].client.connected()) {
-      _clients[i].client.write(hdr, 3);
-      _clients[i].client.write(src, len);
-    }
+    if (_clients[i].in_use && _clients[i].client.connected())
+      writeToClient(i, src, len);
   }
 }

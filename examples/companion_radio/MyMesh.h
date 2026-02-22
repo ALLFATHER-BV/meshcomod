@@ -179,7 +179,12 @@ private:
   void addToOfflineQueue(const uint8_t frame[], int len);
   int getFromOfflineQueue(uint8_t frame[]);
   void addToHistoryRing(const uint8_t frame[], int len);
-  int getNextFromHistoryForClient(const char* client_id, uint8_t frame[]);
+  /** Get next history frame for client. If do_advance is false, does not advance last_delivered_seq (call commitHistoryForClient after successful write). */
+  int getNextFromHistoryForClient(const char* client_id, uint8_t frame[], uint32_t* out_seq = nullptr, bool do_advance = true);
+  void commitHistoryForClient(const char* client_id, uint32_t seq);
+  void setClientTargetVer(const char* client_id, uint8_t target_ver);
+  uint8_t getClientTargetVer(const char* client_id) const;
+  int adaptHistoryFrameForClient(const char* client_id, const uint8_t src[], int src_len, uint8_t dest[]) const;
   int getBlobByKey(const uint8_t key[], int key_len, uint8_t dest_buf[]) override { 
     return _store->getBlobByKey(key, key_len, dest_buf);
   }
@@ -211,7 +216,6 @@ private:
   bool _iter_started;
   bool _cli_rescue;
   char cli_command[80];
-  uint8_t app_target_ver;
   uint8_t *sign_data;
   uint32_t sign_data_len;
   unsigned long dirty_contacts_expiry;
@@ -241,12 +245,18 @@ private:
     char client_id[MAX_CLIENT_ID_LEN + 1];
     uint32_t last_delivered_seq;
   };
+  struct ClientProtoState {
+    char client_id[MAX_CLIENT_ID_LEN + 1];
+    uint8_t target_ver;
+  };
   HistoryEntry history_ring[HISTORY_RING_SIZE];
   int history_count;
   int history_head;
   uint32_t history_next_seq;
   ClientHistoryState history_clients[MAX_HISTORY_CLIENTS];
   int history_num_clients;
+  ClientProtoState proto_clients[MAX_HISTORY_CLIENTS];
+  int proto_num_clients;
 
   struct AckTableEntry {
     unsigned long msg_sent;

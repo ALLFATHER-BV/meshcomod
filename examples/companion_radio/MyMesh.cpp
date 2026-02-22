@@ -266,8 +266,8 @@ static bool clientIdEqual(const char* a, const char* b) {
   return strcmp(a, b) == 0;
 }
 
-// Delivers history to client for sync. Channel messages are excluded (delivered via push only); contact msgs, RX log, adverts, etc. are returned.
-int MyMesh::getNextFromHistoryForClient(const char* client_id, uint8_t frame[]) {
+// Delivers history to client for sync. Includes channel messages (0x08, 0x11); clients without channel support should skip those frame types.
+int MyMesh::getNextFromHistoryForClient(const char* client_id, uint8_t frame[], uint32_t* out_seq, bool do_advance) {
   if (history_count <= 0) return 0;
   const char* cid = (client_id && client_id[0]) ? client_id : "";
 
@@ -294,18 +294,72 @@ int MyMesh::getNextFromHistoryForClient(const char* client_id, uint8_t frame[]) 
     int idx = (tail + i) % HISTORY_RING_SIZE;
     const HistoryEntry& e = history_ring[idx];
     if (e.seq > last) {
-      // Channel messages are delivered only via real-time push; skip them in sync to avoid sync errors for clients without channel support.
-      if (e.buf[0] == RESP_CODE_CHANNEL_MSG_RECV || e.buf[0] == RESP_CODE_CHANNEL_MSG_RECV_V3) {
-        history_clients[slot].last_delivered_seq = e.seq;
-        last = e.seq;
-        continue;
-      }
       memcpy(frame, e.buf, e.len);
-      history_clients[slot].last_delivered_seq = e.seq;
+      if (out_seq) *out_seq = e.seq;
+      if (do_advance) history_clients[slot].last_delivered_seq = e.seq;
       return e.len;
     }
   }
   return 0;
+}
+
+void MyMesh::commitHistoryForClient(const char* client_id, uint32_t seq) {
+  const char* cid = (client_id && client_id[0]) ? client_id : "";
+  for (int i = 0; i < history_num_clients; i++) {
+    if (clientIdEqual(history_clients[i].client_id, cid)) {
+      if (seq > history_clients[i].last_delivered_seq)
+        history_clients[i].last_delivered_seq = seq;
+      return;
+    }
+  }
+}
+
+void MyMesh::setClientTargetVer(const char* client_id, uint8_t target_ver) {
+  const char* cid = (client_id && client_id[0]) ? client_id : "";
+  for (int i = 0; i < proto_num_clients; i++) {
+    if (clientIdEqual(proto_clients[i].client_id, cid)) {
+      proto_clients[i].target_ver = target_ver;
+      return;
+    }
+  }
+  if (proto_num_clients < MAX_HISTORY_CLIENTS) {
+    int slot = proto_num_clients++;
+    strncpy(proto_clients[slot].client_id, cid, MAX_CLIENT_ID_LEN);
+    proto_clients[slot].client_id[MAX_CLIENT_ID_LEN] = '\0';
+    proto_clients[slot].target_ver = target_ver;
+  }
+}
+
+uint8_t MyMesh::getClientTargetVer(const char* client_id) const {
+  const char* cid = (client_id && client_id[0]) ? client_id : "";
+  for (int i = 0; i < proto_num_clients; i++) {
+    if (clientIdEqual(proto_clients[i].client_id, cid)) {
+      return proto_clients[i].target_ver;
+    }
+  }
+  // Unknown clients are assumed modern unless they declare otherwise.
+  return 0xFF;
+}
+
+int MyMesh::adaptHistoryFrameForClient(const char* client_id, const uint8_t src[], int src_len, uint8_t dest[]) const {
+  if (!src || !dest || src_len <= 0 || src_len > MAX_FRAME_SIZE) return 0;
+  uint8_t target_ver = getClientTargetVer(client_id);
+  if (target_ver >= 3 || target_ver == 0xFF) {
+    memcpy(dest, src, src_len);
+    return src_len;
+  }
+  if (src[0] == RESP_CODE_CONTACT_MSG_RECV_V3 && src_len >= 4) {
+    dest[0] = RESP_CODE_CONTACT_MSG_RECV;
+    memcpy(&dest[1], &src[4], src_len - 4);
+    return src_len - 3;
+  }
+  if (src[0] == RESP_CODE_CHANNEL_MSG_RECV_V3 && src_len >= 4) {
+    dest[0] = RESP_CODE_CHANNEL_MSG_RECV;
+    memcpy(&dest[1], &src[4], src_len - 4);
+    return src_len - 3;
+  }
+  memcpy(dest, src, src_len);
+  return src_len;
 }
 
 float MyMesh::getAirtimeBudgetFactor() const {
@@ -474,14 +528,10 @@ ContactInfo*  MyMesh::processAck(const uint8_t *data) {
 void MyMesh::queueMessage(const ContactInfo &from, uint8_t txt_type, mesh::Packet *pkt,
                           uint32_t sender_timestamp, const uint8_t *extra, int extra_len, const char *text) {
   int i = 0;
-  if (app_target_ver >= 3) {
-    out_frame[i++] = RESP_CODE_CONTACT_MSG_RECV_V3;
-    out_frame[i++] = (int8_t)(pkt->getSNR() * 4);
-    out_frame[i++] = 0; // reserved1
-    out_frame[i++] = 0; // reserved2
-  } else {
-    out_frame[i++] = RESP_CODE_CONTACT_MSG_RECV;
-  }
+  out_frame[i++] = RESP_CODE_CONTACT_MSG_RECV_V3;
+  out_frame[i++] = (int8_t)(pkt->getSNR() * 4);
+  out_frame[i++] = 0; // reserved1
+  out_frame[i++] = 0; // reserved2
   memcpy(&out_frame[i], from.id.pub_key, 6);
   i += 6; // just 6-byte prefix
   uint8_t path_len = out_frame[i++] = pkt->isRouteFlood() ? pkt->path_len : 0xFF;
@@ -501,6 +551,7 @@ void MyMesh::queueMessage(const ContactInfo &from, uint8_t txt_type, mesh::Packe
   addToHistoryRing(out_frame, i);
 
   if (_serial->isConnected()) {
+    _serial->writeFrameToAll(out_frame, i);
     uint8_t frame[1];
     frame[0] = PUSH_CODE_MSG_WAITING; // send push 'tickle'
     _serial->writeFrameToAll(frame, 1);
@@ -574,14 +625,10 @@ void MyMesh::onSignedMessageRecv(const ContactInfo &from, mesh::Packet *pkt, uin
 void MyMesh::onChannelMessageRecv(const mesh::GroupChannel &channel, mesh::Packet *pkt, uint32_t timestamp,
                                   const char *text) {
   int i = 0;
-  if (app_target_ver >= 3) {
-    out_frame[i++] = RESP_CODE_CHANNEL_MSG_RECV_V3;
-    out_frame[i++] = (int8_t)(pkt->getSNR() * 4);
-    out_frame[i++] = 0; // reserved1
-    out_frame[i++] = 0; // reserved2
-  } else {
-    out_frame[i++] = RESP_CODE_CHANNEL_MSG_RECV;
-  }
+  out_frame[i++] = RESP_CODE_CHANNEL_MSG_RECV_V3;
+  out_frame[i++] = (int8_t)(pkt->getSNR() * 4);
+  out_frame[i++] = 0; // reserved1
+  out_frame[i++] = 0; // reserved2
 
   uint8_t channel_idx = findChannelIdx(channel);
   out_frame[i++] = channel_idx;
@@ -861,7 +908,7 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   history_head = 0;
   history_next_seq = 0;
   history_num_clients = 0;
-  app_target_ver = 0;
+  proto_num_clients = 0;
   clearPendingReqs();
   next_ack_idx = 0;
   sign_data = NULL;
@@ -984,7 +1031,9 @@ void MyMesh::startInterface(BaseSerialInterface &serial) {
 
 void MyMesh::handleCmdFrame(size_t len) {
   if (cmd_frame[0] == CMD_DEVICE_QEURY && len >= 2) { // sent when app establishes connection
-    app_target_ver = cmd_frame[1];                    // which version of protocol does app understand
+    char client_id[MAX_CLIENT_ID_LEN + 1];
+    _serial->getCurrentClientId(client_id, sizeof(client_id));
+    setClientTargetVer(client_id, cmd_frame[1]);      // remember protocol version per client
 
     int i = 0;
     out_frame[i++] = RESP_CODE_DEVICE_INFO;
@@ -1099,14 +1148,10 @@ void MyMesh::handleCmdFrame(size_t len) {
         // Add sent message to history and notify all clients (so other client sees it too)
         {
           int j = 0;
-          if (app_target_ver >= 3) {
-            out_frame[j++] = RESP_CODE_CONTACT_MSG_RECV_V3;
-            out_frame[j++] = 0; // SNR N/A for sent
-            out_frame[j++] = 0;
-            out_frame[j++] = 0;
-          } else {
-            out_frame[j++] = RESP_CODE_CONTACT_MSG_RECV;
-          }
+          out_frame[j++] = RESP_CODE_CONTACT_MSG_RECV_V3;
+          out_frame[j++] = 0; // SNR N/A for sent
+          out_frame[j++] = 0;
+          out_frame[j++] = 0;
           memcpy(&out_frame[j], self_id.pub_key, 6);  // from = self (so app shows as "You sent")
           j += 6;
           out_frame[j++] = 0xFF;  // path_len
@@ -1119,6 +1164,7 @@ void MyMesh::handleCmdFrame(size_t len) {
           j += tlen2;
           addToHistoryRing(out_frame, j);
           if (_serial->isConnected()) {
+            _serial->writeFrameToAll(out_frame, j);
             uint8_t tickle[1] = { PUSH_CODE_MSG_WAITING };
             _serial->writeFrameToAll(tickle, 1);
           }
@@ -1329,15 +1375,33 @@ void MyMesh::handleCmdFrame(size_t len) {
   } else if (cmd_frame[0] == CMD_SYNC_NEXT_MESSAGE) {
     char client_id[MAX_CLIENT_ID_LEN + 1];
     _serial->getCurrentClientId(client_id, sizeof(client_id));
-    int out_len = getNextFromHistoryForClient(client_id, out_frame);
-    if (out_len > 0) {
-      _serial->writeFrame(out_frame, out_len);
-#ifdef DISPLAY_CLASS
-      if (_ui) _ui->msgRead(history_count);
-#endif
-    } else {
+    uint32_t sent_seq = 0;
+    int out_len = getNextFromHistoryForClient(client_id, out_frame, &sent_seq, false);
+    const bool had_history_frame = (out_len > 0);
+    uint8_t send_buf[MAX_FRAME_SIZE];
+    const uint8_t* send_ptr = out_frame;
+    if (out_len <= 0) {
       out_frame[0] = RESP_CODE_NO_MORE_MESSAGES;
-      _serial->writeFrame(out_frame, 1);
+      out_len = 1;
+    } else {
+      int adapted_len = adaptHistoryFrameForClient(client_id, out_frame, out_len, send_buf);
+      if (adapted_len > 0) {
+        send_ptr = send_buf;
+        out_len = adapted_len;
+      }
+    }
+    size_t to_send = (size_t)out_len;
+    // Retry write so transient full buffers (TCP/BLE) don't cause client timeout
+    const int max_retries = 10;
+    for (int r = 0; r < max_retries; r++) {
+      if (_serial->writeFrame(send_ptr, to_send) == to_send) {
+        if (had_history_frame) commitHistoryForClient(client_id, sent_seq);
+#ifdef DISPLAY_CLASS
+        if (_ui && had_history_frame) _ui->msgRead(history_count);
+#endif
+        break;
+      }
+      if (r < max_retries - 1) delay(25);
     }
   } else if (cmd_frame[0] == CMD_SET_RADIO_PARAMS) {
     int i = 1;
@@ -2083,10 +2147,15 @@ void MyMesh::checkCLIRescueCmd() {
 }
 
 void MyMesh::checkSerialInterface() {
-  size_t len = _serial->checkRecvFrame(cmd_frame);
-  if (len > 0) {
+  bool handled_cmd = false;
+  // Drain a small burst of inbound frames each loop to reduce sync latency under load.
+  for (int n = 0; n < 4; n++) {
+    size_t len = _serial->checkRecvFrame(cmd_frame);
+    if (len == 0) break;
+    handled_cmd = true;
     handleCmdFrame(len);
-  } else if (_iter_started              // check if our ContactsIterator is 'running'
+  }
+  if (!handled_cmd && _iter_started              // check if our ContactsIterator is 'running'
              && !_serial->isWriteBusy() // don't spam the Serial Interface too quickly!
   ) {
     ContactInfo contact;
