@@ -58,8 +58,8 @@ Set **WiFi** and **firmware version** via environment variables, then run the bu
 ### Heltec V4 (copy-paste)
 
 ```bash
-export WIFI_SSID=YourNetworkName
-export WIFI_PWD=YourPassword
+export WIFI_SSID="YourNetworkName"
+export WIFI_PWD="YourPassword"
 export FIRMWARE_VERSION=v1.13.0
 sh build.sh build-firmware heltec_v4_companion_radio_usb_tcp
 ```
@@ -71,10 +71,17 @@ Merged image: `out/heltec_v4_companion_radio_usb_tcp-<version>-<sha>-merged.bin`
 ### Heltec V3 (copy-paste)
 
 ```bash
-export WIFI_SSID=YourNetworkName
-export WIFI_PWD=YourPassword
+export WIFI_SSID="YourNetworkName"
+export WIFI_PWD="YourPassword"
 export FIRMWARE_VERSION=v1.13.0
 sh build.sh build-firmware Heltec_v3_companion_radio_usb_tcp
+```
+
+For open networks (no password), set an empty password explicitly:
+
+```bash
+export WIFI_SSID="Cafe Guest"
+export WIFI_PWD=""
 ```
 
 Merged image: `out/Heltec_v3_companion_radio_usb_tcp-<version>-<sha>-merged.bin` or `.pio/build/Heltec_v3_companion_radio_usb_tcp/firmware-merged.bin`.
