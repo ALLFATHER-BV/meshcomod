@@ -288,14 +288,17 @@ public:
         y += 12;
         if (_task->isBleEnabled()) {
           display.setColor(DisplayDriver::GREEN);
+          snprintf(tmp, sizeof(tmp), "Pin: %lu", (unsigned long)the_mesh.getBLEPin());
+          display.drawTextCentered(display.width() / 2, y, tmp);
+          y += 11;
+
           char peer[24];
           if (_task->getBlePeerAddress(peer, sizeof(peer)) && peer[0] != '\0') {
-            display.drawTextCentered(display.width() / 2, y, "Connected device:");
+            display.drawTextCentered(display.width() / 2, y, "Connected");
             y += 11;
             display.drawTextCentered(display.width() / 2, y, peer);
           } else {
-            snprintf(tmp, sizeof(tmp), "Pin: %lu", (unsigned long)the_mesh.getBLEPin());
-            display.drawTextCentered(display.width() / 2, y, tmp);
+            display.drawTextCentered(display.width() / 2, y, "Waiting for device");
           }
         } else {
           display.setColor(DisplayDriver::RED);
