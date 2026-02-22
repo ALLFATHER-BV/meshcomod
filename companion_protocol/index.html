@@ -2616,8 +2616,9 @@ response = wait_for_response(PACKET_MSG_SENT)
 <p><strong>Message Handling</strong>:</p>
 </li>
 <li>Send <code>CMD_SYNC_NEXT_MESSAGE</code> when <code>PUSH_CODE_MSG_WAITING</code> is received</li>
+<li>Implement message deduplication to avoid display the same message twice</li>
 <li>
-<p>Implement message deduplication to avoid display the same message twice</p>
+<p>Sync responses may include channel message frames (0x08, 0x11); clients that do not implement channel chat should skip those packet types when processing sync</p>
 </li>
 <li>
 <p><strong>Channel Management</strong>:</p>
