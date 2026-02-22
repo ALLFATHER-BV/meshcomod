@@ -53,6 +53,8 @@ cd meshcomod
 
 Set **WiFi** and **firmware version** via environment variables, then run the build. The script runs merge and copies the merged image into `out/`. Use the **exact** env name for your device (V4 = lowercase `heltec_v4_...`, V3 = capital H `Heltec_v3_...`).
 
+> WiFi companion mode requires a **2.4 GHz** SSID. ESP32 companion builds do not connect to 5 GHz-only networks.
+
 ---
 
 ### Heltec V4 (copy-paste)

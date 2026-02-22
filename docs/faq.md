@@ -799,6 +799,7 @@ Set the environment variables with quotes and then build/flash:
 `export WIFI_SSID="Your SSID" WIFI_PWD="YourPassword"`
 For open networks use:
 `export WIFI_SSID="Your SSID" WIFI_PWD=""`
+Note: WiFi companion mode supports **2.4 GHz** only (not 5 GHz-only SSIDs).
 
 ### 7.7. Q: I have a Station G2, or a Heltec V4, or an Ikoka Stick, or a radio with a EByte E22-900M30S or a E22-900M33S module, what should their transmit power be set to?
  **A:**
