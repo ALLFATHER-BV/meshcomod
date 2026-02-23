@@ -61,6 +61,8 @@ Otherwise this is the same codebase as MeshCore; we sync from upstream and add o
 
 - **Legacy/no-channel clients** — If a client does not implement channel chat, it should ignore channel message frames (0x08, 0x11).
 - **Debug monitoring over USB** — When using the USB companion transport, serial terminals show binary companion frames; use BLE/TCP for app traffic if you need clean USB debug logs.
+- **BLE first connect quirk** — On first connection over BLE, you may need to disconnect and reconnect once.
+- **First help command in Meshcomod** — The first `help` command in a new Meshcomod chat may not reply; if so, send `help` again.
 
 ---
 
@@ -68,14 +70,23 @@ Otherwise this is the same codebase as MeshCore; we sync from upstream and add o
 
 ### EASY (recommended)
 
-Flash a prebuilt firmware and configure WiFi from the app. No local build needed.
+Flash a prebuilt firmware. No local build needed.
 
-Prebuilt files in this repo (non-merged shown first):
+Current prebuilt release tag: `v1.13.0-c4562de`
+
+Prebuilt files in this repo (non-merged shown first, then merged):
 
 - Heltec V4 (non-merged): [`prebuilt/heltec_v4_companion_radio_usb_tcp.bin`](prebuilt/heltec_v4_companion_radio_usb_tcp.bin)
 - Heltec V4 (merged): [`prebuilt/heltec_v4_companion_radio_usb_tcp-merged.bin`](prebuilt/heltec_v4_companion_radio_usb_tcp-merged.bin)
 - Heltec V3 (non-merged): [`prebuilt/Heltec_v3_companion_radio_usb_tcp.bin`](prebuilt/Heltec_v3_companion_radio_usb_tcp.bin)
 - Heltec V3 (merged): [`prebuilt/Heltec_v3_companion_radio_usb_tcp-merged.bin`](prebuilt/Heltec_v3_companion_radio_usb_tcp-merged.bin)
+
+Versioned snapshots (same release):
+
+- Heltec V4 (non-merged): [`prebuilt/heltec_v4_companion_radio_usb_tcp-v1.13.0-c4562de.bin`](prebuilt/heltec_v4_companion_radio_usb_tcp-v1.13.0-c4562de.bin)
+- Heltec V4 (merged): [`prebuilt/heltec_v4_companion_radio_usb_tcp-v1.13.0-c4562de-merged.bin`](prebuilt/heltec_v4_companion_radio_usb_tcp-v1.13.0-c4562de-merged.bin)
+- Heltec V3 (non-merged): [`prebuilt/Heltec_v3_companion_radio_usb_tcp-v1.13.0-c4562de.bin`](prebuilt/Heltec_v3_companion_radio_usb_tcp-v1.13.0-c4562de.bin)
+- Heltec V3 (merged): [`prebuilt/Heltec_v3_companion_radio_usb_tcp-v1.13.0-c4562de-merged.bin`](prebuilt/Heltec_v3_companion_radio_usb_tcp-v1.13.0-c4562de-merged.bin)
 
 Flash steps:
 
@@ -84,7 +95,20 @@ Flash steps:
 3. Upload your selected `.bin`.
 4. Connect via USB, BLE (PIN shown on device display), and/or TCP.
 
-Then configure WiFi in app via Meshcomod chat:
+Preferred WiFi setup method: web console (avoids typing WiFi password in chat).
+
+Web console setup:
+
+1. Open flasher **Console** while the device is connected over USB.
+2. Enter CLI Rescue mode on the device (hold user button during boot if needed).
+3. Run:
+   - `set wifi.ssid YourSSID`
+   - `set wifi.pwd YourPassword` (open network: `set wifi.pwd `)
+   - `wifi.apply`
+4. Verify:
+   - `wifi.status`
+
+Alternative WiFi setup: Meshcomod chat (works, but password appears in your local chat history):
 
 1. Open contact **Meshcomod** (favourited by default, near bottom of contacts).
 2. Run `help` to see available commands.
@@ -97,6 +121,7 @@ Then configure WiFi in app via Meshcomod chat:
    - `status` and/or `wifi status`
 
 > Meshcomod chat is local-only command handling. It does not send commands to the LoRa mesh.
+> Even though Meshcomod chat is local-only, entering WiFi password in chat may not be ideal because your client can keep local chat history.
 > WiFi companion mode is **2.4 GHz only** (not 5 GHz-only SSIDs).
 > If unsure which binary to flash, use **merged**.
 

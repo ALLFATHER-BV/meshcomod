@@ -2592,9 +2592,84 @@ void MyMesh::checkCLIRescueCmd() {
         _prefs.ble_pin = atoi(&config[4]);
         savePrefs();
         Serial.printf("  > pin is now %06d\n", _prefs.ble_pin);
+      } else if (memcmp(config, "wifi.ssid ", 10) == 0) {
+#ifdef ESP32
+#if defined(WIFI_SSID) || defined(MULTI_TRANSPORT_COMPANION)
+        const char* ssid = &config[10];
+        if (wifiConfigSetSsid((char*)ssid)) {
+          Serial.println("  > OK: wifi ssid set");
+        } else {
+          Serial.println("  Error: invalid/too long SSID");
+        }
+#else
+        Serial.println("  Error: WiFi config not enabled in this build");
+#endif
+#else
+        Serial.println("  Error: WiFi config only supported on ESP32 builds");
+#endif
+      } else if (memcmp(config, "wifi.pwd ", 9) == 0) {
+#ifdef ESP32
+#if defined(WIFI_SSID) || defined(MULTI_TRANSPORT_COMPANION)
+        const char* pwd = &config[9];
+        if (wifiConfigSetPwd((char*)pwd)) {
+          Serial.println("  > OK: wifi password set");
+        } else {
+          Serial.println("  Error: password too long");
+        }
+#else
+        Serial.println("  Error: WiFi config not enabled in this build");
+#endif
+#else
+        Serial.println("  Error: WiFi config only supported on ESP32 builds");
+#endif
       } else {
         Serial.printf("  Error: unknown config: %s\n", config);
       }
+    } else if (strcmp(cli_command, "wifi.status") == 0) {
+#ifdef ESP32
+#if defined(WIFI_SSID) || defined(MULTI_TRANSPORT_COMPANION)
+      char ssid[WIFI_CONFIG_SSID_MAX];
+      wifiConfigGetSsid(ssid, sizeof(ssid));
+      bool has_runtime = wifiConfigHasRuntime();
+      Serial.printf("  > runtime=%d ssid=%s\n", has_runtime ? 1 : 0, (ssid[0] ? ssid : "(none)"));
+      if (WiFi.status() == WL_CONNECTED) {
+        IPAddress ip = WiFi.localIP();
+        Serial.printf("  > connected=1 ip=%d.%d.%d.%d\n", ip[0], ip[1], ip[2], ip[3]);
+      } else {
+        Serial.println("  > connected=0");
+      }
+#else
+      Serial.println("  Error: WiFi config not enabled in this build");
+#endif
+#else
+      Serial.println("  Error: WiFi config only supported on ESP32 builds");
+#endif
+    } else if (strcmp(cli_command, "wifi.apply") == 0) {
+#ifdef ESP32
+#if defined(WIFI_SSID) || defined(MULTI_TRANSPORT_COMPANION)
+      if (!wifiConfigHasRuntime()) {
+        Serial.println("  Error: no runtime credentials set");
+      } else {
+        wifiConfigApply();
+        Serial.println("  > OK: reconnecting WiFi");
+      }
+#else
+      Serial.println("  Error: WiFi config not enabled in this build");
+#endif
+#else
+      Serial.println("  Error: WiFi config only supported on ESP32 builds");
+#endif
+    } else if (strcmp(cli_command, "wifi.clear") == 0) {
+#ifdef ESP32
+#if defined(WIFI_SSID) || defined(MULTI_TRANSPORT_COMPANION)
+      wifiConfigClear();
+      Serial.println("  > OK: wifi credentials cleared");
+#else
+      Serial.println("  Error: WiFi config not enabled in this build");
+#endif
+#else
+      Serial.println("  Error: WiFi config only supported on ESP32 builds");
+#endif
     } else if (strcmp(cli_command, "rebuild") == 0) {
       bool success = _store->formatFileSystem();
       if (success) {
