@@ -88,10 +88,10 @@ Prebuilt files in this repo (non-merged shown first, then merged):
 
 Versioned snapshots:
 
-- Heltec V4 (non-merged): [`prebuilt/heltec_v4_companion_radio_usb_tcp-v1.13.0-c4562de.bin`](prebuilt/heltec_v4_companion_radio_usb_tcp-v1.13.0-c4562de.bin)
-- Heltec V4 (merged): [`prebuilt/heltec_v4_companion_radio_usb_tcp-v1.13.0-c4562de-merged.bin`](prebuilt/heltec_v4_companion_radio_usb_tcp-v1.13.0-c4562de-merged.bin)
-- Heltec V3 (non-merged): [`prebuilt/Heltec_v3_companion_radio_usb_tcp-v1.13.0-c4562de.bin`](prebuilt/Heltec_v3_companion_radio_usb_tcp-v1.13.0-c4562de.bin)
-- Heltec V3 (merged): [`prebuilt/Heltec_v3_companion_radio_usb_tcp-v1.13.0-c4562de-merged.bin`](prebuilt/Heltec_v3_companion_radio_usb_tcp-v1.13.0-c4562de-merged.bin)
+- Heltec V4 (non-merged): [`prebuilt/heltec_v4_companion_radio_usb_tcp-v1.13.0-411594e.bin`](prebuilt/heltec_v4_companion_radio_usb_tcp-v1.13.0-411594e.bin)
+- Heltec V4 (merged): [`prebuilt/heltec_v4_companion_radio_usb_tcp-v1.13.0-411594e-merged.bin`](prebuilt/heltec_v4_companion_radio_usb_tcp-v1.13.0-411594e-merged.bin)
+- Heltec V3 (non-merged): [`prebuilt/Heltec_v3_companion_radio_usb_tcp-v1.13.0-411594e.bin`](prebuilt/Heltec_v3_companion_radio_usb_tcp-v1.13.0-411594e.bin)
+- Heltec V3 (merged): [`prebuilt/Heltec_v3_companion_radio_usb_tcp-v1.13.0-411594e-merged.bin`](prebuilt/Heltec_v3_companion_radio_usb_tcp-v1.13.0-411594e-merged.bin)
 
 Flash steps:
 
