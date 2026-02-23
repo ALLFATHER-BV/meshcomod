@@ -104,6 +104,24 @@ Then configure WiFi in app via Meshcomod chat:
 
 Use this path if you want custom code/build flags.
 
+Dependencies:
+
+- `git`
+- `python3` + `pip`
+- `platformio` (either `pio` in PATH, or use `python3 -m platformio`)
+
+OS notes:
+
+- macOS: install Xcode Command Line Tools if needed (`xcode-select --install`), then install PlatformIO with pip.
+- Linux (Debian/Ubuntu): install tools with `sudo apt update && sudo apt install -y git python3 python3-pip`.
+- Windows: recommended via **WSL** (Ubuntu) and follow the Linux steps above.
+
+Quick install example:
+
+```bash
+python3 -m pip install --user -U platformio
+```
+
 Clone and enter the repo:
 
 ```bash
