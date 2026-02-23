@@ -72,11 +72,16 @@ Upstream: **[github.com/meshcore-dev/MeshCore](https://github.com/meshcore-dev/M
 Otherwise this is the same codebase as MeshCore; we sync from upstream and add our addon customizations on top.
 
 
+<p align="center">
+  <img width="397" height="79" alt="image" src="https://github.com/user-attachments/assets/02e2ddd4-a910-499d-8714-1dedf4b856a6" />
+</p>
 
-<img width="397" height="79" alt="image" src="https://github.com/user-attachments/assets/02e2ddd4-a910-499d-8714-1dedf4b856a6" />
 ## HOW TO USE
 
-<img width="395" height="84" alt="image" src="https://github.com/user-attachments/assets/cd496321-1aad-425f-b8cf-ccba2cc9478d" />
+<p align="center">
+  <img width="395" height="84" alt="image" src="https://github.com/user-attachments/assets/cd496321-1aad-425f-b8cf-ccba2cc9478d" />
+</p>
+
 ### EASY (recommended)
 
 Flash a prebuilt firmware. No local build needed.
