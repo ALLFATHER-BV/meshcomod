@@ -105,7 +105,7 @@ Web console setup:
 3. Verify:
    - `get wifi.status` (alias: `wifi.status`)
 
-If commands do not respond in normal mode, enter CLI Rescue mode (long press during first ~8 seconds after boot) and retry.
+You do **not** need CLI Rescue/recovery mode for these WiFi console commands. In normal runtime, just connect over USB, open Console, and run them directly.
 
 Alternative WiFi setup: Meshcomod chat (works, but password appears in your local chat history):
 

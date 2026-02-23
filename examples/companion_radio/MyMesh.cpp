@@ -2571,20 +2571,24 @@ void MyMesh::enterCLIRescue() {
 
 void MyMesh::checkCLIRescueCmd() {
   int len = strlen(cli_command);
+  bool line_complete = false;
   while (Serial.available() && len < sizeof(cli_command)-1) {
     char c = Serial.read();
-    if (c != '\n') {
+    if (c == '\r' || c == '\n') {
+      line_complete = true;
+      Serial.print(c);  // echo
+      break;
+    } else {
       cli_command[len++] = c;
       cli_command[len] = 0;
+      Serial.print(c);  // echo
     }
-    Serial.print(c);  // echo
   }
   if (len == sizeof(cli_command)-1) {  // command buffer full
-    cli_command[sizeof(cli_command)-1] = '\r';
+    line_complete = true;
   }
 
-  if (len > 0 && cli_command[len - 1] == '\r') {  // received complete line
-    cli_command[len - 1] = 0;  // replace newline with C string null terminator
+  if (line_complete && len > 0) {  // received complete line
 
     if (memcmp(cli_command, "set ", 4) == 0) {
       const char* config = &cli_command[4];
