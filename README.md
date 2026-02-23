@@ -73,16 +73,15 @@ Otherwise this is the same codebase as MeshCore; we sync from upstream and add o
 
 
 <p align="center">
-  <img width="397" height="79" alt="image" src="https://github.com/user-attachments/assets/02e2ddd4-a910-499d-8714-1dedf4b856a6" />
+  <img width="600" height="170" alt="image" src="https://github.com/user-attachments/assets/02e2ddd4-a910-499d-8714-1dedf4b856a6" />
 </p>
 
-## HOW TO USE
 
 <p align="center">
   <img width="395" height="84" alt="image" src="https://github.com/user-attachments/assets/cd496321-1aad-425f-b8cf-ccba2cc9478d" />
 </p>
 
-### EASY (recommended)
+
 
 Flash a prebuilt firmware. No local build needed.
 
@@ -132,9 +131,10 @@ Alternative WiFi setup: Meshcomod chat (works, but password appears in your loca
 > If unsure which binary to flash, use **merged**.
 > The `prebuilt/` filenames above always point to the latest build for each target. Older snapshot `.bin` files are removed to avoid confusion.
 
-<img width="395" height="77" alt="image" src="https://github.com/user-attachments/assets/92a0ea2d-e1f1-4e8b-82f0-705a1f826fd1" />
 
-### HARD (build yourself)
+<p align="center">
+  <img width="395" height="84" alt="image" src="https://github.com/user-attachments/assets/92a0ea2d-e1f1-4e8b-82f0-705a1f826fd1" />
+</p>
 
 Use this path if you want custom code/build flags.
 
