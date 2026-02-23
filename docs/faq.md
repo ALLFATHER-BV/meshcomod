@@ -83,8 +83,9 @@ A list of frequently-asked questions and answers for MeshCore
   - [7.4. Q: are the MeshCore logo and font available?](#74-q-are-the-meshcore-logo-and-font-available)
   - [7.5. Q: What is the format of a contact or channel QR code?](#75-q-what-is-the-format-of-a-contact-or-channel-qr-code)
   - [7.6. Q: How do I connect to the companion via WIFI, e.g. using a heltec v3?](#76-q-how-do-i-connect-to-the-companion-via-wifi-eg-using-a-heltec-v3)
-  - [7.7. Q: I have a Station G2, or a Heltec V4, or an Ikoka Stick, or a radio with a EByte E22-900M30S or a E22-900M33S module, what should their transmit power be set to?](#77-q-i-have-a-station-g2-or-a-heltec-v4-or-an-ikoka-stick-or-a-radio-with-a-ebyte-e22-900m30s-or-a-e22-900m33s-module-what-should-their-transmit-power-be-set-to)
-- [| | High Output | 22 dBm | 28 dBm | |](#--high-output--22-dbm--28-dbm--)
+  - [7.7. Q: How do I set WiFi from the app without reflashing (Meshcomod)?](#77-q-how-do-i-set-wifi-from-the-app-without-reflashing-meshcomod)
+  - [7.8. Q: I have a Station G2, or a Heltec V4, or an Ikoka Stick, or a radio with a EByte E22-900M30S or a E22-900M33S module, what should their transmit power be set to?](#78-q-i-have-a-station-g2-or-a-heltec-v4-or-an-ikoka-stick-or-a-radio-with-a-ebyte-e22-900m30s-or-a-e22-900m33s-module-what-should-their-transmit-power-be-set-to)
+  - [| | High Output | 22 dBm | 28 dBm | |](#--high-output--22-dbm--28-dbm--)
 
 ## 1. Introduction
 
@@ -682,7 +683,8 @@ You can get the epoch time on <https://www.epochconverter.com/> and use it to se
 
 ### 6.5. Q: I can't connect via Bluetooth, what is the Bluetooth pairing code?
 
-**A:** the default Bluetooth pairing code is `123456`
+**A:** On meshcomod companion builds, use the Bluetooth pairing PIN shown on the device display (Bluetooth tab).
+Do not assume a fixed `123456` PIN.
 
 ### 6.6. Q: My Heltec V3 keeps disconnecting from my smartphone.  It can't hold a solid Bluetooth connection.
 
@@ -794,14 +796,58 @@ where `&type` is:
 
 ### 7.6. Q: How do I connect to the companion via WIFI, e.g. using a heltec v3?
  **A:**
-WiFi firmware requires you to compile it yourself, as you need to set the wifi ssid and password.
-Set the environment variables with quotes and then build/flash:
-`export WIFI_SSID="Your SSID" WIFI_PWD="YourPassword"`
-For open networks use:
-`export WIFI_SSID="Your SSID" WIFI_PWD=""`
+You have two options:
+
+1. **No build required (recommended for most users):**
+   - Flash a meshcomod companion firmware `.bin` (merged image recommended, especially for first flash or if boot/display issues occur).
+   - Configure WiFi from the app using the **Meshcomod** chat commands (see [7.7](#77-q-how-do-i-set-wifi-from-the-app-without-reflashing-meshcomod)).
+
+2. **Build from source (optional):**
+   - Set build-time variables:
+     - `export WIFI_SSID="Your SSID" WIFI_PWD="YourPassword"`
+   - For open networks:
+     - `export WIFI_SSID="Your SSID" WIFI_PWD=""`
+
 Note: WiFi companion mode supports **2.4 GHz** only (not 5 GHz-only SSIDs).
 
-### 7.7. Q: I have a Station G2, or a Heltec V4, or an Ikoka Stick, or a radio with a EByte E22-900M30S or a E22-900M33S module, what should their transmit power be set to?
+On meshcomod (Heltec V3/V4 USB+BLE+TCP) builds you can also set WiFi from the app using the **Meshcomod** contact; see [7.7](#77-q-how-do-i-set-wifi-from-the-app-without-reflashing-meshcomod).
+
+### 7.7. Q: How do I set WiFi from the app without reflashing (Meshcomod)?
+ **A:**
+On meshcomod companion firmware (e.g. Heltec V4/V3 USB+BLE+TCP), a synthetic contact **Meshcomod** appears in the contact list.
+Meshcomod is favourited by default and appears at the bottom of contacts.
+
+Open a chat with Meshcomod and send commands. Meshcomod chat is **local-only**:
+- commands are handled on-device
+- replies are generated on-device
+- nothing in Meshcomod chat is sent over LoRa mesh
+
+Current command set:
+
+- `help` — show all Meshcomod commands.
+- `status` — show companion status summary (USB/BLE/TCP/WiFi).
+
+WiFi:
+- `wifi set ssid <SSID>` — set SSID (use quotes for spaces, e.g. `wifi set ssid "My Home WiFi"`).
+- `wifi set pwd <password>` — set password (open network: `wifi set pwd ""`).
+- `wifi scan` — scan nearby SSIDs and list indexed results.
+- `wifi use <n>` — set SSID from the latest scan list index.
+- `wifi status` — show WiFi credential/runtime connection status.
+- `wifi apply` — reconnect using stored credentials.
+- `wifi clear` — clear stored runtime WiFi credentials.
+
+Transport control:
+- `tcp on`, `tcp off`, `tcp status`
+- `ble on`, `ble off`, `ble status`
+
+Safety confirmation:
+- `tcp off` and `ble off` do not apply immediately.
+- Device warns you about potential loss of wireless access and asks for confirmation.
+- Reply `ok` to confirm, or `cancel` to abort.
+
+Credentials are stored in NVS and persist across reboots. WiFi is **2.4 GHz only**; 5 GHz–only networks are not supported.
+
+### 7.8. Q: I have a Station G2, or a Heltec V4, or an Ikoka Stick, or a radio with a EByte E22-900M30S or a E22-900M33S module, what should their transmit power be set to?
  **A:**
 For companion radios, you can set these radios' transmit power in the smartphone app.  For repeater and room server radios, you can set their transmit power using the command line command `set tx`.  You can get their current value using command line comand `get tx`
 

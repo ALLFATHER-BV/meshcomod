@@ -340,8 +340,14 @@ public:
           snprintf(tmp, sizeof(tmp), "SSID: %.32s", WiFi.SSID().c_str());
           display.drawTextCentered(display.width() / 2, y, tmp);
         } else {
+          String ssid = WiFi.SSID();
+          wl_status_t ws = WiFi.status();
           display.setColor(DisplayDriver::RED);
-          display.drawTextCentered(display.width() / 2, y, "WiFi connecting...");
+          if (ssid.length() == 0 || ws == WL_NO_SSID_AVAIL) {
+            display.drawTextCentered(display.width() / 2, y, "WiFi not configured");
+          } else {
+            display.drawTextCentered(display.width() / 2, y, "WiFi connecting...");
+          }
           y += 11;
           display.drawTextCentered(display.width() / 2, y, "IP: 0.0.0.0");
         }

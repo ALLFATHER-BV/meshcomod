@@ -32,6 +32,9 @@ static uint32_t _atoi(const char* sp) {
 #elif defined(ESP32)
   #include <SPIFFS.h>
   DataStore store(SPIFFS, rtc_clock);
+  #if defined(WIFI_SSID) || defined(MULTI_TRANSPORT_COMPANION)
+    #include "WiFiConfig.h"
+  #endif
 #endif
 
 #ifdef ESP32
@@ -211,6 +214,10 @@ void setup() {
     #endif
   );
 
+#if defined(WIFI_SSID) || defined(MULTI_TRANSPORT_COMPANION)
+  wifiConfigBegin();
+#endif
+
 #ifdef MULTI_TRANSPORT_COMPANION
   board.setInhibitSleep(true);
   // Defer WiFi until first loop() so setup() always completes (display + USB come up even if WiFi would crash/hang)
@@ -221,7 +228,15 @@ void setup() {
 #endif
 #elif defined(WIFI_SSID)
   board.setInhibitSleep(true);   // prevent sleep when WiFi is active
-  WiFi.begin(WIFI_SSID, WIFI_PWD);
+  if (wifiConfigHasRuntime()) {
+    char ssid[WIFI_CONFIG_SSID_MAX];
+    char pwd[WIFI_CONFIG_PWD_MAX];
+    wifiConfigGetSsid(ssid, sizeof(ssid));
+    wifiConfigGetPwd(pwd, sizeof(pwd));
+    WiFi.begin(ssid, pwd[0] ? pwd : nullptr);
+  } else {
+    WiFi.begin(WIFI_SSID, WIFI_PWD);
+  }
   serial_interface.begin(TCP_PORT);
 #elif defined(BLE_PIN_CODE)
   serial_interface.begin(BLE_NAME_PREFIX, the_mesh.getNodePrefs()->node_name, the_mesh.getBLEPin());
@@ -249,8 +264,15 @@ void loop() {
   static bool wifi_started = false;
   if (!wifi_started) {
     wifi_started = true;
-    // Only start WiFi if credentials look set (avoid hang/crash with empty inject)
-    if (strlen(WIFI_SSID) > 0) {
+    if (wifiConfigHasRuntime()) {
+      char ssid[WIFI_CONFIG_SSID_MAX];
+      char pwd[WIFI_CONFIG_PWD_MAX];
+      wifiConfigGetSsid(ssid, sizeof(ssid));
+      wifiConfigGetPwd(pwd, sizeof(pwd));
+      if (strlen(ssid) > 0) {
+        WiFi.begin(ssid, pwd[0] ? pwd : nullptr);
+      }
+    } else if (strlen(WIFI_SSID) > 0) {
       WiFi.begin(WIFI_SSID, WIFI_PWD);
     }
   }

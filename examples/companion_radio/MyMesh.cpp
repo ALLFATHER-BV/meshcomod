@@ -3,6 +3,13 @@
 #include <Arduino.h> // needed for PlatformIO
 #include <Mesh.h>
 #include <string.h>
+#include <helpers/AdvertDataHelpers.h>
+#include "WiFiConfig.h"
+#ifdef ESP32
+#if defined(WIFI_SSID) || defined(MULTI_TRANSPORT_COMPANION)
+#include <WiFi.h>
+#endif
+#endif
 
 #define CMD_APP_START                 1
 #define CMD_SEND_TXT_MSG              2
@@ -156,6 +163,103 @@ static SyncDebugCounters g_sync_dbg = {0, 0, 0, 0, 0, 0};
 #define AUTO_ADD_ROOM_SERVER      (1 << 3)  // 0x08 - auto-add Room Server (ADV_TYPE_ROOM)
 #define AUTO_ADD_SENSOR           (1 << 4)  // 0x10 - auto-add Sensor (ADV_TYPE_SENSOR)
 
+#ifdef ESP32
+#if defined(WIFI_SSID) || defined(MULTI_TRANSPORT_COMPANION)
+#define MESHCOMOD_WIFI_SCAN_MAX 12
+static char s_meshcomod_scan_ssids[MESHCOMOD_WIFI_SCAN_MAX][WIFI_CONFIG_SSID_MAX];
+static int s_meshcomod_scan_count = 0;
+#endif
+#endif
+static const char* kMeshcomodHelpMsg =
+  "help\n"
+  "status\n"
+  "wifi scan\n"
+  "wifi use <n>\n"
+  "wifi set ssid <v>\n"
+  "wifi set pwd <v>\n"
+  "wifi status\n"
+  "wifi apply\n"
+  "wifi clear\n"
+  "tcp on\n"
+  "tcp off\n"
+  "tcp status\n"
+  "ble on\n"
+  "ble off\n"
+  "ble status";
+
+#define MESHCOMOD_CMD_CACHE_SIZE 6
+struct MeshcomodCmdCacheEntry {
+  uint32_t ts;
+  uint32_t seen_ms;
+  char text[128];
+};
+static MeshcomodCmdCacheEntry s_meshcomod_cmd_cache[MESHCOMOD_CMD_CACHE_SIZE] = {};
+static int s_meshcomod_cmd_cache_next = 0;
+static uint32_t s_meshcomod_last_reply_ts = 0;
+
+enum MeshcomodPendingAction {
+  MESHCOMOD_PENDING_NONE = 0,
+  MESHCOMOD_PENDING_TCP_OFF = 1,
+  MESHCOMOD_PENDING_BLE_OFF = 2,
+};
+static MeshcomodPendingAction s_meshcomod_pending_action = MESHCOMOD_PENDING_NONE;
+static uint32_t s_meshcomod_pending_until_ms = 0;
+
+static char* trimWsInPlace(char* s) {
+  if (!s) return s;
+  while (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n') s++;
+  int n = (int)strlen(s);
+  while (n > 0) {
+    char c = s[n - 1];
+    if (c == ' ' || c == '\t' || c == '\r' || c == '\n') {
+      s[n - 1] = '\0';
+      n--;
+    } else {
+      break;
+    }
+  }
+  return s;
+}
+
+static char* unquoteInPlace(char* s) {
+  s = trimWsInPlace(s);
+  if (!s) return s;
+  int n = (int)strlen(s);
+  if (n >= 2) {
+    char q = s[0];
+    if ((q == '"' || q == '\'') && s[n - 1] == q) {
+      s[n - 1] = '\0';
+      s++;
+    }
+  }
+  return s;
+}
+
+static bool isMeshcomodDuplicate(uint32_t msg_ts, const char* text) {
+  if (!text || !*text) return false;
+  uint32_t now_ms = millis();
+  for (int i = 0; i < MESHCOMOD_CMD_CACHE_SIZE; i++) {
+    const MeshcomodCmdCacheEntry& e = s_meshcomod_cmd_cache[i];
+    if (e.ts == 0 || e.text[0] == '\0') continue;
+    // Primary dedupe key: app message timestamp + same text
+    if (e.ts == msg_ts && strcmp(e.text, text) == 0) return true;
+    // Secondary dedupe: same text repeated very quickly with a new timestamp
+    if (strcmp(e.text, text) == 0 && (now_ms - e.seen_ms) < 1800UL) return true;
+  }
+  return false;
+}
+
+static void rememberMeshcomodCommand(uint32_t msg_ts, const char* text) {
+  MeshcomodCmdCacheEntry& e = s_meshcomod_cmd_cache[s_meshcomod_cmd_cache_next];
+  e.ts = msg_ts;
+  e.seen_ms = millis();
+  if (text)
+    StrHelper::strzcpy(e.text, text, sizeof(e.text));
+  else
+    e.text[0] = '\0';
+  s_meshcomod_cmd_cache_next = (s_meshcomod_cmd_cache_next + 1) % MESHCOMOD_CMD_CACHE_SIZE;
+}
+
 void MyMesh::writeOKFrame() {
   uint8_t buf[1];
   buf[0] = RESP_CODE_OK;
@@ -198,6 +302,401 @@ void MyMesh::writeContactRespFrame(uint8_t code, const ContactInfo &contact, boo
     _serial->writeFrameToAll(out_frame, i);
   else
     _serial->writeFrame(out_frame, i);
+}
+
+const uint8_t MyMesh::MESHCOMOD_PUB_KEY_PREFIX[6] = { 0x4D, 0x45, 0x53, 0x48, 0x43, 0x4D }; // "MESHCM"
+
+void MyMesh::getMeshcomodContact(ContactInfo& dest) {
+  memset(&dest, 0, sizeof(dest));
+  memcpy(dest.id.pub_key, MESHCOMOD_PUB_KEY_PREFIX, 6);
+  StrHelper::strncpy(dest.name, MESHCOMOD_NAME, sizeof(dest.name) - 1);
+  dest.type = ADV_TYPE_CHAT;
+  dest.flags = 0;
+  dest.out_path_len = -1;
+  dest.last_advert_timestamp = 0;
+  dest.lastmod = 0;
+}
+
+bool MyMesh::isMeshcomodRecipient(const uint8_t* pub_key_prefix_6) const {
+  return pub_key_prefix_6 && memcmp(pub_key_prefix_6, MESHCOMOD_PUB_KEY_PREFIX, 6) == 0;
+}
+
+void MyMesh::pushMeshcomodReply(const char* text, bool immediate_current) {
+  if (!text) return;
+  int total_len = (int)strlen(text);
+  if (total_len <= 0) return;
+
+  // Header bytes before message text:
+  // code(1), snr/reserved(3), sender_prefix(6), path_len(1), txt_type(1), timestamp(4) = 16
+  const int header_len = 16;
+  const int max_text_per_frame = MAX_FRAME_SIZE - header_len;
+  if (max_text_per_frame <= 0) return;
+
+  int pos = 0;
+  while (pos < total_len) {
+    int remaining = total_len - pos;
+    int take = remaining < max_text_per_frame ? remaining : max_text_per_frame;
+
+    // Prefer splitting on newline so command/help lines stay intact.
+    if (remaining > max_text_per_frame) {
+      int split = -1;
+      for (int k = take - 1; k >= 0; k--) {
+        char c = text[pos + k];
+        if (c == '\n') {
+          split = k + 1;
+          break;
+        }
+      }
+      // Always split at previous newline when available.
+      // If no newline exists in this window, this is a single very long line and we must hard-split.
+      if (split > 0) take = split;
+    }
+
+    int j = 0;
+    out_frame[j++] = RESP_CODE_CONTACT_MSG_RECV_V3;
+    out_frame[j++] = 0;
+    out_frame[j++] = 0;
+    out_frame[j++] = 0;
+    memcpy(&out_frame[j], MESHCOMOD_PUB_KEY_PREFIX, 6);
+    j += 6;
+    out_frame[j++] = 0xFF;
+    out_frame[j++] = TXT_TYPE_PLAIN;
+    uint32_t ts = getRTCClock()->getCurrentTimeUnique();
+    // Some clients coalesce messages by sender+timestamp; enforce strictly monotonic ts.
+    if (ts <= s_meshcomod_last_reply_ts) ts = s_meshcomod_last_reply_ts + 1;
+    s_meshcomod_last_reply_ts = ts;
+    memcpy(&out_frame[j], &ts, 4);
+    j += 4;
+
+    memcpy(&out_frame[j], &text[pos], take);
+    j += take;
+
+    if (immediate_current && _serial->isConnected()) {
+      // Immediate emit to current client connection (no waiting for sync polling).
+      _serial->writeFrame(out_frame, j);
+    }
+    addToHistoryRing(out_frame, j);
+    if (_serial->isConnected()) {
+      uint8_t tickle[1] = { PUSH_CODE_MSG_WAITING };
+      _serial->writeFrameToAll(tickle, 1);
+    }
+    pos += take;
+  }
+}
+
+bool MyMesh::handleMeshcomodCommand(const char* text, int text_len) {
+  if (!text || text_len <= 0) {
+    pushMeshcomodReply(kMeshcomodHelpMsg);
+    return true;
+  }
+  char buf[128];
+  if ((size_t)text_len >= sizeof(buf)) text_len = (int)sizeof(buf) - 1;
+  memcpy(buf, text, (size_t)text_len);
+  buf[text_len] = '\0';
+
+  const char* p = buf;
+  while (*p == ' ' || *p == '\t') p++;
+
+  // Safety confirmation flow for disruptive transport-off commands.
+  if (s_meshcomod_pending_action != MESHCOMOD_PENDING_NONE) {
+    uint32_t now_ms = millis();
+    if ((int32_t)(s_meshcomod_pending_until_ms - now_ms) < 0) {
+      s_meshcomod_pending_action = MESHCOMOD_PENDING_NONE;
+      s_meshcomod_pending_until_ms = 0;
+      pushMeshcomodReply("pending confirmation expired");
+    } else if (strncasecmp(p, "ok", 2) == 0 && (p[2] == '\0' || p[2] == ' ' || p[2] == '\t')) {
+      if (s_meshcomod_pending_action == MESHCOMOD_PENDING_TCP_OFF) {
+        _serial->disableTcp();
+        pushMeshcomodReply("OK tcp=off");
+      } else if (s_meshcomod_pending_action == MESHCOMOD_PENDING_BLE_OFF) {
+        _serial->disableBle();
+        pushMeshcomodReply("OK ble=off");
+      }
+      s_meshcomod_pending_action = MESHCOMOD_PENDING_NONE;
+      s_meshcomod_pending_until_ms = 0;
+      return true;
+    } else if (strncasecmp(p, "cancel", 6) == 0 && (p[6] == '\0' || p[6] == ' ' || p[6] == '\t')) {
+      s_meshcomod_pending_action = MESHCOMOD_PENDING_NONE;
+      s_meshcomod_pending_until_ms = 0;
+      pushMeshcomodReply("cancelled");
+      return true;
+    }
+  }
+
+  if (strncasecmp(p, "help", 4) == 0 && (p[4] == '\0' || p[4] == ' ' || p[4] == '\t')) {
+    pushMeshcomodReply(kMeshcomodHelpMsg);
+    return true;
+  }
+
+  if (strncasecmp(p, "status", 6) == 0 && (p[6] == '\0' || p[6] == ' ' || p[6] == '\t')) {
+    const char* tcp = _serial->isTcpEnabled() ? "on" : "off";
+    char ble[32];
+    if (_serial->hasBleCapability()) {
+      if (_serial->isBleEnabled()) {
+        char peer[24];
+        if (_serial->getBlePeerAddress(peer, sizeof(peer)))
+          snprintf(ble, sizeof(ble), "on (%s)", peer);
+        else
+          snprintf(ble, sizeof(ble), "on");
+      } else {
+        snprintf(ble, sizeof(ble), "off");
+      }
+    } else {
+      snprintf(ble, sizeof(ble), "n/a");
+    }
+#ifdef ESP32
+#if defined(WIFI_SSID) || defined(MULTI_TRANSPORT_COMPANION)
+    char wifi[120];
+    if (WiFi.status() == WL_CONNECTED) {
+      IPAddress ip = WiFi.localIP();
+      String ssid = WiFi.SSID();
+      snprintf(wifi, sizeof(wifi), "wifi: connected\nssid: %s\nip: %d.%d.%d.%d",
+               ssid.length() ? ssid.c_str() : "(unknown)", ip[0], ip[1], ip[2], ip[3]);
+    } else {
+      snprintf(wifi, sizeof(wifi), "wifi: disconnected");
+    }
+    char status[240];
+    snprintf(status, sizeof(status), "companion status:\nusb: on\nble: %s\ntcp: %s\n%s", ble, tcp, wifi);
+    pushMeshcomodReply(status);
+    return true;
+#endif
+#endif
+    char status_basic[160];
+    snprintf(status_basic, sizeof(status_basic), "companion status:\nusb: on\nble: %s\ntcp: %s", ble, tcp);
+    pushMeshcomodReply(status_basic);
+    return true;
+  }
+
+  if (strncasecmp(p, "tcp", 3) == 0 && (p[3] == '\0' || p[3] == ' ' || p[3] == '\t')) {
+    p += 3;
+    while (*p == ' ' || *p == '\t') p++;
+    if (strncasecmp(p, "on", 2) == 0 && (p[2] == '\0' || p[2] == ' ' || p[2] == '\t')) {
+      _serial->enableTcp();
+      pushMeshcomodReply("OK\ntcp: on");
+      return true;
+    }
+    if (strncasecmp(p, "off", 3) == 0 && (p[3] == '\0' || p[3] == ' ' || p[3] == '\t')) {
+      s_meshcomod_pending_action = MESHCOMOD_PENDING_TCP_OFF;
+      s_meshcomod_pending_until_ms = millis() + 30000UL;
+      pushMeshcomodReply("warning: turning TCP off may remove wireless access to this companion.");
+      pushMeshcomodReply("if BLE is also off, you will need physical USB access.");
+      pushMeshcomodReply("reply 'ok' within 30s to confirm, or 'cancel'.");
+      return true;
+    }
+    if (strncasecmp(p, "status", 6) == 0 && (p[6] == '\0' || p[6] == ' ' || p[6] == '\t')) {
+      pushMeshcomodReply(_serial->isTcpEnabled() ? "tcp: on" : "tcp: off");
+      return true;
+    }
+    pushMeshcomodReply("usage:\n- tcp on\n- tcp off\n- tcp status");
+    return true;
+  }
+
+  if (strncasecmp(p, "ble", 3) == 0 && (p[3] == '\0' || p[3] == ' ' || p[3] == '\t')) {
+    if (!_serial->hasBleCapability()) {
+      pushMeshcomodReply("ble=n/a");
+      return true;
+    }
+    p += 3;
+    while (*p == ' ' || *p == '\t') p++;
+    if (strncasecmp(p, "on", 2) == 0 && (p[2] == '\0' || p[2] == ' ' || p[2] == '\t')) {
+      _serial->enableBle();
+      pushMeshcomodReply("OK\nble: on");
+      return true;
+    }
+    if (strncasecmp(p, "off", 3) == 0 && (p[3] == '\0' || p[3] == ' ' || p[3] == '\t')) {
+      s_meshcomod_pending_action = MESHCOMOD_PENDING_BLE_OFF;
+      s_meshcomod_pending_until_ms = millis() + 30000UL;
+      pushMeshcomodReply("warning: turning BLE off may remove wireless access to this companion.");
+      pushMeshcomodReply("if TCP is also off, you will need physical USB access.");
+      pushMeshcomodReply("reply 'ok' within 30s to confirm, or 'cancel'.");
+      return true;
+    }
+    if (strncasecmp(p, "status", 6) == 0 && (p[6] == '\0' || p[6] == ' ' || p[6] == '\t')) {
+      if (_serial->isBleEnabled()) {
+        char peer[24];
+        if (_serial->getBlePeerAddress(peer, sizeof(peer))) {
+          char msg[56];
+          snprintf(msg, sizeof(msg), "ble: on\npeer: %s", peer);
+          pushMeshcomodReply(msg);
+        } else {
+          pushMeshcomodReply("ble: on");
+        }
+      } else {
+        pushMeshcomodReply("ble: off");
+      }
+      return true;
+    }
+    pushMeshcomodReply("usage:\n- ble on\n- ble off\n- ble status");
+    return true;
+  }
+
+  if (strncasecmp(p, "wifi", 4) != 0 || (p[4] != '\0' && p[4] != ' ' && p[4] != '\t')) {
+    pushMeshcomodReply(kMeshcomodHelpMsg);
+    return true;
+  }
+  p += 4;
+  while (*p == ' ' || *p == '\t') p++;
+
+#ifdef ESP32
+#if defined(WIFI_SSID) || defined(MULTI_TRANSPORT_COMPANION)
+  if (strncasecmp(p, "set", 3) == 0 && (p[3] == '\0' || p[3] == ' ' || p[3] == '\t')) {
+    p += 3;
+    while (*p == ' ' || *p == '\t') p++;
+    if (strncasecmp(p, "ssid", 4) == 0 && (p[4] == '\0' || p[4] == ' ' || p[4] == '\t')) {
+      p += 4;
+      while (*p == ' ' || *p == '\t') p++;
+      char* ssid = unquoteInPlace((char*)p);
+      if (wifiConfigSetSsid(ssid)) {
+        char ok[168];
+        snprintf(ok, sizeof(ok),
+                 "OK ssid=\"%s\"\nnext: wifi set pwd \"<password>\" (or \"\" for open)\nthen: wifi apply",
+                 ssid);
+        pushMeshcomodReply(ok);
+      } else {
+        pushMeshcomodReply("error: ssid too long or invalid");
+      }
+      return true;
+    }
+    if (strncasecmp(p, "pwd", 3) == 0 && (p[3] == '\0' || p[3] == ' ' || p[3] == '\t')) {
+      p += 3;
+      while (*p == ' ' || *p == '\t') p++;
+      char* pwd = unquoteInPlace((char*)p);
+      if (wifiConfigSetPwd(pwd)) {
+        pushMeshcomodReply("OK\npwd set\nnext: wifi apply");
+      } else {
+        pushMeshcomodReply("error: password too long");
+      }
+      return true;
+    }
+    pushMeshcomodReply("error: usage wifi set ssid|pwd \"<value>\"");
+    return true;
+  }
+  if (strncasecmp(p, "scan", 4) == 0 && (p[4] == '\0' || p[4] == ' ' || p[4] == '\t')) {
+    // Ensure STA is fully up before scan; disconnected STA needs a bit more settle time.
+    wifi_mode_t mode = WiFi.getMode();
+    if ((mode & WIFI_MODE_STA) == 0) {
+      WiFi.mode(WIFI_STA);
+      delay(180);
+    } else {
+      delay(40);
+    }
+    WiFi.scanDelete();
+    s_meshcomod_scan_count = 0;
+    int found = WiFi.scanNetworks(false, true, false, 300, 0);
+    // On some ESP32 states, first scan right after STA bring-up can fail when not connected.
+    if (found <= 0 && WiFi.status() != WL_CONNECTED) {
+      WiFi.disconnect(false, false);
+      delay(120);
+      found = WiFi.scanNetworks(false, true, false, 300, 0);
+    }
+    if (found <= 0) {
+      pushMeshcomodReply("scan: no networks (2.4GHz only)");
+      WiFi.scanDelete();
+      return true;
+    }
+    String scanMsg = "scan results:";
+    for (int idx = 0; idx < found && s_meshcomod_scan_count < MESHCOMOD_WIFI_SCAN_MAX; idx++) {
+      String ssid = WiFi.SSID(idx);
+      if (ssid.length() <= 0) continue;
+      bool dup = false;
+      for (int k = 0; k < s_meshcomod_scan_count; k++) {
+        if (strcmp(s_meshcomod_scan_ssids[k], ssid.c_str()) == 0) {
+          dup = true;
+          break;
+        }
+      }
+      if (dup) continue;
+      StrHelper::strzcpy(s_meshcomod_scan_ssids[s_meshcomod_scan_count], ssid.c_str(), WIFI_CONFIG_SSID_MAX);
+      int ch = WiFi.channel(idx);
+      const char* band = (ch >= 1 && ch <= 14) ? "2.4GHz" : "5GHz";
+      char line[96];
+      snprintf(line, sizeof(line), "\n%d) %s [%s]", s_meshcomod_scan_count + 1, s_meshcomod_scan_ssids[s_meshcomod_scan_count], band);
+      scanMsg += line;
+      s_meshcomod_scan_count++;
+    }
+    // Fallback: if scan didn't surface any visible SSIDs, still show connected SSID.
+    if (s_meshcomod_scan_count == 0) {
+      String curr = WiFi.SSID();
+      if (curr.length() > 0) {
+        StrHelper::strzcpy(s_meshcomod_scan_ssids[0], curr.c_str(), WIFI_CONFIG_SSID_MAX);
+        s_meshcomod_scan_count = 1;
+        int ch = WiFi.channel();
+        const char* band = (ch >= 1 && ch <= 14) ? "2.4GHz" : "5GHz";
+        char line[96];
+        snprintf(line, sizeof(line), "\n1) %s [%s] (connected)", s_meshcomod_scan_ssids[0], band);
+        scanMsg += line;
+      }
+    }
+    if (s_meshcomod_scan_count == 0) {
+      pushMeshcomodReply("scan: no usable SSIDs");
+      pushMeshcomodReply("tip: try wifi status or move closer to AP");
+    } else {
+      scanMsg += "\nselect SSID: wifi use <n>";
+      scanMsg += "\nthen set password: wifi set pwd \"<password>\" and wifi apply";
+      pushMeshcomodReply(scanMsg.c_str());
+    }
+    WiFi.scanDelete();
+    return true;
+  }
+  if (strncasecmp(p, "use", 3) == 0 && (p[3] == '\0' || p[3] == ' ' || p[3] == '\t')) {
+    p += 3;
+    while (*p == ' ' || *p == '\t') p++;
+    int n = atoi(p);
+    if (s_meshcomod_scan_count <= 0) {
+      pushMeshcomodReply("error: no scan results; run wifi scan");
+      return true;
+    }
+    if (n < 1 || n > s_meshcomod_scan_count) {
+      pushMeshcomodReply("error: invalid index");
+      return true;
+    }
+    if (!wifiConfigSetSsid(s_meshcomod_scan_ssids[n - 1])) {
+      pushMeshcomodReply("error: ssid too long or invalid");
+      return true;
+    }
+    char line[192];
+    snprintf(line, sizeof(line), "OK ssid=\"%s\"\nnext: wifi set pwd \"<password>\" (or \"\" for open)\nthen: wifi apply", s_meshcomod_scan_ssids[n - 1]);
+    pushMeshcomodReply(line);
+    return true;
+  }
+  if (strncasecmp(p, "status", 6) == 0 && (p[6] == '\0' || p[6] == ' ' || p[6] == '\t')) {
+    char ssid[WIFI_CONFIG_SSID_MAX];
+    wifiConfigGetSsid(ssid, sizeof(ssid));
+    bool has_runtime = wifiConfigHasRuntime();
+    char reply[96];
+    if (!has_runtime || ssid[0] == '\0') {
+      snprintf(reply, sizeof(reply), "ssid=(none) runtime=0");
+    } else {
+      int connected = (WiFi.status() == WL_CONNECTED) ? 1 : 0;
+      if (connected) {
+        IPAddress ip = WiFi.localIP();
+        snprintf(reply, sizeof(reply), "ssid=%s connected=1 ip=%d.%d.%d.%d",
+                 ssid, ip[0], ip[1], ip[2], ip[3]);
+      } else {
+        snprintf(reply, sizeof(reply), "ssid=%s connected=0", ssid);
+      }
+    }
+    pushMeshcomodReply(reply);
+    return true;
+  }
+  if (strncasecmp(p, "clear", 5) == 0 && (p[5] == '\0' || p[5] == ' ' || p[5] == '\t')) {
+    wifiConfigClear();
+    pushMeshcomodReply("OK");
+    return true;
+  }
+  if (strncasecmp(p, "apply", 5) == 0 && (p[5] == '\0' || p[5] == ' ' || p[5] == '\t')) {
+    if (!wifiConfigHasRuntime()) {
+      pushMeshcomodReply("No runtime credentials; set ssid/pwd first");
+      return true;
+    }
+    wifiConfigApply();
+    pushMeshcomodReply("OK reconnecting");
+    return true;
+  }
+#endif
+#endif
+  pushMeshcomodReply(kMeshcomodHelpMsg);
+  return true;
 }
 
 void MyMesh::updateContactFromFrame(ContactInfo &contact, uint32_t& last_mod, const uint8_t *frame, int len) {
@@ -1146,6 +1645,33 @@ void MyMesh::handleCmdFrame(size_t len) {
     i += 4;
     uint8_t *pub_key_prefix = &cmd_frame[i];
     i += 6;
+    if (isMeshcomodRecipient(pub_key_prefix)) {
+      char *text = (char *)&cmd_frame[i];
+      int tlen = len - i;
+      uint32_t expected_ack = msg_timestamp ? msg_timestamp : getRTCClock()->getCurrentTimeUnique();
+      uint32_t est_timeout = 1;
+      out_frame[0] = RESP_CODE_SENT;
+      out_frame[1] = 0; // local handling, not flood
+      memcpy(&out_frame[2], &expected_ack, 4);
+      memcpy(&out_frame[6], &est_timeout, 4);
+      _serial->writeFrame(out_frame, 10);
+      // Immediately confirm local command "delivery" so companion UI doesn't keep retrying.
+      uint8_t confirmed[9];
+      confirmed[0] = PUSH_CODE_SEND_CONFIRMED;
+      uint32_t trip_time = 0;
+      memcpy(&confirmed[1], &expected_ack, 4);
+      memcpy(&confirmed[5], &trip_time, 4);
+      _serial->writeFrame(confirmed, sizeof(confirmed));
+      if (tlen > 0) {
+        text[tlen] = 0;
+        if (!isMeshcomodDuplicate(msg_timestamp, text)) {
+          rememberMeshcomodCommand(msg_timestamp, text);
+          handleMeshcomodCommand(text, tlen);
+        }
+      } else {
+        pushMeshcomodReply("usage: wifi help");
+      }
+    } else {
     ContactInfo *recipient = lookupContactByPubKey(pub_key_prefix, 6);
     if (recipient && (txt_type == TXT_TYPE_PLAIN || txt_type == TXT_TYPE_CLI_DATA)) {
       char *text = (char *)&cmd_frame[i];
@@ -1206,6 +1732,7 @@ void MyMesh::handleCmdFrame(size_t len) {
       writeErrFrame(recipient == NULL
                         ? ERR_CODE_NOT_FOUND
                         : ERR_CODE_UNSUPPORTED_CMD); // unknown recipient, or unsuported TXT_TYPE_*
+    }
     }
   } else if (cmd_frame[0] == CMD_SEND_CHANNEL_TXT_MSG) { // send GroupChannel msg
     int i = 1;
@@ -2235,6 +2762,9 @@ void MyMesh::checkSerialInterface() {
         }
       }
     } else { // EOF
+      ContactInfo meshcomod;
+      getMeshcomodContact(meshcomod);
+      writeContactRespFrame(RESP_CODE_CONTACT, meshcomod);
       out_frame[0] = RESP_CODE_END_OF_CONTACTS;
       memcpy(&out_frame[1], &_most_recent_lastmod,
              4); // include the most recent lastmod, so app can update their 'since'

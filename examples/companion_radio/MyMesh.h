@@ -26,6 +26,9 @@
 #include "DataStore.h"
 #include "NodePrefs.h"
 
+/* Synthetic local command contact: appears in contact list, messages to it are intercepted and never sent over mesh. */
+#define MESHCOMOD_NAME "Meshcomod"
+
 #include <RTClib.h>
 #include <helpers/ArduinoHelpers.h>
 #include <helpers/BaseSerialInterface.h>
@@ -119,6 +122,13 @@ protected:
   uint8_t getExtraAckTransmitCount() const override;
   bool filterRecvFloodPacket(mesh::Packet* packet) override;
   bool allowPacketForward(const mesh::Packet* packet) override;
+
+  // Meshcomod: synthetic local command contact (no RF)
+  static const uint8_t MESHCOMOD_PUB_KEY_PREFIX[6];
+  void getMeshcomodContact(ContactInfo& dest);
+  bool isMeshcomodRecipient(const uint8_t* pub_key_prefix_6) const;
+  bool handleMeshcomodCommand(const char* text, int text_len);
+  void pushMeshcomodReply(const char* text, bool immediate_current = false);
 
   void sendFloodScoped(const ContactInfo& recipient, mesh::Packet* pkt, uint32_t delay_millis=0) override;
   void sendFloodScoped(const mesh::GroupChannel& channel, mesh::Packet* pkt, uint32_t delay_millis=0) override;
