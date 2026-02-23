@@ -239,6 +239,8 @@ git push allfather main
 - **First help command in Meshcomod** — The first `help` command in a new Meshcomod chat may not reply; if so, send `help` again.
 - **Web console command retry** — In some cases, `get/set wifi.*` commands in the web console may not show a reply on first try; run the same command again.
 
+**Note (console vs companion on USB):** The web console (e.g. `set wifi.ssid`) and the companion protocol (MeshCore app, Home Assistant) share the same USB serial port. The firmware only treats input as plain-text console when the first byte is a letter (a–z, A–Z), so binary companion frames are not mistaken for console commands. Home Assistant over TCP or BLE uses separate paths and is unaffected by console handling.
+
 ---
 
 ## License
