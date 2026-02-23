@@ -35,7 +35,7 @@ Upstream: **[github.com/meshcore-dev/MeshCore](https://github.com/meshcore-dev/M
   WiFi credentials are **not** stored in the repo; set env vars `WIFI_SSID` and `WIFI_PWD` before building (see Build below). You can also configure WiFi at runtime using **Meshcomod** (see below). **Network (TCP) tab**: shows TCP status, IP, port, and **SSID**. **Long press** on this tab to enable or disable TCP; footer shows "ON: long press" / "OFF: long press".
 
 - **Toggle BLE & TCP from within the app**  
-<img width="66" height="1434" alt="IMG_524" src="https://github.com/user-attachments/assets/671345e3-dd68-48a7-b3fe-6ebdacdc425f" />
+<img width="190" height="450" alt="IMG_524" src="https://github.com/user-attachments/assets/671345e3-dd68-48a7-b3fe-6ebdacdc425f" />
 
 - **Configuring WiFi through the meshcore web console or through the app**  
 
