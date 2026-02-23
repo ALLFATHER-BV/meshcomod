@@ -1,5 +1,7 @@
 <img width="1024" height="700" alt="meshcomod_logo_cropped" src="https://github.com/user-attachments/assets/5c4ff275-b306-4969-bb32-dd28298133c3" />
 
+# meshcomod
+
 **MeshCore addon for Heltec WiFi LoRa 32 V4** — an addon on top of [MeshCore](https://github.com/meshcore-dev/MeshCore) firmware, trimmed to this device only. **One build supports three companion transports: USB, Bluetooth, and TCP** (choose any combination; toggle BLE and TCP from the device UI).
 
 Upstream: **[github.com/meshcore-dev/MeshCore](https://github.com/meshcore-dev/MeshCore)** (MeshCore is a lightweight multi-hop LoRa mesh; see their repo for full docs, clients, and flasher.)
@@ -9,18 +11,14 @@ Upstream: **[github.com/meshcore-dev/MeshCore](https://github.com/meshcore-dev/M
 ### Supported devices
 
 - **Heltec WiFi LoRa 32 V4** (ESP32-S3, 128×64 OLED, LoRa)
-<img width="200" height="200" alt="image" src="https://github.com/user-attachments/assets/1ecd81c5-644b-4df3-99a8-e544d1864a01" />
+  <img width="200" height="200" alt="image" src="https://github.com/user-attachments/assets/1ecd81c5-644b-4df3-99a8-e544d1864a01" />
 
 - **Heltec WiFi LoRa 32 V3** (ESP32, 128×64 OLED, LoRa)
-<img width="200" height="200" alt="image" src="https://github.com/user-attachments/assets/21289b67-2e1f-496e-8d9f-65c36ee74461" />
+  <img width="200" height="200" alt="image" src="https://github.com/user-attachments/assets/21289b67-2e1f-496e-8d9f-65c36ee74461" />
 
 **Build env names differ by device:** V4 uses lowercase `heltec_v4_...`; V3 uses a capital H: `Heltec_v3_...`. Use the exact env name when building (see examples below).
 
-
-
 ---
-
-
 
 ## What's different in meshcomod
 
@@ -71,17 +69,15 @@ Upstream: **[github.com/meshcore-dev/MeshCore](https://github.com/meshcore-dev/M
 
 Otherwise this is the same codebase as MeshCore; we sync from upstream and add our addon customizations on top.
 
-
 <p align="center">
   <img width="600" height="170" alt="image" src="https://github.com/user-attachments/assets/02e2ddd4-a910-499d-8714-1dedf4b856a6" />
 </p>
 
-
+## Easy (recommended)
 
 <p align="left">
   <img width="395" height="84" alt="image" src="https://github.com/user-attachments/assets/cd496321-1aad-425f-b8cf-ccba2cc9478d" />
 </p>
-
 
 Flash a prebuilt firmware. No local build needed.
 
@@ -131,6 +127,7 @@ Alternative WiFi setup: Meshcomod chat (works, but password appears in your loca
 > If unsure which binary to flash, use **merged**.
 > The `prebuilt/` filenames above always point to the latest build for each target. Older snapshot `.bin` files are removed to avoid confusion.
 
+## Hard (build yourself)
 
 <p align="left">
   <img width="395" height="84" alt="image" src="https://github.com/user-attachments/assets/92a0ea2d-e1f1-4e8b-82f0-705a1f826fd1" />
@@ -235,8 +232,6 @@ git push allfather main
 - **BLE first connect quirk** — On first connection over BLE, you may need to disconnect and reconnect once.
 - **First help command in Meshcomod** — The first `help` command in a new Meshcomod chat may not reply; if so, send `help` again.
 - **Web console command retry** — In some cases, `get/set wifi.*` commands in the web console may not show a reply on first try; run the same command again.
-
----
 
 ---
 
