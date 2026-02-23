@@ -1,5 +1,5 @@
-# meshcomod
-<img width="1024" height="600" alt="meshcomod_logo_cropped" src="https://github.com/user-attachments/assets/5c4ff275-b306-4969-bb32-dd28298133c3" />
+<img width="395" height="84" alt="image" src="https://github.com/user-attachments/assets/e01b4b26-8113-4915-a1ac-a76146a287a2" /># meshcomod
+<img width="1024" height="700" alt="meshcomod_logo_cropped" src="https://github.com/user-attachments/assets/5c4ff275-b306-4969-bb32-dd28298133c3" />
 
 **MeshCore addon for Heltec WiFi LoRa 32 V4** — an addon on top of [MeshCore](https://github.com/meshcore-dev/MeshCore) firmware, trimmed to this device only. **One build supports three companion transports: USB, Bluetooth, and TCP** (choose any combination; toggle BLE and TCP from the device UI).
 
@@ -17,7 +17,11 @@ Upstream: **[github.com/meshcore-dev/MeshCore](https://github.com/meshcore-dev/M
 
 **Build env names differ by device:** V4 uses lowercase `heltec_v4_...`; V3 uses a capital H: `Heltec_v3_...`. Use the exact env name when building (see examples below).
 
+
+
 ---
+
+
 
 ## What's different in meshcomod
 
@@ -68,18 +72,11 @@ Upstream: **[github.com/meshcore-dev/MeshCore](https://github.com/meshcore-dev/M
 
 Otherwise this is the same codebase as MeshCore; we sync from upstream and add our addon customizations on top.
 
-### Known bugs
 
-- **Legacy/no-channel clients** — If a client does not implement channel chat, it should ignore channel message frames (0x08, 0x11).
-- **Debug monitoring over USB** — When using the USB companion transport, serial terminals show binary companion frames; use BLE/TCP for app traffic if you need clean USB debug logs.
-- **BLE first connect quirk** — On first connection over BLE, you may need to disconnect and reconnect once.
-- **First help command in Meshcomod** — The first `help` command in a new Meshcomod chat may not reply; if so, send `help` again.
-- **Web console command retry** — In some cases, `get/set wifi.*` commands in the web console may not show a reply on first try; run the same command again.
 
----
+<img width="397" height="79" alt="image" src="https://github.com/user-attachments/assets/02e2ddd4-a910-499d-8714-1dedf4b856a6" />
 
-## How to use
-
+<img width="395" height="84" alt="image" src="https://github.com/user-attachments/assets/cd496321-1aad-425f-b8cf-ccba2cc9478d" />
 ### EASY (recommended)
 
 Flash a prebuilt firmware. No local build needed.
@@ -129,6 +126,8 @@ Alternative WiFi setup: Meshcomod chat (works, but password appears in your loca
 > WiFi companion mode is **2.4 GHz only** (not 5 GHz-only SSIDs).
 > If unsure which binary to flash, use **merged**.
 > The `prebuilt/` filenames above always point to the latest build for each target. Older snapshot `.bin` files are removed to avoid confusion.
+
+<img width="395" height="77" alt="image" src="https://github.com/user-attachments/assets/92a0ea2d-e1f1-4e8b-82f0-705a1f826fd1" />
 
 ### HARD (build yourself)
 
@@ -223,6 +222,16 @@ git merge upstream/main
 # resolve any conflicts, then:
 git push allfather main
 ```
+
+### Known bugs
+
+- **Legacy/no-channel clients** — If a client does not implement channel chat, it should ignore channel message frames (0x08, 0x11).
+- **Debug monitoring over USB** — When using the USB companion transport, serial terminals show binary companion frames; use BLE/TCP for app traffic if you need clean USB debug logs.
+- **BLE first connect quirk** — On first connection over BLE, you may need to disconnect and reconnect once.
+- **First help command in Meshcomod** — The first `help` command in a new Meshcomod chat may not reply; if so, send `help` again.
+- **Web console command retry** — In some cases, `get/set wifi.*` commands in the web console may not show a reply on first try; run the same command again.
+
+---
 
 ---
 
