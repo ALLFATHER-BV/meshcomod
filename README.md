@@ -34,7 +34,7 @@ Upstream: **[github.com/meshcore-dev/MeshCore](https://github.com/meshcore-dev/M
   Meshcomod is marked as **favourite** by default and appears at the **bottom of the contacts list**.
   **Important:** Meshcomod chat is **local-only** command handling on the companion device. Commands/replies in the Meshcomod chat are **not transmitted over LoRa mesh** and are not forwarded to other mesh nodes.
   Open a chat with Meshcomod and send these local-only commands:
-  - `help` or `wifi help` — show all Meshcomod commands.
+  - `help` — show all Meshcomod commands.
   - `status` — show general companion status (USB/BLE/TCP and WiFi state).
   - `wifi set ssid <your SSID>` — set SSID (use quotes if it contains spaces, e.g. `wifi set ssid "My Home WiFi"`).
   - `wifi set pwd <password>` — set password (use `wifi set pwd ""` for open networks).
@@ -64,16 +64,45 @@ Otherwise this is the same codebase as MeshCore; we sync from upstream and add o
 
 ---
 
-## Build (USB + Bluetooth + TCP)
+## How to use
 
-If you do **not** need custom code changes, you can skip this section and just flash a prebuilt merged `.bin` using the web flasher.
+### EASY (recommended)
 
-### Prebuilt merged bins (no build needed)
+Flash a prebuilt firmware and configure WiFi from the app. No local build needed.
 
-- Heltec V4: [`prebuilt/heltec_v4_companion_radio_usb_tcp-merged.bin`](prebuilt/heltec_v4_companion_radio_usb_tcp-merged.bin)
-- Heltec V3: [`prebuilt/Heltec_v3_companion_radio_usb_tcp-merged.bin`](prebuilt/Heltec_v3_companion_radio_usb_tcp-merged.bin)
+Prebuilt files in this repo (non-merged shown first):
 
-Use these with **Custom firmware** on the web flasher.
+- Heltec V4 (non-merged): [`prebuilt/heltec_v4_companion_radio_usb_tcp.bin`](prebuilt/heltec_v4_companion_radio_usb_tcp.bin)
+- Heltec V4 (merged): [`prebuilt/heltec_v4_companion_radio_usb_tcp-merged.bin`](prebuilt/heltec_v4_companion_radio_usb_tcp-merged.bin)
+- Heltec V3 (non-merged): [`prebuilt/Heltec_v3_companion_radio_usb_tcp.bin`](prebuilt/Heltec_v3_companion_radio_usb_tcp.bin)
+- Heltec V3 (merged): [`prebuilt/Heltec_v3_companion_radio_usb_tcp-merged.bin`](prebuilt/Heltec_v3_companion_radio_usb_tcp-merged.bin)
+
+Flash steps:
+
+1. Open **[flasher.meshcore.co.uk](https://flasher.meshcore.co.uk)**.
+2. Choose **Custom firmware**.
+3. Upload your selected `.bin`.
+4. Connect via USB, BLE (PIN shown on device display), and/or TCP.
+
+Then configure WiFi in app via Meshcomod chat:
+
+1. Open contact **Meshcomod** (favourited by default, near bottom of contacts).
+2. Run `help` to see available commands.
+3. Set WiFi credentials:
+   - `wifi set ssid "Your SSID"`
+   - `wifi set pwd "YourPassword"` (or `wifi set pwd ""` for open network)
+4. Apply:
+   - `wifi apply`
+5. Check:
+   - `status` and/or `wifi status`
+
+> Meshcomod chat is local-only command handling. It does not send commands to the LoRa mesh.
+> WiFi companion mode is **2.4 GHz only** (not 5 GHz-only SSIDs).
+> If unsure which binary to flash, use **merged**.
+
+### HARD (build yourself)
+
+Use this path if you want custom code/build flags.
 
 Clone and enter the repo:
 
@@ -82,13 +111,12 @@ git clone https://github.com/ALLFATHER-BV/meshcomod.git
 cd meshcomod
 ```
 
-Set **WiFi** and **firmware version** via environment variables, then run the build. The script runs merge and copies the merged image into `out/`. Use the **exact** env name for your device (V4 = lowercase `heltec_v4_...`, V3 = capital H `Heltec_v3_...`).
+Set WiFi + version and build (exact env name matters):
 
-> WiFi companion mode requires a **2.4 GHz** SSID. ESP32 companion builds do not connect to 5 GHz-only networks. You can set WiFi at runtime via the **Meshcomod** contact (see “Configuring WiFi without reflashing” above).
+- V4 uses lowercase env names: `heltec_v4_...`
+- V3 uses capital H env names: `Heltec_v3_...`
 
----
-
-### Heltec V4 (copy-paste)
+#### Heltec V4 (copy-paste)
 
 ```bash
 export WIFI_SSID="YourNetworkName"
@@ -97,11 +125,11 @@ export FIRMWARE_VERSION=v1.13.0
 sh build.sh build-firmware heltec_v4_companion_radio_usb_tcp
 ```
 
-Merged image: `out/heltec_v4_companion_radio_usb_tcp-<version>-<sha>-merged.bin` or `.pio/build/heltec_v4_companion_radio_usb_tcp/firmware-merged.bin`.
+Merged image output:
+- `out/heltec_v4_companion_radio_usb_tcp-<version>-<sha>-merged.bin`
+- `.pio/build/heltec_v4_companion_radio_usb_tcp/firmware-merged.bin`
 
----
-
-### Heltec V3 (copy-paste)
+#### Heltec V3 (copy-paste)
 
 ```bash
 export WIFI_SSID="YourNetworkName"
@@ -110,20 +138,21 @@ export FIRMWARE_VERSION=v1.13.0
 sh build.sh build-firmware Heltec_v3_companion_radio_usb_tcp
 ```
 
-For open networks (no password), set an empty password explicitly:
+For open networks:
 
 ```bash
 export WIFI_SSID="Cafe Guest"
 export WIFI_PWD=""
 ```
 
-Merged image: `out/Heltec_v3_companion_radio_usb_tcp-<version>-<sha>-merged.bin` or `.pio/build/Heltec_v3_companion_radio_usb_tcp/firmware-merged.bin`.
+Merged image output:
+- `out/Heltec_v3_companion_radio_usb_tcp-<version>-<sha>-merged.bin`
+- `.pio/build/Heltec_v3_companion_radio_usb_tcp/firmware-merged.bin`
 
----
+Build/flash guidance:
 
-Flash using **[flasher.meshcore.co.uk](https://flasher.meshcore.co.uk)**: select **Custom firmware** and upload your `.bin` (merged recommended). Connect over **USB**, **Bluetooth** (use the PIN shown on the Heltec display), and/or **TCP** (device IP, port 5000).
-
-> **Merged image guidance:** Many users flash successfully with the **merged** `.bin` (recommended). Some setups also work with app-only firmware, but for first-time flash or any boot/display issues, use the **merged** `.bin` (`out/...-merged.bin` or `.pio/build/<env>/firmware-merged.bin`) to avoid layout/partition mismatches.
+- Many users can flash non-merged successfully.
+- For first-time flash, boot/display issues, or uncertainty, use **merged** to avoid layout/partition mismatch.
 
 ### Black screen after flashing (V3 and V4)
 
