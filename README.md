@@ -70,6 +70,7 @@ Otherwise this is the same codebase as MeshCore; we sync from upstream and add o
 - **Debug monitoring over USB** — When using the USB companion transport, serial terminals show binary companion frames; use BLE/TCP for app traffic if you need clean USB debug logs.
 - **BLE first connect quirk** — On first connection over BLE, you may need to disconnect and reconnect once.
 - **First help command in Meshcomod** — The first `help` command in a new Meshcomod chat may not reply; if so, send `help` again.
+- **Web console command retry** — In some cases, `get/set wifi.*` commands in the web console may not show a reply on first try; run the same command again.
 
 ---
 

@@ -2577,17 +2577,6 @@ void MyMesh::checkCLIRescueCmd() {
     if (c == '\r' || c == '\n') {
       line_complete = true;
       Serial.print(c);  // echo
-      // Consume any additional line-ending bytes (CRLF/LFCR) so they don't
-      // block subsequent plain-text command parsing.
-      while (Serial.available()) {
-        int p = Serial.peek();
-        if (p == '\r' || p == '\n') {
-          Serial.read();
-          Serial.print((char)p);
-        } else {
-          break;
-        }
-      }
       break;
     } else {
       cli_command[len++] = c;
@@ -2884,8 +2873,6 @@ void MyMesh::checkCLIRescueCmd() {
       Serial.println("  Error: unknown command");
     }
 
-    // Ensure command output is sent immediately to the host console.
-    Serial.flush();
     cli_command[0] = 0;  // reset command buffer
   }
 }
@@ -2931,22 +2918,29 @@ void MyMesh::loop() {
   if (_cli_rescue) {
     checkCLIRescueCmd();
   } else {
-    checkSerialInterface();
-    // Allow plain-text console commands (e.g. flasher Console) without entering rescue mode.
-    // Guard by checking for printable ASCII first byte so we don't consume binary companion frames.
+    // Prefer plain-text console commands (e.g. flasher Console) before binary
+    // companion parsing so text commands are not swallowed by frame parsing.
+    bool handled_plain_text = false;
 #if defined(ESP32)
-    while (Serial.available() > 0) {
+    if (Serial.available() > 0) {
       int first = Serial.peek();
+      // Web consoles often send CRLF. Drop a leading line-ending byte so a
+      // stale '\r'/'\n' cannot block the next plain-text command.
       if (first == '\r' || first == '\n') {
-        Serial.read();  // discard stray line-endings between commands
-        continue;
+        Serial.read();
+        if (Serial.available() > 0) {
+          first = Serial.peek();
+        }
       }
       if (first >= 32 && first <= 126) {
         checkCLIRescueCmd();
+        handled_plain_text = true;
       }
-      break;
     }
 #endif
+    if (!handled_plain_text) {
+      checkSerialInterface();
+    }
   }
 
   // is there are pending dirty contacts write needed?
