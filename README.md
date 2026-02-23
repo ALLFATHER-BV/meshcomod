@@ -1,5 +1,8 @@
 # meshcomod
 
+<img width="1024" height="1024" alt="meshcomod" src="https://github.com/user-attachments/assets/9f0782eb-cbcb-492b-befe-48fa5e48f7be" />
+
+
 **MeshCore addon for Heltec WiFi LoRa 32 V4** — an addon on top of [MeshCore](https://github.com/meshcore-dev/MeshCore) firmware, trimmed to this device only. **One build supports three companion transports: USB, Bluetooth, and TCP** (choose any combination; toggle BLE and TCP from the device UI).
 
 Upstream: **[github.com/meshcore-dev/MeshCore](https://github.com/meshcore-dev/MeshCore)** (MeshCore is a lightweight multi-hop LoRa mesh; see their repo for full docs, clients, and flasher.)
