@@ -149,6 +149,8 @@ build_firmware() {
   # craft filename
   # e.g: RAK_4631_Repeater-v1.0.0-SHA
   FIRMWARE_FILENAME="$1-${FIRMWARE_VERSION_STRING}"
+  LATEST_BIN_FILENAME="$1.bin"
+  LATEST_MERGED_BIN_FILENAME="$1-merged.bin"
 
   # add firmware version info to end of existing platformio build flags in environment vars
   export PLATFORMIO_BUILD_FLAGS="${PLATFORMIO_BUILD_FLAGS} -DFIRMWARE_BUILD_DATE='\"${FIRMWARE_BUILD_DATE}\"' -DFIRMWARE_VERSION='\"${FIRMWARE_VERSION_STRING}\"'"
@@ -164,6 +166,13 @@ build_firmware() {
     pio run -t mergebin -e $1
     cp .pio/build/$1/firmware.bin out/${FIRMWARE_FILENAME}.bin 2>/dev/null || true
     cp .pio/build/$1/firmware-merged.bin out/${FIRMWARE_FILENAME}-merged.bin 2>/dev/null || true
+    # Keep stable "latest" artifacts to avoid version/sha filename confusion.
+    cp .pio/build/$1/firmware.bin out/${LATEST_BIN_FILENAME} 2>/dev/null || true
+    cp .pio/build/$1/firmware-merged.bin out/${LATEST_MERGED_BIN_FILENAME} 2>/dev/null || true
+    mkdir -p prebuilt
+    cp .pio/build/$1/firmware.bin prebuilt/${LATEST_BIN_FILENAME} 2>/dev/null || true
+    cp .pio/build/$1/firmware-merged.bin prebuilt/${LATEST_MERGED_BIN_FILENAME} 2>/dev/null || true
+    rm -f prebuilt/${1}-v*-*.bin prebuilt/${1}-v*-*-merged.bin 2>/dev/null || true
     echo ""
     echo "  ═══════════════════════════════════════════"
     echo "  Firmware built successfully"
@@ -172,6 +181,8 @@ build_firmware() {
     echo "  Merged image (flash at 0x0):"
     echo "    .pio/build/$1/firmware-merged.bin"
     [ -f "out/${FIRMWARE_FILENAME}-merged.bin" ] && echo "    out/${FIRMWARE_FILENAME}-merged.bin"
+    [ -f "out/${LATEST_MERGED_BIN_FILENAME}" ] && echo "    out/${LATEST_MERGED_BIN_FILENAME} (latest stable name)"
+    [ -f "prebuilt/${LATEST_MERGED_BIN_FILENAME}" ] && echo "    prebuilt/${LATEST_MERGED_BIN_FILENAME} (latest stable name)"
     echo ""
     echo "  Flashing this firmware is at your own risk."
     echo "  If you see anything weird, please let the repo owner know."

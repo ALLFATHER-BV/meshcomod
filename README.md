@@ -123,7 +123,7 @@ Alternative WiFi setup: Meshcomod chat (works, but password appears in your loca
 > Even though Meshcomod chat is local-only, entering WiFi password in chat may not be ideal because your client can keep local chat history.
 > WiFi companion mode is **2.4 GHz only** (not 5 GHz-only SSIDs).
 > If unsure which binary to flash, use **merged**.
-> Advanced/reproducible snapshots with version+commit in filename are also kept in `prebuilt/`, but most users should ignore those and use the four files listed above.
+> The `prebuilt/` filenames above always point to the latest build for each target. Older snapshot `.bin` files are removed to avoid confusion.
 
 ### HARD (build yourself)
 
