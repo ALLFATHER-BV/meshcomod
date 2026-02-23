@@ -86,13 +86,6 @@ Prebuilt files in this repo (non-merged shown first, then merged):
 - Heltec V3 (non-merged): [`prebuilt/Heltec_v3_companion_radio_usb_tcp.bin`](prebuilt/Heltec_v3_companion_radio_usb_tcp.bin)
 - Heltec V3 (merged): [`prebuilt/Heltec_v3_companion_radio_usb_tcp-merged.bin`](prebuilt/Heltec_v3_companion_radio_usb_tcp-merged.bin)
 
-Versioned snapshots:
-
-- Heltec V4 (non-merged): [`prebuilt/heltec_v4_companion_radio_usb_tcp-v1.13.0-411594e.bin`](prebuilt/heltec_v4_companion_radio_usb_tcp-v1.13.0-411594e.bin)
-- Heltec V4 (merged): [`prebuilt/heltec_v4_companion_radio_usb_tcp-v1.13.0-411594e-merged.bin`](prebuilt/heltec_v4_companion_radio_usb_tcp-v1.13.0-411594e-merged.bin)
-- Heltec V3 (non-merged): [`prebuilt/Heltec_v3_companion_radio_usb_tcp-v1.13.0-411594e.bin`](prebuilt/Heltec_v3_companion_radio_usb_tcp-v1.13.0-411594e.bin)
-- Heltec V3 (merged): [`prebuilt/Heltec_v3_companion_radio_usb_tcp-v1.13.0-411594e-merged.bin`](prebuilt/Heltec_v3_companion_radio_usb_tcp-v1.13.0-411594e-merged.bin)
-
 Flash steps:
 
 1. Open **[flasher.meshcore.co.uk](https://flasher.meshcore.co.uk)**.
@@ -130,6 +123,7 @@ Alternative WiFi setup: Meshcomod chat (works, but password appears in your loca
 > Even though Meshcomod chat is local-only, entering WiFi password in chat may not be ideal because your client can keep local chat history.
 > WiFi companion mode is **2.4 GHz only** (not 5 GHz-only SSIDs).
 > If unsure which binary to flash, use **merged**.
+> Advanced/reproducible snapshots with version+commit in filename are also kept in `prebuilt/`, but most users should ignore those and use the four files listed above.
 
 ### HARD (build yourself)
 
