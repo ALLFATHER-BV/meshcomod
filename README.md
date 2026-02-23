@@ -104,7 +104,7 @@ Web console setup:
    - `set wifi.pwd YourPassword` (open network: `set wifi.pwd `)
    - `set wifi.apply` (alias: `wifi.apply`)
 3. Verify:
-   - `get wifi.status` (alias: `wifi.status`)
+   - `wifi.status`
 
 You do **not** need CLI Rescue/recovery mode for these WiFi console commands. In normal runtime, just connect over USB, open Console, and run them directly.
 
