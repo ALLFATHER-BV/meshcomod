@@ -2919,7 +2919,9 @@ void MyMesh::loop() {
     checkCLIRescueCmd();
   } else {
     // Prefer plain-text console commands (e.g. flasher Console) before binary
-    // companion parsing so text commands are not swallowed by frame parsing.
+    // companion parsing — but only when the first byte looks like a command
+    // letter (a-z, A-Z). App binary frames use command bytes 1–60; 32–60 are
+    // printable, so we must not treat them as console or we break USB app connection.
     bool handled_plain_text = false;
 #if defined(ESP32)
     if (Serial.available() > 0) {
@@ -2932,7 +2934,8 @@ void MyMesh::loop() {
           first = Serial.peek();
         }
       }
-      if (first >= 32 && first <= 126) {
+      // Only treat as console when first char is a letter (get/set/wifi/reboot/ls/cat/erase etc).
+      if ((first >= 'a' && first <= 'z') || (first >= 'A' && first <= 'Z')) {
         checkCLIRescueCmd();
         handled_plain_text = true;
       }
