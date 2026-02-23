@@ -192,6 +192,8 @@ private:
   /** Get next history frame for client. If do_advance is false, does not advance last_delivered_seq (call commitHistoryForClient after successful write). */
   int getNextFromHistoryForClient(const char* client_id, uint8_t frame[], uint32_t* out_seq = nullptr, bool do_advance = true);
   void commitHistoryForClient(const char* client_id, uint32_t seq);
+  /** Advance all history clients' last_delivered_seq to seq (never rewind). Use after push-to-all so sync won't re-deliver. */
+  void advanceAllHistoryClientsToSeq(uint32_t seq);
   void setClientTargetVer(const char* client_id, uint8_t target_ver);
   uint8_t getClientTargetVer(const char* client_id) const;
   int adaptHistoryFrameForClient(const char* client_id, const uint8_t src[], int src_len, uint8_t dest[]) const;

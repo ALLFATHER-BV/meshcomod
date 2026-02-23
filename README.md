@@ -87,12 +87,14 @@ Otherwise this is the same codebase as MeshCore; we sync from upstream and add o
 
 Flash a prebuilt firmware. No local build needed.
 
-Prebuilt files in this repo (non-merged shown first, then merged):
+**Latest** prebuilt files (non-merged shown first, then merged):
 
 - Heltec V4 (non-merged): [`prebuilt/heltec_v4_companion_radio_usb_tcp.bin`](prebuilt/heltec_v4_companion_radio_usb_tcp.bin)
 - Heltec V4 (merged): [`prebuilt/heltec_v4_companion_radio_usb_tcp-merged.bin`](prebuilt/heltec_v4_companion_radio_usb_tcp-merged.bin)
 - Heltec V3 (non-merged): [`prebuilt/Heltec_v3_companion_radio_usb_tcp.bin`](prebuilt/Heltec_v3_companion_radio_usb_tcp.bin)
 - Heltec V3 (merged): [`prebuilt/Heltec_v3_companion_radio_usb_tcp-merged.bin`](prebuilt/Heltec_v3_companion_radio_usb_tcp-merged.bin)
+
+If a newer build causes issues, you can use an older version: see the [Release log (RELEASES.md)](RELEASES.md) for versioned prebuilts and rollback links.
 
 Flash steps:
 

@@ -845,6 +845,13 @@ void MyMesh::commitHistoryForClient(const char* client_id, uint32_t seq) {
   }
 }
 
+void MyMesh::advanceAllHistoryClientsToSeq(uint32_t seq) {
+  for (int i = 0; i < history_num_clients; i++) {
+    if (seq > history_clients[i].last_delivered_seq)
+      history_clients[i].last_delivered_seq = seq;
+  }
+}
+
 void MyMesh::setClientTargetVer(const char* client_id, uint8_t target_ver) {
   const char* cid = (client_id && client_id[0]) ? client_id : "";
   for (int i = 0; i < proto_num_clients; i++) {
@@ -1174,7 +1181,7 @@ void MyMesh::onChannelMessageRecv(const mesh::GroupChannel &channel, mesh::Packe
   memcpy(&out_frame[i], text, tlen);
   i += tlen;
   addToHistoryRing(out_frame, i);
-
+  advanceAllHistoryClientsToSeq(history_next_seq - 1);  // pushed to all below; avoid duplicate on sync (e.g. HA channels)
   if (_serial->isConnected()) {
     _serial->writeFrameToAll(out_frame, i);  // push full channel message to all clients (USB, BLE, TCP)
     uint8_t frame[1];
