@@ -33,7 +33,13 @@ Upstream: **[github.com/meshcore-dev/MeshCore](https://github.com/meshcore-dev/M
   If you flash prebuilt firmware (or build with placeholder WiFi), you can set WiFi from the existing app with **no app update**. In the app, open the contact list and find the synthetic contact **Meshcomod**.
   Meshcomod is marked as **favourite** by default and appears at the **bottom of the contacts list**.
   **Important:** Meshcomod chat is **local-only** command handling on the companion device. Commands/replies in the Meshcomod chat are **not transmitted over LoRa mesh** and are not forwarded to other mesh nodes.
-  Open a chat with Meshcomod and send these local-only commands:
+  Preferred method: configure WiFi from the flasher **Console** (CLI Rescue):
+  - `set wifi.ssid <your SSID>`
+  - `set wifi.pwd <your password>` (open network: `set wifi.pwd `)
+  - `wifi.apply`
+  - `wifi.status`
+
+  You can also configure WiFi from Meshcomod chat with these local-only commands:
   - `help` — show all Meshcomod commands.
   - `status` — show general companion status (USB/BLE/TCP and WiFi state).
   - `wifi set ssid <your SSID>` — set SSID (use quotes if it contains spaces, e.g. `wifi set ssid "My Home WiFi"`).
@@ -46,6 +52,7 @@ Upstream: **[github.com/meshcore-dev/MeshCore](https://github.com/meshcore-dev/M
   - `tcp on | tcp off | tcp status` — control/query TCP companion server.
   - `ble on | ble off | ble status` — control/query Bluetooth companion.
   - Safety flow for disabling wireless access: `tcp off` and `ble off` require confirmation. The device warns that wireless access may be lost and asks you to reply `ok` (or `cancel`) before applying the change.
+  - Note: entering WiFi password in chat may not be ideal because your client can keep local chat history.
   Credentials are stored in NVS and persist across reboots. **WiFi is 2.4 GHz only**; 5 GHz–only networks are not supported.
 
 - **Features (multi-transport)**  
@@ -72,8 +79,6 @@ Otherwise this is the same codebase as MeshCore; we sync from upstream and add o
 
 Flash a prebuilt firmware. No local build needed.
 
-Current prebuilt release tag: `v1.13.0-c4562de`
-
 Prebuilt files in this repo (non-merged shown first, then merged):
 
 - Heltec V4 (non-merged): [`prebuilt/heltec_v4_companion_radio_usb_tcp.bin`](prebuilt/heltec_v4_companion_radio_usb_tcp.bin)
@@ -81,7 +86,7 @@ Prebuilt files in this repo (non-merged shown first, then merged):
 - Heltec V3 (non-merged): [`prebuilt/Heltec_v3_companion_radio_usb_tcp.bin`](prebuilt/Heltec_v3_companion_radio_usb_tcp.bin)
 - Heltec V3 (merged): [`prebuilt/Heltec_v3_companion_radio_usb_tcp-merged.bin`](prebuilt/Heltec_v3_companion_radio_usb_tcp-merged.bin)
 
-Versioned snapshots (same release):
+Versioned snapshots:
 
 - Heltec V4 (non-merged): [`prebuilt/heltec_v4_companion_radio_usb_tcp-v1.13.0-c4562de.bin`](prebuilt/heltec_v4_companion_radio_usb_tcp-v1.13.0-c4562de.bin)
 - Heltec V4 (merged): [`prebuilt/heltec_v4_companion_radio_usb_tcp-v1.13.0-c4562de-merged.bin`](prebuilt/heltec_v4_companion_radio_usb_tcp-v1.13.0-c4562de-merged.bin)
@@ -99,14 +104,15 @@ Preferred WiFi setup method: web console (avoids typing WiFi password in chat).
 
 Web console setup:
 
-1. Open flasher **Console** while the device is connected over USB.
-2. Enter CLI Rescue mode on the device (hold user button during boot if needed).
-3. Run:
+1. Open [flasher.meshcore.co.uk](https://flasher.meshcore.co.uk) and click **Console** (top-right) while the device is connected over USB.
+2. Run:
    - `set wifi.ssid YourSSID`
    - `set wifi.pwd YourPassword` (open network: `set wifi.pwd `)
-   - `wifi.apply`
-4. Verify:
-   - `wifi.status`
+   - `set wifi.apply` (alias: `wifi.apply`)
+3. Verify:
+   - `get wifi.status` (alias: `wifi.status`)
+
+If commands do not respond in normal mode, enter CLI Rescue mode (long press during first ~8 seconds after boot) and retry.
 
 Alternative WiFi setup: Meshcomod chat (works, but password appears in your local chat history):
 

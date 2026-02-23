@@ -2622,9 +2622,66 @@ void MyMesh::checkCLIRescueCmd() {
 #else
         Serial.println("  Error: WiFi config only supported on ESP32 builds");
 #endif
+      } else if (strcmp(config, "wifi.apply") == 0) {
+#ifdef ESP32
+#if defined(WIFI_SSID) || defined(MULTI_TRANSPORT_COMPANION)
+        if (!wifiConfigHasRuntime()) {
+          Serial.println("  Error: no runtime credentials set");
+        } else {
+          wifiConfigApply();
+          Serial.println("  > OK: reconnecting WiFi");
+        }
+#else
+        Serial.println("  Error: WiFi config not enabled in this build");
+#endif
+#else
+        Serial.println("  Error: WiFi config only supported on ESP32 builds");
+#endif
+      } else if (strcmp(config, "wifi.clear") == 0) {
+#ifdef ESP32
+#if defined(WIFI_SSID) || defined(MULTI_TRANSPORT_COMPANION)
+        wifiConfigClear();
+        Serial.println("  > OK: wifi credentials cleared");
+#else
+        Serial.println("  Error: WiFi config not enabled in this build");
+#endif
+#else
+        Serial.println("  Error: WiFi config only supported on ESP32 builds");
+#endif
       } else {
         Serial.printf("  Error: unknown config: %s\n", config);
       }
+    } else if (strcmp(cli_command, "get wifi.ssid") == 0) {
+#ifdef ESP32
+#if defined(WIFI_SSID) || defined(MULTI_TRANSPORT_COMPANION)
+      char ssid[WIFI_CONFIG_SSID_MAX];
+      wifiConfigGetSsid(ssid, sizeof(ssid));
+      Serial.printf("  > %s\n", ssid[0] ? ssid : "(none)");
+#else
+      Serial.println("  Error: WiFi config not enabled in this build");
+#endif
+#else
+      Serial.println("  Error: WiFi config only supported on ESP32 builds");
+#endif
+    } else if (strcmp(cli_command, "get wifi.status") == 0) {
+#ifdef ESP32
+#if defined(WIFI_SSID) || defined(MULTI_TRANSPORT_COMPANION)
+      char ssid[WIFI_CONFIG_SSID_MAX];
+      wifiConfigGetSsid(ssid, sizeof(ssid));
+      bool has_runtime = wifiConfigHasRuntime();
+      Serial.printf("  > runtime=%d ssid=%s\n", has_runtime ? 1 : 0, (ssid[0] ? ssid : "(none)"));
+      if (WiFi.status() == WL_CONNECTED) {
+        IPAddress ip = WiFi.localIP();
+        Serial.printf("  > connected=1 ip=%d.%d.%d.%d\n", ip[0], ip[1], ip[2], ip[3]);
+      } else {
+        Serial.println("  > connected=0");
+      }
+#else
+      Serial.println("  Error: WiFi config not enabled in this build");
+#endif
+#else
+      Serial.println("  Error: WiFi config only supported on ESP32 builds");
+#endif
     } else if (strcmp(cli_command, "wifi.status") == 0) {
 #ifdef ESP32
 #if defined(WIFI_SSID) || defined(MULTI_TRANSPORT_COMPANION)
@@ -2858,6 +2915,16 @@ void MyMesh::loop() {
     checkCLIRescueCmd();
   } else {
     checkSerialInterface();
+    // Allow plain-text console commands (e.g. flasher Console) without entering rescue mode.
+    // Guard by checking for printable ASCII first byte so we don't consume binary companion frames.
+#if defined(ESP32)
+    if (Serial.available() > 0) {
+      int first = Serial.peek();
+      if (first >= 32 && first <= 126) {
+        checkCLIRescueCmd();
+      }
+    }
+#endif
   }
 
   // is there are pending dirty contacts write needed?
