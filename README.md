@@ -18,7 +18,7 @@ Upstream: **[github.com/meshcore-dev/MeshCore](https://github.com/meshcore-dev/M
 ## What's different in meshcomod
 
 - **No build required (optional)**  
-  You can skip local building entirely if you just want to use meshcomod. Flash a provided **merged** `.bin` via the web flasher (Custom firmware), then configure WiFi/TCP/BLE from the **Meshcomod** chat commands. Building is only needed if you want to customize code or build flags.
+  You can skip local building entirely if you just want to use meshcomod. Flash a provided **merged** `.bin` via the web flasher (Custom firmware), then configure WiFi/TCP/BLE from the web serial console or **Meshcomod** chat commands. Building is only needed if you want to customize code or build flags.
 
 - **Heltec V4 & V3: USB + Bluetooth + TCP in one build**  
   A single firmware image supports **USB, Bluetooth, and TCP** companion connections at the same time (e.g. Home Assistant on USB, MeshCore app on BLE, Web/CLI on TCP). You can use one, two, or all three; BLE and TCP can be turned on or off from the device UI.
@@ -105,6 +105,9 @@ Web console setup:
    - `set wifi.apply` (alias: `wifi.apply`)
 3. Verify:
    - `wifi.status`
+
+   <img width="424" height="99" alt="image" src="https://github.com/user-attachments/assets/ea127bb0-9f97-4f09-8538-31451bb9b939" />
+
 
 You do **not** need CLI Rescue/recovery mode for these WiFi console commands. In normal runtime, just connect over USB, open Console, and run them directly.
 
