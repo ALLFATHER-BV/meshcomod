@@ -77,10 +77,10 @@ Otherwise this is the same codebase as MeshCore; we sync from upstream and add o
 </p>
 
 
-<p align="center">
+
+<p align="left">
   <img width="395" height="84" alt="image" src="https://github.com/user-attachments/assets/cd496321-1aad-425f-b8cf-ccba2cc9478d" />
 </p>
-
 
 
 Flash a prebuilt firmware. No local build needed.
@@ -132,7 +132,7 @@ Alternative WiFi setup: Meshcomod chat (works, but password appears in your loca
 > The `prebuilt/` filenames above always point to the latest build for each target. Older snapshot `.bin` files are removed to avoid confusion.
 
 
-<p align="center">
+<p align="left">
   <img width="395" height="84" alt="image" src="https://github.com/user-attachments/assets/92a0ea2d-e1f1-4e8b-82f0-705a1f826fd1" />
 </p>
 
