@@ -2718,7 +2718,7 @@
 <p><strong>A:</strong> Everything you need for MeshCore is available at:</p>
 <ul>
 <li>Main web site: <a href="https://meshcore.co.uk">https://meshcore.co.uk</a></li>
-<li>Firmware Flasher: <a href="https://flasher.meshcore.co.uk">https://flasher.meshcore.co.uk</a></li>
+<li>Firmware Flasher: <a href="https://flasher.meshcomod.com">https://flasher.meshcomod.com</a></li>
 <li>MeshCore Firmware on GitHub: <a href="https://github.com/meshcore-dev/MeshCore">https://github.com/meshcore-dev/MeshCore</a></li>
 <li>MeshCore Companion App: <a href="https://meshcore.nz">https://meshcore.nz</a></li>
 <li>MeshCore Map: <a href="https://meshcore.co.uk/map.html">https://meshcore.co.uk/map.html</a></li>
@@ -2727,7 +2727,7 @@
 <p>You need LoRa hardware devices to run MeshCore firmware as clients or server (repeater and room server).</p>
 <h4 id="121-hardware">1.2.1. Hardware</h4>
 <p>MeshCore is available on a variety of 433MHz, 868MHz and 915MHz LoRa devices. For example, Lilygo T-Deck, T-Pager, RAK Wireless WisBlock RAK4631 devices (e.g. 19003, 19007, 19026), Heltec V3, Xiao S3 WIO, Xiao C3, Heltec T114, Station G2, Nano G2 Ultra, Seeed Studio T1000-E. More devices are being added regularly.</p>
-<p>For an up-to-date list of supported devices, please go to https://flasher.meshcore.co.uk/</p>
+<p>For an up-to-date list of supported devices, please go to https://flasher.meshcomod.com/</p>
 <p>To use MeshCore without using a phone as the client interface, you can run MeshCore on a LiLygo's T-Deck, T-Deck Plus, T-Pager, T-Watch, or T-Display Pro. MeshCore Ultra firmware running on these devices are a complete off-grid secure communication solution.</p>
 <h4 id="122-firmware">1.2.2. Firmware</h4>
 <p>MeshCore has four firmware types that are not available on other LoRa systems. MeshCore has the following:</p>
@@ -2800,7 +2800,7 @@ Advert means to advertise yourself on the network. In Reticulum terms it would b
 <p><img alt="image" src="https://github.com/user-attachments/assets/2a9d9894-e34d-4dbe-b57c-fc3c250a2d34" /></p>
 <ul>
 <li>
-<p>Connect the server device using a USB cable to a computer running Chrome on https://flasher.meshcore.co.uk/, then use the <code>console</code> feature to connect to the device</p>
+<p>Connect the server device using a USB cable to a computer running Chrome on https://flasher.meshcomod.com/, then use the <code>console</code> feature to connect to the device</p>
 </li>
 <li>
 <p>Use a MeshCore smartphone clients  to remotely administer servers via LoRa.</p>
@@ -2847,7 +2847,7 @@ Advert means to advertise yourself on the network. In Reticulum terms it would b
 5. Hear USB connection sound
 6. Release trackball
 7. T-Deck in DFU mode now
-8. At this point you can begin flashing using <a href="https://flasher.meshcore.co.uk/">https://flasher.meshcore.co.uk/</a></p>
+8. At this point you can begin flashing using <a href="https://flasher.meshcomod.com/">https://flasher.meshcomod.com/</a></p>
 <h3 id="43-q-why-is-my-t-deck-plus-not-getting-any-satellite-lock">4.3. Q: Why is my T-Deck Plus not getting any satellite lock?</h3>
 <p><strong>A:</strong> For T-Deck Plus, the GPS baud rate should be set to <strong>38400</strong>. Also, some T-Deck Plus devices were found to have the GPS module installed upside down, with the GPS antenna facing down instead of up. If your T-Deck Plus still doesn't get any satellite lock after setting the baud rate to 38400, you might need to open the device to check the GPS orientation.</p>
 <p>GPS on T-Deck is always enabled.  You can skip the "GPS clock sync" and the T-Deck will continue to try to get a GPS lock.  You can go to the <code>GPS Info</code> screen; you should see the <code>Sentences:</code> counter increasing if the baud rate is correct.</p>
@@ -3005,7 +3005,7 @@ Below are the instructions to flash firmware onto a supported LoRa device using 
 <p>Instructions for nRF devices like RAK, T1000-E, T114 are immediately after the ESP instructions</p>
 </blockquote>
 <p>For ESP-based devices (e.g. Heltec V3) you need:
-- Download firmware file from flasher.meshcore.co.uk
+- Download firmware file from flasher.meshcomod.com
     - Go to the web site on a browser, find the section that has the firmware up need
     - Click the Download button, right click on the file you need, for example,
         - <code>Heltec_V3_companion_radio_ble-v1.7.1-165fb33.bin</code>
@@ -3029,7 +3029,7 @@ Below are the instructions to flash firmware onto a supported LoRa device using 
             - <code>esptool.py -p /dev/ttyUSB0 --chip esp32-s3 write_flash 0x00000 &lt;merged_firmware&gt;.bin</code></p>
 <p><strong>Instructions for nRF devices:</strong></p>
 <p>For nRF devices (e.g. RAK, Heltec T114) you need the following:
-- Download firmware file from flasher.meshcore.co.uk
+- Download firmware file from flasher.meshcomod.com
     - Go to the web site on a browser, find the section that has the firmware up need
     - You need the ZIP version for the adafruit flash tool (below)
     - Click the Download button, right click on the ZIP file, for example:
@@ -3117,15 +3117,15 @@ Do not assume a fixed <code>123456</code> PIN.</p>
     - For Heltec T114, click the reset button <strong>TWICE</strong> (the bottom button)
     - For Xiao nRF52, click the reset button once.  If that doesn't work, quickly double click the reset button twice.  If that doesn't work, disconnection the board from your PC and reconnect again (<a href="https://wiki.seeedstudio.com/XIAO_BLE/#access-the-swd-pins-for-debugging-and-reflashing-bootloader">seeed studio wiki</a>)
 5. A new folder will appear on your computer's desktop
-6. Download the <code>flash_erase*.uf2</code> file for your device on flasher.meshcore.co.uk
+6. Download the <code>flash_erase*.uf2</code> file for your device on flasher.meshcomod.com
     - RAK WisBlock and Heltec T114: <code>Flash_erase-nRF32_softdevice_v6.uf2</code>
     - Seeed Studio Xiao nRF52 WIO: <code>Flash_erase-nRF52_softdevice_v7.uf2</code>
 8. drag and drop the uf2 file for your device to the root of the new folder
 9. Wait for the copy to complete.  You might get an error dialog, you can ignore it
-10. Go to https://flasher.meshcore.co.uk/, click <code>Console</code> and select the serial port for your connected device
+10. Go to https://flasher.meshcomod.com/, click <code>Console</code> and select the serial port for your connected device
 11. In the console, press enter.  Your flash should now be erased
 12. You may now flash the latest MeshCore firmware onto your device</p>
-<p>Separately, starting in firmware version 1.7.0, there is a CLI Rescue mode.  If your device has a user button (e.g. some RAK, T114), you can activate the rescue mode by hold down the user button of the device within 8 seconds of boot.  Then you can use the 'Console' on flasher.meshcore.co.uk</p>
+<p>Separately, starting in firmware version 1.7.0, there is a CLI Rescue mode.  If your device has a user button (e.g. some RAK, T114), you can activate the rescue mode by hold down the user button of the device within 8 seconds of boot.  Then you can use the 'Console' on flasher.meshcomod.com</p>
 <h3 id="68-q-webflasher-fails-on-linux-with-failed-to-open">6.8. Q: WebFlasher fails on Linux with failed to open</h3>
 <p><strong>A:</strong> If the usb port doesn't have the right ownership for this task, the process fails with the following error:
 <code>NetworkError: Failed to execute 'open' on 'SerialPort': Failed to open serial port.</code></p>
@@ -3137,7 +3137,7 @@ Do not assume a fixed <code>123456</code> PIN.</p>
 <p><strong>A:</strong> The steps below work on both Android and iOS as nRF has made both apps' user interface the same on both platforms:</p>
 <ol>
 <li>Download nRF's DFU app from iOS App Store or Android's Play Store, you can find the app by searching for <code>nrf dfu</code>, the app's full name is <code>nRF Device Firmware Update</code></li>
-<li>On flasher.meshcore.co.uk, download the <strong>ZIP</strong> version of the firmware for your nRF device (e.g. RAK or Heltec T114 or Seeed Studio's Xiao)</li>
+<li>On flasher.meshcomod.com, download the <strong>ZIP</strong> version of the firmware for your nRF device (e.g. RAK or Heltec T114 or Seeed Studio's Xiao)</li>
 <li>From the MeshCore app, login remotely to the repeater you want to update with admin privilege</li>
 <li>Go to the Command Line tab, type <code>start ota</code> and hit enter.</li>
 <li>you should see <code>OK</code> to confirm the repeater device is now in OTA mode</li>
@@ -3156,7 +3156,7 @@ https://github.com/oltaco/Adafruit_nRF52_Bootloader_OTAFIX</p>
 <p>After this bootloader is flashed onto the device, you can trigger over the air update using bluetooth by holding the button next to the D-Pad and then click the reset button.  The follow the same OTA update instructions above.  You can skip pass the <code>start ota</code> instruction and start the update using the DFU app.</p>
 <h3 id="72-q-how-to-update-esp32-based-devices-over-the-air">7.2. Q: How to update ESP32-based devices over the air?</h3>
 <p><strong>A:</strong> For ESP32-based devices (e.g. Heltec V3):
-1. On flasher.meshcore.co.uk, download the <strong>non-merged</strong> version of the firmware for your ESP32 device (e.g. <code>Heltec_v3_repeater-v1.6.2-4449fd3.bin</code>, no <code>"merged"</code> in the file name)
+1. On flasher.meshcomod.com, download the <strong>non-merged</strong> version of the firmware for your ESP32 device (e.g. <code>Heltec_v3_repeater-v1.6.2-4449fd3.bin</code>, no <code>"merged"</code> in the file name)
 2. From the MeshCore app, login remotely to the repeater you want to update with admin privilege
 4. Go to the Command Line tab, type <code>start ota</code> and hit enter.
 5. you should see <code>OK</code> to confirm the repeater device is now in OTA mode
