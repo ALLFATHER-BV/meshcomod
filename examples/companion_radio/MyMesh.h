@@ -12,7 +12,7 @@
 #endif
 
 #ifndef FIRMWARE_VERSION
-#define FIRMWARE_VERSION "v1.14.0.4"
+#define FIRMWARE_VERSION "v1.14.0.5"
 #endif
 
 #if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
@@ -227,6 +227,7 @@ private:
   ContactsIterator _iter;
   uint32_t _iter_filter_since;
   uint32_t _most_recent_lastmod;
+  uint32_t _contact_send_index;  // temporary diagnostic: index of CONTACT sent
   uint32_t _active_ble_pin;
   bool _iter_started;
   bool _cli_rescue;

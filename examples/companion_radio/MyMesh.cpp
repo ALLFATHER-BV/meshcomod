@@ -1508,6 +1508,7 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
     : BaseChatMesh(radio, *new ArduinoMillis(), rng, rtc, *new StaticPoolPacketManager(16), tables),
       _serial(NULL), telemetry(MAX_PACKET_PAYLOAD - 4), _store(&store), _ui(ui) {
   _iter_started = false;
+  _contact_send_index = 0;
   _cli_rescue = false;
   offline_queue_len = 0;
   history_count = 0;
@@ -1847,7 +1848,9 @@ void MyMesh::handleCmdFrame(size_t len) {
       reply[0] = RESP_CODE_CONTACTS_START;
       uint32_t count = getNumContacts(); // total, NOT filtered count
       memcpy(&reply[1], &count, 4);
-      _serial->writeFrame(reply, 5);
+      size_t start_ret = _serial->writeFrame(reply, 5);
+      _contact_send_index = 0;
+      Serial.printf("contacts: sent START count=%lu ret=%u\n", (unsigned long)count, (unsigned)start_ret);
 
       // start iterator
       _iter = startContactsIterator();
@@ -2987,6 +2990,8 @@ void MyMesh::checkSerialInterface() {
           if (r > 0) delay(5);
           sent = writeContactRespFrame(RESP_CODE_CONTACT, contact);
         }
+        Serial.printf("contacts: sent CONTACT i=%lu ret=%u\n", (unsigned long)_contact_send_index, (unsigned)sent);
+        _contact_send_index++;
         if (contact.lastmod > _most_recent_lastmod) {
           _most_recent_lastmod = contact.lastmod; // save for the RESP_CODE_END_OF_CONTACTS frame
         }
@@ -3001,6 +3006,7 @@ void MyMesh::checkSerialInterface() {
         if (r > 0) delay(5);
         sent = writeContactRespFrame(RESP_CODE_CONTACT, meshcomod);
       }
+      Serial.printf("contacts: sent CONTACT i=%lu (meshcomod) ret=%u\n", (unsigned long)_contact_send_index, (unsigned)sent);
       out_frame[0] = RESP_CODE_END_OF_CONTACTS;
       memcpy(&out_frame[1], &_most_recent_lastmod,
              4); // include the most recent lastmod, so app can update their 'since'
@@ -3009,6 +3015,7 @@ void MyMesh::checkSerialInterface() {
         if (r > 0) delay(5);
         sent = _serial->writeFrame(out_frame, 5);
       }
+      Serial.printf("contacts: sent END ret=%u\n", (unsigned)sent);
       _iter_started = false;
     }
   //} else if (!_serial->isWriteBusy()) {
