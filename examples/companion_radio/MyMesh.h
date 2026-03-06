@@ -8,11 +8,11 @@
 #define FIRMWARE_VER_CODE 9
 
 #ifndef FIRMWARE_BUILD_DATE
-#define FIRMWARE_BUILD_DATE "24 Feb 2026"
+#define FIRMWARE_BUILD_DATE "25 Feb 2026"
 #endif
 
 #ifndef FIRMWARE_VERSION
-#define FIRMWARE_VERSION "v1.14.0.1"
+#define FIRMWARE_VERSION "v1.14.0.2"
 #endif
 
 #if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
@@ -198,6 +198,7 @@ private:
   void setClientTargetVer(const char* client_id, uint8_t target_ver);
   uint8_t getClientTargetVer(const char* client_id) const;
   int adaptHistoryFrameForClient(const char* client_id, const uint8_t src[], int src_len, uint8_t dest[]) const;
+  void sendSyncSinceDelta(uint32_t T);
   int getBlobByKey(const uint8_t key[], int key_len, uint8_t dest_buf[]) override { 
     return _store->getBlobByKey(key, key_len, dest_buf);
   }

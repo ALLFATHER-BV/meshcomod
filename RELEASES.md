@@ -16,6 +16,22 @@ Versioned prebuilts are listed here so you can **roll back** if a newer release 
 
 ---
 
+## v1.14.0.2 — 2026-02-25
+
+**Firmware version:** v1.14.0.2 (meshcomod on upstream 1.14+).
+
+**Highlights:**
+- **Sync-Since (for future custom client):** Command **62** (SyncSince) + response **61** (SyncSinceDone) for backfill after reconnect. Custom client must send 62 (not 60) and handle 61; stock clients unchanged.
+
+**Prebuilt binaries (use [flasher.meshcomod.com](https://flasher.meshcomod.com) — Easy mode auto-downloads versions; for manual upload, use Custom firmware):**
+
+| Device   | Merged (recommended) | Non-merged |
+|----------|----------------------|------------|
+| Heltec V4 | [heltec_v4_companion_radio_usb_tcp-merged.bin](prebuilt/releases/v1.14.0.2/heltec_v4_companion_radio_usb_tcp-merged.bin) | [heltec_v4_companion_radio_usb_tcp.bin](prebuilt/releases/v1.14.0.2/heltec_v4_companion_radio_usb_tcp.bin) |
+| Heltec V3 | [Heltec_v3_companion_radio_usb_tcp-merged.bin](prebuilt/releases/v1.14.0.2/Heltec_v3_companion_radio_usb_tcp-merged.bin) | [Heltec_v3_companion_radio_usb_tcp.bin](prebuilt/releases/v1.14.0.2/Heltec_v3_companion_radio_usb_tcp.bin) |
+
+---
+
 ## v1.14.0.1 — 2026-02-24
 
 **Firmware version:** v1.14.0.1 (meshcomod on upstream 1.14+).

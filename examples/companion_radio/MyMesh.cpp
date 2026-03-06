@@ -65,6 +65,7 @@
 #define CMD_SET_AUTOADD_CONFIG        58
 #define CMD_GET_AUTOADD_CONFIG        59
 #define CMD_GET_ALLOWED_REPEAT_FREQ   60
+#define CMD_SYNC_SINCE                62  // client sends T (4 bytes LE Unix sec); response: stream of 7/8/16/17 then 61
 
 // Stats sub-types for CMD_GET_STATS
 #define STATS_TYPE_CORE               0
@@ -98,6 +99,7 @@
 #define RESP_CODE_STATS               24   // v8+, second byte is stats type
 #define RESP_CODE_AUTOADD_CONFIG      25
 #define RESP_ALLOWED_REPEAT_FREQ      26
+#define RESP_CODE_SYNC_SINCE_DONE     61  // sent once after SyncSince delta stream; client sets last-sync to now
 
 #define SEND_TIMEOUT_BASE_MILLIS        500
 #define FLOOD_SEND_TIMEOUT_FACTOR       16.0f
@@ -784,6 +786,23 @@ static bool clientIdEqual(const char* a, const char* b) {
   return strcmp(a, b) == 0;
 }
 
+// Extract Unix timestamp from a message frame for SyncSince filtering. Returns 0 if not V3 or too short.
+static uint32_t getMessageTimestampFromFrame(const uint8_t* buf, int len) {
+  if (!buf || len < 11) return 0;
+  uint8_t code = buf[0];
+  if (code == RESP_CODE_CONTACT_MSG_RECV_V3 && len >= 16) {
+    uint32_t t;
+    memcpy(&t, &buf[12], 4);
+    return t;
+  }
+  if (code == RESP_CODE_CHANNEL_MSG_RECV_V3 && len >= 11) {
+    uint32_t t;
+    memcpy(&t, &buf[7], 4);
+    return t;
+  }
+  return 0;
+}
+
 // Delivers history to client for sync. Includes channel messages (0x08, 0x11); clients without channel support should skip those frame types.
 int MyMesh::getNextFromHistoryForClient(const char* client_id, uint8_t frame[], uint32_t* out_seq, bool do_advance) {
   if (history_count <= 0) return 0;
@@ -898,6 +917,47 @@ int MyMesh::adaptHistoryFrameForClient(const char* client_id, const uint8_t src[
   }
   memcpy(dest, src, src_len);
   return src_len;
+}
+
+// SyncSince (CMD 62): send all message frames (7/8/16/17) with timestamp >= T from history ring, then SyncSinceDone (61).
+// Client must use command 62 (not 60; 60 is CMD_GET_ALLOWED_REPEAT_FREQ). Response 61 = SyncSinceDone; client sets last-sync to now.
+void MyMesh::sendSyncSinceDelta(uint32_t T) {
+  char client_id[MAX_CLIENT_ID_LEN + 1];
+  _serial->getCurrentClientId(client_id, sizeof(client_id));
+
+  uint8_t send_buf[MAX_FRAME_SIZE];
+  int tail = (history_head - history_count + HISTORY_RING_SIZE) % HISTORY_RING_SIZE;
+
+  for (int i = 0; i < history_count; i++) {
+    int idx = (tail + i) % HISTORY_RING_SIZE;
+    const HistoryEntry& e = history_ring[idx];
+    uint8_t code = e.buf[0];
+
+    if (code != RESP_CODE_CONTACT_MSG_RECV && code != RESP_CODE_CONTACT_MSG_RECV_V3 &&
+        code != RESP_CODE_CHANNEL_MSG_RECV && code != RESP_CODE_CHANNEL_MSG_RECV_V3)
+      continue;
+
+    bool include = false;
+    if (code == RESP_CODE_CONTACT_MSG_RECV_V3 || code == RESP_CODE_CHANNEL_MSG_RECV_V3) {
+      uint32_t ts = getMessageTimestampFromFrame(e.buf, e.len);
+      include = (ts >= T);
+    } else {
+      include = (T == 0);
+    }
+    if (!include) continue;
+
+    const uint8_t* ptr = e.buf;
+    int len = e.len;
+    int adapted = adaptHistoryFrameForClient(client_id, e.buf, e.len, send_buf);
+    if (adapted > 0) {
+      ptr = send_buf;
+      len = adapted;
+    }
+    _serial->writeFrame(ptr, len);
+  }
+
+  out_frame[0] = RESP_CODE_SYNC_SINCE_DONE;
+  _serial->writeFrame(out_frame, 1);
 }
 
 float MyMesh::getAirtimeBudgetFactor() const {
@@ -1940,6 +2000,14 @@ void MyMesh::handleCmdFrame(size_t len) {
   } else if (cmd_frame[0] == CMD_IMPORT_CONTACT && len > 2 + 32 + 64) {
     if (importContact(&cmd_frame[1], len - 1)) {
       writeOKFrame();
+    } else {
+      writeErrFrame(ERR_CODE_ILLEGAL_ARG);
+    }
+  } else if (cmd_frame[0] == CMD_SYNC_SINCE) {
+    if (len >= 5) {
+      uint32_t T;
+      memcpy(&T, &cmd_frame[1], 4);
+      sendSyncSinceDelta(T);
     } else {
       writeErrFrame(ERR_CODE_ILLEGAL_ARG);
     }

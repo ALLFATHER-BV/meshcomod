@@ -906,6 +906,7 @@ def on_notification_received(data):
 
 3. **Message Handling**:
    - Send `CMD_SYNC_NEXT_MESSAGE` when `PUSH_CODE_MSG_WAITING` is received
+   - For backfill after reconnect: send **SyncSince (command 62)** with payload 4 bytes LE = last-sync Unix timestamp (or 0); firmware responds with message frames (7/8/16/17) since T then **SyncSinceDone (response 61)**. Use command 62 (not 60; 60 is GET_ALLOWED_REPEAT_FREQ).
    - Implement message deduplication to avoid display the same message twice
 
 4. **Channel Management**:
