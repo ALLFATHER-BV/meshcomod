@@ -16,6 +16,23 @@ Versioned prebuilts are listed here so you can **roll back** if a newer release 
 
 ---
 
+## v1.14.0.7 — 2026-03-06
+
+**Firmware version:** v1.14.0.7 (meshcomod on upstream 1.14+). **Build date:** 06 Mar 2026.
+
+**Highlights:**
+- **Companion stream binary-only:** Removed contact-list Serial.printf from companion path. USB/WS/TCP now carry only framed protocol bytes; no ASCII debug in same stream, so parser is not contaminated. GetContacts and Web Serial should load contacts reliably.
+- Retry and reply-target fix (v1.14.0.6) unchanged.
+
+**Prebuilt binaries (use [flasher.meshcomod.com](https://flasher.meshcomod.com) — Easy mode auto-downloads versions; for manual upload, use Custom firmware):**
+
+| Device   | Merged (recommended) | Non-merged |
+|----------|----------------------|------------|
+| Heltec V4 | [heltec_v4_companion_radio_usb_tcp-merged.bin](prebuilt/releases/v1.14.0.7/heltec_v4_companion_radio_usb_tcp-merged.bin) | [heltec_v4_companion_radio_usb_tcp.bin](prebuilt/releases/v1.14.0.7/heltec_v4_companion_radio_usb_tcp.bin) |
+| Heltec V3 | [Heltec_v3_companion_radio_usb_tcp-merged.bin](prebuilt/releases/v1.14.0.7/Heltec_v3_companion_radio_usb_tcp-merged.bin) | [Heltec_v3_companion_radio_usb_tcp.bin](prebuilt/releases/v1.14.0.7/Heltec_v3_companion_radio_usb_tcp.bin) |
+
+---
+
 ## v1.14.0.6 — 2026-03-06
 
 **Firmware version:** v1.14.0.6 (meshcomod on upstream 1.14+). **Build date:** 06 Mar 2026.

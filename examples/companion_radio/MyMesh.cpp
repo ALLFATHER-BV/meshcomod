@@ -1853,7 +1853,7 @@ void MyMesh::handleCmdFrame(size_t len) {
       _contact_list_reply_target = _serial->getReplyTarget();
       size_t start_ret = _serial->writeFrame(reply, 5);
       _contact_send_index = 0;
-      Serial.printf("contacts: sent START count=%lu ret=%u\n", (unsigned long)count, (unsigned)start_ret);
+      // No debug prints here: companion stream must be binary-only (no ASCII in same transport as protocol frames)
 
       // start iterator
       _iter = startContactsIterator();
@@ -2995,7 +2995,6 @@ void MyMesh::checkSerialInterface() {
           if (r > 0) delay(5);
           sent = writeContactRespFrame(RESP_CODE_CONTACT, contact);
         }
-        Serial.printf("contacts: sent CONTACT i=%lu ret=%u\n", (unsigned long)_contact_send_index, (unsigned)sent);
         _contact_send_index++;
         if (contact.lastmod > _most_recent_lastmod) {
           _most_recent_lastmod = contact.lastmod; // save for the RESP_CODE_END_OF_CONTACTS frame
@@ -3011,7 +3010,6 @@ void MyMesh::checkSerialInterface() {
         if (r > 0) delay(5);
         sent = writeContactRespFrame(RESP_CODE_CONTACT, meshcomod);
       }
-      Serial.printf("contacts: sent CONTACT i=%lu (meshcomod) ret=%u\n", (unsigned long)_contact_send_index, (unsigned)sent);
       out_frame[0] = RESP_CODE_END_OF_CONTACTS;
       memcpy(&out_frame[1], &_most_recent_lastmod,
              4); // include the most recent lastmod, so app can update their 'since'
@@ -3020,7 +3018,6 @@ void MyMesh::checkSerialInterface() {
         if (r > 0) delay(5);
         sent = _serial->writeFrame(out_frame, 5);
       }
-      Serial.printf("contacts: sent END ret=%u\n", (unsigned)sent);
       _iter_started = false;
     }
   //} else if (!_serial->isWriteBusy()) {
