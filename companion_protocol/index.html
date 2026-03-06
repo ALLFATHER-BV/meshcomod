@@ -456,6 +456,67 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#tcp-connection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TCP Connection
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="TCP Connection">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#when-tcp-is-available" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When TCP is available
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#connecting-over-tcp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Connecting over TCP
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tcp-specific-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TCP-specific notes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#wifi-for-browser-only-websocket-server-on-device" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        WiFi for browser only: WebSocket server on device
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#packet-structure" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1248,6 +1309,67 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#tcp-connection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TCP Connection
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="TCP Connection">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#when-tcp-is-available" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When TCP is available
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#connecting-over-tcp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Connecting over TCP
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tcp-specific-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TCP-specific notes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#wifi-for-browser-only-websocket-server-on-device" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        WiFi for browser only: WebSocket server on device
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#packet-structure" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1673,14 +1795,13 @@
 
 <h1 id="companion-protocol">Companion Protocol</h1>
 <ul>
-<li><strong>Last Updated</strong>: 2026-01-03</li>
+<li><strong>Last Updated</strong>: 2026-02-25</li>
 <li><strong>Protocol Version</strong>: Companion Firmware v1.12.0+</li>
 </ul>
 <blockquote>
 <p>NOTE: This document is still in development. Some information may be inaccurate.</p>
 </blockquote>
-<p>This document provides a comprehensive guide for communicating with MeshCore devices over Bluetooth Low Energy (BLE).</p>
-<p>It is platform-agnostic and can be used for Android, iOS, Python, JavaScript, or any other platform that supports BLE.</p>
+<p>This document describes how to talk to MeshCore companion firmware over <strong>BLE</strong> or <strong>TCP</strong>. The same binary protocol (commands, responses, framing) is used on both transports; only the connection method differs. Use BLE for mobile/close-range; use TCP for the <strong>future custom client</strong> (e.g. desktop/daemon over WiFi) when the device has WiFi and TCP enabled.</p>
 <h2 id="official-libraries">Official Libraries</h2>
 <p>Please see the following repos for existing MeshCore Companion Protocol libraries.</p>
 <ul>
@@ -1699,6 +1820,7 @@
 <h2 id="table-of-contents">Table of Contents</h2>
 <ol>
 <li><a href="#ble-connection">BLE Connection</a></li>
+<li><a href="#tcp-connection">TCP Connection</a></li>
 <li><a href="#packet-structure">Packet Structure</a></li>
 <li><a href="#commands">Commands</a></li>
 <li><a href="#channel-management">Channel Management</a></li>
@@ -1828,11 +1950,70 @@
 <li>On error, log error, clear current command, process next</li>
 </ul>
 <hr />
+<h2 id="tcp-connection">TCP Connection</h2>
+<p>Companion firmware (USB+TCP build) can expose the same protocol over WiFi. Use TCP for the <strong>future custom client</strong> (e.g. desktop app or daemon) when the device is on the same network and TCP is enabled.</p>
+<h3 id="when-tcp-is-available">When TCP is available</h3>
+<ul>
+<li>Device runs a build that includes TCP (e.g. <code>heltec_v4_companion_radio_usb_tcp</code>).</li>
+<li>WiFi is configured and connected.</li>
+<li>TCP server is enabled (e.g. via device UI or Meshcomod command <code>tcp on</code>; default port <strong>5000</strong>).</li>
+</ul>
+<h3 id="connecting-over-tcp">Connecting over TCP</h3>
+<ol>
+<li>
+<p><strong>Discover the device IP</strong><br />
+   Use your network’s DHCP table, device display (if shown), or mDNS if the firmware advertises it.</p>
+</li>
+<li>
+<p><strong>Open a TCP socket</strong><br />
+   Connect to <code>host:5000</code> (or the configured port). No TLS; the protocol is plain TCP on the LAN.</p>
+</li>
+<li>
+<p><strong>Use the same frame format as serial</strong><br />
+   Each message is:</p>
+</li>
+<li><strong>Frame header</strong>: 3 bytes — <code>0x3C</code> (<code>'&lt;'</code>), then payload length as 16-bit little-endian (low byte, high byte).</li>
+<li><strong>Payload</strong>: exactly <code>length</code> bytes (command or response: packet type byte + data).</li>
+</ol>
+<p>So you send: <code>'&lt;'</code> (1 byte) + <code>len_lo</code> (1 byte) + <code>len_hi</code> (1 byte) + payload (len bytes). You receive the same framing from the device.</p>
+<ol>
+<li><strong>Same command sequence as BLE</strong><br />
+   After connection, send in order (and wait for responses):</li>
+<li><code>CMD_APP_START</code> (0x01 0x03 "mccli"…)</li>
+<li><code>CMD_DEVICE_QUERY</code> (0x16 0x03)</li>
+<li><code>CMD_SET_DEVICE_TIME</code></li>
+<li><code>CMD_GET_CONTACTS</code></li>
+<li><code>CMD_GET_CHANNEL</code> for each channel</li>
+<li>
+<p>For backfill after reconnect: <strong>SyncSince (command 62)</strong> with 4-byte LE Unix timestamp (or 0); handle <strong>SyncSinceDone (response 61)</strong>. Use 62 (not 60) for the custom client.</p>
+</li>
+<li>
+<p><strong>Reconnect and backfill</strong><br />
+   On reconnect, run the same startup sequence and use SyncSince (62) with the last sync timestamp to fetch only messages since then; then continue with normal flow.</p>
+</li>
+</ol>
+<h3 id="tcp-specific-notes">TCP-specific notes</h3>
+<ul>
+<li>The device may serve up to a few TCP clients at once; each connection is independent and gets the same protocol.</li>
+<li>If the device loses WiFi or TCP is turned off, the socket will close; implement reconnect and backfill (SyncSince) as above.</li>
+<li>No application-level keepalive is specified; TCP keepalive or a periodic no-op can help detect dead connections.</li>
+</ul>
+<h3 id="wifi-for-browser-only-websocket-server-on-device">WiFi for browser only: WebSocket server on device</h3>
+<p>For <strong>device + browser, nothing extra</strong> (no bridge, no helper app), the firmware runs a <strong>WebSocket server</strong> on the device when TCP is enabled and WiFi is up. The browser connects to <strong><code>ws://&lt;device-ip&gt;:8765</code></strong> (default port 8765; build may use <code>WS_PORT</code>). Same companion bytes as binary WebSocket frames.</p>
+<p><strong>Contract for firmware:</strong></p>
+<ul>
+<li>When WiFi is up, listen for TCP on a configurable port (e.g. 8765).</li>
+<li>Accept TCP connections and perform a standard <strong>WebSocket handshake</strong> (RFC 6455 HTTP Upgrade).</li>
+<li>After handshake: one WebSocket connection = one companion serial session. Each <strong>binary</strong> WebSocket frame from the client is fed to the same companion parser as USB/TCP. Outgoing companion bytes are sent as <strong>binary</strong> WebSocket frames. No text frames, no JSON wrapper; byte-transparent.</li>
+<li>Same command/response stream and Sync-Since (62/61) as other transports.</li>
+</ul>
+<p>Full design and client-side contract: <strong>meshcomod-client</strong> repo, <code>docs/DEVICE_WEBSOCKET_WIFI.md</code>.</p>
+<hr />
 <h2 id="packet-structure">Packet Structure</h2>
 <p>The MeshCore protocol uses a binary format with the following structure:</p>
 <ul>
-<li><strong>Commands</strong>: Sent from app to firmware via RX characteristic</li>
-<li><strong>Responses</strong>: Received from firmware via TX characteristic notifications</li>
+<li><strong>Commands</strong>: Sent from app to firmware (via BLE RX characteristic, or TCP socket)</li>
+<li><strong>Responses</strong>: Received from firmware (via BLE TX notifications, or TCP socket)</li>
 <li><strong>All multi-byte integers</strong>: Little-endian byte order (except CayenneLPP which is Big-endian)</li>
 <li><strong>All strings</strong>: UTF-8 encoding</li>
 </ul>
