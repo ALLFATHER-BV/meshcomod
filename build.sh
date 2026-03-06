@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
 
+# use pio if in PATH, else python3 -m platformio (e.g. when installed via pip)
+PIO_CMD="pio"
+if ! command -v pio >/dev/null 2>&1; then
+  PIO_CMD="python3 -m platformio"
+fi
+
 global_usage() {
   cat - <<EOF
 Usage:
@@ -49,7 +55,7 @@ EOF
 
 # get a list of pio env names that start with "env:"
 get_pio_envs() {
-  pio project config | grep 'env:' | sed 's/env://'
+  $PIO_CMD project config | grep 'env:' | sed 's/env://'
 }
 
 # Catch cries for help before doing anything else.
@@ -65,7 +71,7 @@ case $1 in
 esac
 
 # cache project config json for use in get_platform_for_env()
-PIO_CONFIG_JSON=$(pio project config --json-output)
+PIO_CONFIG_JSON=$($PIO_CMD project config --json-output)
 
 # $1 should be the string to find (case insensitive)
 get_pio_envs_containing_string() {
@@ -147,11 +153,11 @@ build_firmware() {
   disable_debug_flags
 
   # build firmware target
-  pio run -e $1
+  $PIO_CMD run -e $1
 
   # build merge-bin for esp32 fresh install, copy .bins to out folder (e.g: Heltec_v3_room_server-v1.0.0-SHA.bin)
   if [ "$ENV_PLATFORM" == "ESP32_PLATFORM" ]; then
-    pio run -t mergebin -e $1
+    $PIO_CMD run -t mergebin -e $1
     cp .pio/build/$1/firmware.bin out/${FIRMWARE_FILENAME}.bin 2>/dev/null || true
     cp .pio/build/$1/firmware-merged.bin out/${FIRMWARE_FILENAME}-merged.bin 2>/dev/null || true
   fi
