@@ -2,6 +2,12 @@
 #include <mbedtls/sha1.h>
 #include <string.h>
 
+// Optional: build with -DWS_FRAME_DEBUG=1 to log each WS send (client, code 2=START/3=CONTACT/4=END, len, written).
+// Use WiFi-only when enabled (no Web Serial on same device) so Serial is free for debug.
+#ifndef WS_FRAME_DEBUG
+#define WS_FRAME_DEBUG 0
+#endif
+
 #define TCP_WRITE_TIMEOUT_MS   120
 #define WS_MAGIC               "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
@@ -308,10 +314,16 @@ size_t WebSocketCompanionServer::writeToClient(int client_index, const uint8_t s
   }
   if (!writeAllBytes(*cl, hdr, hdr_len, TCP_WRITE_TIMEOUT_MS) ||
       !writeAllBytes(*cl, src, len, TCP_WRITE_TIMEOUT_MS)) {
+#if WS_FRAME_DEBUG
+    Serial.printf("WS frame client=%d code=%u len=%u written=0\n", client_index, (unsigned)(len ? src[0] : 0), (unsigned)len);
+#endif
     // Return 0 so caller can retry (e.g. contact list iterator). Do not disconnect on
     // transient buffer full; companion layer retries and will complete the sequence.
     return 0;
   }
+#if WS_FRAME_DEBUG
+  Serial.printf("WS frame client=%d code=%u len=%u written=%u\n", client_index, (unsigned)(len ? src[0] : 0), (unsigned)len, (unsigned)len);
+#endif
   return len;
 }
 
