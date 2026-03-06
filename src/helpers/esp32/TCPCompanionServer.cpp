@@ -160,8 +160,8 @@ size_t TCPCompanionServer::writeToClient(int client_index, const uint8_t src[], 
   WiFiClient* cl = &_clients[client_index].client;
   if (!writeAllBytes(*cl, hdr, 3, TCP_WRITE_TIMEOUT_MS) ||
       !writeAllBytes(*cl, src, len, TCP_WRITE_TIMEOUT_MS)) {
-    // Prevent stream framing desync after partial writes.
-    disconnectClient(client_index);
+    // Return 0 so caller can retry (e.g. contact list). Do not disconnect on transient
+    // buffer full; companion layer retries and will complete the sequence.
     return 0;
   }
   return len;

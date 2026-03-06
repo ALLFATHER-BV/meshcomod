@@ -308,7 +308,8 @@ size_t WebSocketCompanionServer::writeToClient(int client_index, const uint8_t s
   }
   if (!writeAllBytes(*cl, hdr, hdr_len, TCP_WRITE_TIMEOUT_MS) ||
       !writeAllBytes(*cl, src, len, TCP_WRITE_TIMEOUT_MS)) {
-    disconnectClient(client_index);
+    // Return 0 so caller can retry (e.g. contact list iterator). Do not disconnect on
+    // transient buffer full; companion layer retries and will complete the sequence.
     return 0;
   }
   return len;

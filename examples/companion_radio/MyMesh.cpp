@@ -280,7 +280,7 @@ void MyMesh::writeDisabledFrame() {
   _serial->writeFrame(buf, 1);
 }
 
-void MyMesh::writeContactRespFrame(uint8_t code, const ContactInfo &contact, bool to_all) {
+size_t MyMesh::writeContactRespFrame(uint8_t code, const ContactInfo &contact, bool to_all) {
   int i = 0;
   out_frame[i++] = code;
   memcpy(&out_frame[i], contact.id.pub_key, PUB_KEY_SIZE);
@@ -301,9 +301,8 @@ void MyMesh::writeContactRespFrame(uint8_t code, const ContactInfo &contact, boo
   memcpy(&out_frame[i], &contact.lastmod, 4);
   i += 4;
   if (to_all)
-    _serial->writeFrameToAll(out_frame, i);
-  else
-    _serial->writeFrame(out_frame, i);
+    return _serial->writeFrameToAll(out_frame, i);
+  return _serial->writeFrame(out_frame, i);
 }
 
 const uint8_t MyMesh::MESHCOMOD_PUB_KEY_PREFIX[6] = { 0x4D, 0x45, 0x53, 0x48, 0x43, 0x4D }; // "MESHCM"
@@ -2981,7 +2980,13 @@ void MyMesh::checkSerialInterface() {
     ContactInfo contact;
     if (_iter.hasNext(this, contact)) {
       if (contact.lastmod > _iter_filter_since) { // apply the 'since' filter
-        writeContactRespFrame(RESP_CODE_CONTACT, contact);
+        // Retry so transient full buffers (TCP/WebSocket) don't drop CONTACT frames
+        const int max_retries = 10;
+        size_t sent = 0;
+        for (int r = 0; r < max_retries && sent == 0; r++) {
+          if (r > 0) delay(5);
+          sent = writeContactRespFrame(RESP_CODE_CONTACT, contact);
+        }
         if (contact.lastmod > _most_recent_lastmod) {
           _most_recent_lastmod = contact.lastmod; // save for the RESP_CODE_END_OF_CONTACTS frame
         }
@@ -2989,11 +2994,21 @@ void MyMesh::checkSerialInterface() {
     } else { // EOF
       ContactInfo meshcomod;
       getMeshcomodContact(meshcomod);
-      writeContactRespFrame(RESP_CODE_CONTACT, meshcomod);
+      // Retry meshcomod CONTACT and END so WiFi/WebSocket get full sequence
+      const int max_retries = 10;
+      size_t sent = 0;
+      for (int r = 0; r < max_retries && sent == 0; r++) {
+        if (r > 0) delay(5);
+        sent = writeContactRespFrame(RESP_CODE_CONTACT, meshcomod);
+      }
       out_frame[0] = RESP_CODE_END_OF_CONTACTS;
       memcpy(&out_frame[1], &_most_recent_lastmod,
              4); // include the most recent lastmod, so app can update their 'since'
-      _serial->writeFrame(out_frame, 5);
+      sent = 0;
+      for (int r = 0; r < max_retries && sent != 5; r++) {
+        if (r > 0) delay(5);
+        sent = _serial->writeFrame(out_frame, 5);
+      }
       _iter_started = false;
     }
   //} else if (!_serial->isWriteBusy()) {
