@@ -122,7 +122,8 @@ size_t MultiTransportCompanionInterface::checkRecvFrame(uint8_t dest[]) {
     _ble.drainSendQueue();
 #endif
 
-  // Poll USB first (preserve Home Assistant / USB priority)
+  // Poll USB first (preserve Home Assistant / USB priority). Do not overwrite _last_reply_target
+  // when caller is in the middle of a contact-list stream (handled by caller saving/restoring target).
   size_t len = _usb.checkRecvFrame(dest);
   if (len > 0) {
     _last_reply_target = REPLY_TARGET_USB;

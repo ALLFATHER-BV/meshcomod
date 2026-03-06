@@ -1509,6 +1509,7 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
       _serial(NULL), telemetry(MAX_PACKET_PAYLOAD - 4), _store(&store), _ui(ui) {
   _iter_started = false;
   _contact_send_index = 0;
+  _contact_list_reply_target = -1;
   _cli_rescue = false;
   offline_queue_len = 0;
   history_count = 0;
@@ -1848,6 +1849,8 @@ void MyMesh::handleCmdFrame(size_t len) {
       reply[0] = RESP_CODE_CONTACTS_START;
       uint32_t count = getNumContacts(); // total, NOT filtered count
       memcpy(&reply[1], &count, 4);
+      // Save reply target so CONTACT/END go to same client (WS/TCP) even if next checkRecvFrame overwrites it
+      _contact_list_reply_target = _serial->getReplyTarget();
       size_t start_ret = _serial->writeFrame(reply, 5);
       _contact_send_index = 0;
       Serial.printf("contacts: sent START count=%lu ret=%u\n", (unsigned long)count, (unsigned)start_ret);
@@ -2980,6 +2983,8 @@ void MyMesh::checkSerialInterface() {
   if (!handled_cmd && _iter_started              // check if our ContactsIterator is 'running'
              && !_serial->isWriteBusy() // don't spam the Serial Interface too quickly!
   ) {
+    // Restore reply target so CONTACT/END go to the client that got START (fixes WS/TCP when USB is polled first)
+    _serial->setReplyTarget(_contact_list_reply_target);
     ContactInfo contact;
     if (_iter.hasNext(this, contact)) {
       if (contact.lastmod > _iter_filter_since) { // apply the 'since' filter

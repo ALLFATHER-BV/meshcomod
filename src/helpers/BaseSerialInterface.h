@@ -43,4 +43,9 @@ public:
   virtual void getCurrentClientId(char* dest, size_t max_len) const {
     if (dest && max_len > 0) dest[0] = '\0';
   }
+
+  // Multi-transport: reply target for current response (USB/BLE/TCP/WS index). Used so contact-list
+  // CONTACT/END go to the same client that got START even if checkRecvFrame overwrites target.
+  virtual int getReplyTarget() const { return -1; }
+  virtual void setReplyTarget(int target) { (void)target; }
 };

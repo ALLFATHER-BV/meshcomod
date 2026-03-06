@@ -58,6 +58,9 @@ public:
   void setCurrentClientId(const char* id) override;
   void getCurrentClientId(char* dest, size_t max_len) const override;
 
+  int getReplyTarget() const override { return _last_reply_target; }
+  void setReplyTarget(int target) override { _last_reply_target = target; }
+
 private:
   int _clientIdSlot() const;
   static const size_t _max_client_id_len = 32;

@@ -8,11 +8,11 @@
 #define FIRMWARE_VER_CODE 9
 
 #ifndef FIRMWARE_BUILD_DATE
-#define FIRMWARE_BUILD_DATE "24 Feb 2026"
+#define FIRMWARE_BUILD_DATE "06 Mar 2026"
 #endif
 
 #ifndef FIRMWARE_VERSION
-#define FIRMWARE_VERSION "v1.14.0.5"
+#define FIRMWARE_VERSION "v1.14.0.6"
 #endif
 
 #if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
@@ -228,6 +228,7 @@ private:
   uint32_t _iter_filter_since;
   uint32_t _most_recent_lastmod;
   uint32_t _contact_send_index;  // temporary diagnostic: index of CONTACT sent
+  int _contact_list_reply_target;  // reply target for this contact list (so CONTACT/END go to same client as START)
   uint32_t _active_ble_pin;
   bool _iter_started;
   bool _cli_rescue;
