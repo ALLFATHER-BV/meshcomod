@@ -8,6 +8,7 @@
 #define KEY_RIGHT          0xB7
 #define KEY_SELECT           10
 #define KEY_ENTER            13
+#define KEY_LONG_ENTER       0xF4  // long-press enter (e.g. NETWORK/BLUETOOTH toggles)
 #define KEY_CANCEL           27   // Esc
 #define KEY_HOME           0xF0
 #define KEY_NEXT           0xF1

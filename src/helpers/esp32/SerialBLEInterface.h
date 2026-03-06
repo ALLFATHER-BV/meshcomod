@@ -17,13 +17,16 @@ class SerialBLEInterface : public BaseSerialInterface, BLESecurityCallbacks, BLE
   uint32_t _pin_code;
   unsigned long _last_write;
   unsigned long adv_restart_time;
+  uint8_t _peer_bda[6];
+  bool _peer_bda_valid;
 
   struct Frame {
     uint8_t len;
     uint8_t buf[MAX_FRAME_SIZE];
   };
 
-  #define FRAME_QUEUE_SIZE  4
+  // Larger queue reduces dropped push/tickle frames during short BLE congestion bursts.
+  #define FRAME_QUEUE_SIZE  12
   int recv_queue_len;
   Frame recv_queue[FRAME_QUEUE_SIZE];
   int send_queue_len;
@@ -59,6 +62,7 @@ public:
     _last_write = 0;
     last_conn_id = 0;
     send_queue_len = recv_queue_len = 0;
+    _peer_bda_valid = false;
   }
 
   /**
@@ -76,9 +80,15 @@ public:
 
   bool isConnected() const override;
 
+  /** If a peer is connected, format their BLE address into buf as "XX:XX:XX:XX:XX:XX" and return true; else buf[0]='\0' and return false. */
+  bool getConnectedPeerAddress(char* buf, size_t len) const;
+
   bool isWriteBusy() const override;
   size_t writeFrame(const uint8_t src[], size_t len) override;
   size_t checkRecvFrame(uint8_t dest[]) override;
+
+  /** Drain one frame from the send queue if interval allows. Call every loop so BLE gets updates even when USB/TCP are polled first. */
+  void drainSendQueue();
 };
 
 #if BLE_DEBUG_LOGGING && ARDUINO

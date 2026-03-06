@@ -32,10 +32,19 @@ static uint32_t _atoi(const char* sp) {
 #elif defined(ESP32)
   #include <SPIFFS.h>
   DataStore store(SPIFFS, rtc_clock);
+  #if defined(WIFI_SSID) || defined(MULTI_TRANSPORT_COMPANION)
+    #include "WiFiConfig.h"
+  #endif
 #endif
 
 #ifdef ESP32
-  #ifdef WIFI_SSID
+  #ifdef MULTI_TRANSPORT_COMPANION
+    #include <helpers/esp32/MultiTransportCompanionInterface.h>
+    MultiTransportCompanionInterface serial_interface;
+    #ifndef TCP_PORT
+      #define TCP_PORT 5000
+    #endif
+  #elif defined(WIFI_SSID)
     #include <helpers/esp32/SerialWifiInterface.h>
     SerialWifiInterface serial_interface;
     #ifndef TCP_PORT
@@ -193,9 +202,29 @@ void setup() {
     #endif
   );
 
-#ifdef WIFI_SSID
+#if defined(WIFI_SSID) || defined(MULTI_TRANSPORT_COMPANION)
+  wifiConfigBegin();
+#endif
+
+#ifdef MULTI_TRANSPORT_COMPANION
+  board.setInhibitSleep(true);
+  // Defer WiFi until first loop() so setup() always completes (display + USB come up even if WiFi would crash/hang)
+  serial_interface.begin(Serial, TCP_PORT);
+  serial_interface.setBroadcastResponses(true);  // RX log, channel messages, etc. go to all clients (USB + TCP [+ BLE]), not only last sender
+#if defined(BLE_PIN_CODE)
+  serial_interface.beginBle(BLE_NAME_PREFIX, the_mesh.getNodePrefs()->node_name, the_mesh.getBLEPin());
+#endif
+#elif defined(WIFI_SSID)
   board.setInhibitSleep(true);   // prevent sleep when WiFi is active
-  WiFi.begin(WIFI_SSID, WIFI_PWD);
+  if (wifiConfigHasRuntime()) {
+    char ssid[WIFI_CONFIG_SSID_MAX];
+    char pwd[WIFI_CONFIG_PWD_MAX];
+    wifiConfigGetSsid(ssid, sizeof(ssid));
+    wifiConfigGetPwd(pwd, sizeof(pwd));
+    WiFi.begin(ssid, pwd[0] ? pwd : nullptr);
+  } else {
+    WiFi.begin(WIFI_SSID, WIFI_PWD);
+  }
   serial_interface.begin(TCP_PORT);
 #elif defined(BLE_PIN_CODE)
   serial_interface.begin(BLE_NAME_PREFIX, the_mesh.getNodePrefs()->node_name, the_mesh.getBLEPin());
@@ -219,6 +248,46 @@ void setup() {
 }
 
 void loop() {
+#ifdef MULTI_TRANSPORT_COMPANION
+  static bool wifi_started = false;
+  static uint32_t last_wifi_retry_ms = 0;
+  static const uint32_t WIFI_RETRY_INTERVAL_MS = 10000;
+  if (!wifi_started) {
+    wifi_started = true;
+    if (wifiConfigHasRuntime()) {
+      char ssid[WIFI_CONFIG_SSID_MAX];
+      char pwd[WIFI_CONFIG_PWD_MAX];
+      wifiConfigGetSsid(ssid, sizeof(ssid));
+      wifiConfigGetPwd(pwd, sizeof(pwd));
+      if (strlen(ssid) > 0) {
+        WiFi.begin(ssid, pwd[0] ? pwd : nullptr);
+        last_wifi_retry_ms = millis();
+      }
+    } else if (strlen(WIFI_SSID) > 0) {
+      WiFi.begin(WIFI_SSID, WIFI_PWD);
+      last_wifi_retry_ms = millis();
+    }
+  }
+  // Automatic WiFi recovery for TCP mode: retry connection periodically if link drops.
+  if (WiFi.status() != WL_CONNECTED) {
+    uint32_t now = millis();
+    if ((uint32_t)(now - last_wifi_retry_ms) >= WIFI_RETRY_INTERVAL_MS) {
+      last_wifi_retry_ms = now;
+      if (wifiConfigHasRuntime()) {
+        char ssid[WIFI_CONFIG_SSID_MAX];
+        char pwd[WIFI_CONFIG_PWD_MAX];
+        wifiConfigGetSsid(ssid, sizeof(ssid));
+        wifiConfigGetPwd(pwd, sizeof(pwd));
+        if (strlen(ssid) > 0) {
+          WiFi.begin(ssid, pwd[0] ? pwd : nullptr);
+        }
+      } else if (strlen(WIFI_SSID) > 0) {
+        WiFi.begin(WIFI_SSID, WIFI_PWD);
+      }
+    }
+  }
+  serial_interface.startTcpServer();  // start TCP server after WiFi (idempotent)
+#endif
   the_mesh.loop();
   sensors.loop();
 #ifdef DISPLAY_CLASS

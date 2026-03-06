@@ -52,18 +52,23 @@ public:
   }
 
   int render(DisplayDriver& display) override {
-    // meshcore logo
+    // original MeshCore logo at top
+    const int logo_w = 128, logo_h = 13;
+    display.setColor(DisplayDriver::LIGHT);
+    display.drawXbm((display.width() - logo_w) / 2, 2, meshcore_logo, logo_w, logo_h);
+
+    // meshcomod addon line below logo
     display.setColor(DisplayDriver::BLUE);
-    int logoWidth = 128;
-    display.drawXbm((display.width() - logoWidth) / 2, 3, meshcore_logo, logoWidth, 13);
+    display.setTextSize(1);
+    display.drawTextCentered(display.width() / 2, 18, "MESHCOMOD addon");
 
     // version info
     display.setColor(DisplayDriver::LIGHT);
     display.setTextSize(2);
-    display.drawTextCentered(display.width()/2, 22, _version_info);
+    display.drawTextCentered(display.width() / 2, 28, _version_info);
 
     display.setTextSize(1);
-    display.drawTextCentered(display.width()/2, 42, FIRMWARE_BUILD_DATE);
+    display.drawTextCentered(display.width() / 2, 46, FIRMWARE_BUILD_DATE);
 
     return 1000;
   }
@@ -82,6 +87,9 @@ class HomeScreen : public UIScreen {
     RADIO,
     BLUETOOTH,
     ADVERT,
+#ifdef MULTI_TRANSPORT_COMPANION
+    NETWORK,
+#endif
 #if ENV_INCLUDE_GPS == 1
     GPS,
 #endif
@@ -271,12 +279,89 @@ public:
       sprintf(tmp, "Noise floor: %d", radio_driver.getNoiseFloor());
       display.print(tmp);
     } else if (_page == HomePage::BLUETOOTH) {
-      display.setColor(DisplayDriver::GREEN);
-      display.drawXbm((display.width() - 32) / 2, 18,
-          _task->isSerialEnabled() ? bluetooth_on : bluetooth_off,
-          32, 32);
+      if (_task->hasBleCapability()) {
+        // TCP-style layout: title, state, PIN when on, footer with long-press hint
+        display.setColor(DisplayDriver::BLUE);
+        display.setTextSize(1);
+        int y = 10;
+        display.drawTextCentered(display.width() / 2, y, "BLE");
+        y += 12;
+        if (_task->isBleEnabled()) {
+          display.setColor(DisplayDriver::GREEN);
+          snprintf(tmp, sizeof(tmp), "Pin: %lu", (unsigned long)the_mesh.getBLEPin());
+          display.drawTextCentered(display.width() / 2, y, tmp);
+          y += 11;
+
+          char peer[24];
+          if (_task->getBlePeerAddress(peer, sizeof(peer)) && peer[0] != '\0') {
+            display.drawTextCentered(display.width() / 2, y, "Connected");
+            y += 11;
+            display.drawTextCentered(display.width() / 2, y, peer);
+          } else {
+            display.drawTextCentered(display.width() / 2, y, "Waiting for device");
+          }
+        } else {
+          display.setColor(DisplayDriver::RED);
+          display.drawTextCentered(display.width() / 2, y, "BLE disabled");
+        }
+        y = 64 - 11;
+        display.setColor(DisplayDriver::LIGHT);
+        display.drawTextCentered(display.width() / 2, y, _task->isBleEnabled() ? "OFF: long press" : "ON: long press");
+      } else {
+        display.setColor(DisplayDriver::GREEN);
+        bool on = _task->isSerialEnabled();
+        display.drawXbm((display.width() - 32) / 2, 18,
+            on ? bluetooth_on : bluetooth_off,
+            32, 32);
+        display.setTextSize(1);
+        display.drawTextCentered(display.width() / 2, 64 - 11, "toggle: " PRESS_LABEL);
+      }
+#ifdef MULTI_TRANSPORT_COMPANION
+    } else if (_page == HomePage::NETWORK) {
+      display.setColor(DisplayDriver::BLUE);
       display.setTextSize(1);
-      display.drawTextCentered(display.width() / 2, 64 - 11, "toggle: " PRESS_LABEL);
+      int y = 10;
+      display.drawTextCentered(display.width() / 2, y, "TCP");
+      y += 12;
+      if (_task->isTcpEnabled()) {
+#ifdef WIFI_SSID
+        IPAddress ip = WiFi.localIP();
+        if (ip[0] != 0 || ip[1] != 0 || ip[2] != 0 || ip[3] != 0) {
+          snprintf(tmp, sizeof(tmp), "IP: %d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
+          display.drawTextCentered(display.width() / 2, y, tmp);
+          y += 11;
+#ifndef TCP_PORT
+#define TCP_PORT 5000
+#endif
+          snprintf(tmp, sizeof(tmp), "Port: %d", TCP_PORT);
+          display.drawTextCentered(display.width() / 2, y, tmp);
+          y += 11;
+          display.setColor(DisplayDriver::GREEN);
+          snprintf(tmp, sizeof(tmp), "SSID: %.32s", WiFi.SSID().c_str());
+          display.drawTextCentered(display.width() / 2, y, tmp);
+        } else {
+          String ssid = WiFi.SSID();
+          wl_status_t ws = WiFi.status();
+          display.setColor(DisplayDriver::RED);
+          if (ssid.length() == 0 || ws == WL_NO_SSID_AVAIL) {
+            display.drawTextCentered(display.width() / 2, y, "WiFi not configured");
+          } else {
+            display.drawTextCentered(display.width() / 2, y, "WiFi connecting...");
+          }
+          y += 11;
+          display.drawTextCentered(display.width() / 2, y, "IP: 0.0.0.0");
+        }
+#else
+        display.drawTextCentered(display.width() / 2, y, "WiFi not configured");
+#endif
+      } else {
+        display.setColor(DisplayDriver::RED);
+        display.drawTextCentered(display.width() / 2, y, "TCP disabled");
+      }
+      y = 64 - 11;
+      display.setColor(DisplayDriver::LIGHT);
+      display.drawTextCentered(display.width() / 2, y, _task->isTcpEnabled() ? "OFF: long press" : "ON: long press");
+#endif
     } else if (_page == HomePage::ADVERT) {
       display.setColor(DisplayDriver::GREEN);
       display.drawXbm((display.width() - 32) / 2, 18, advert_icon, 32, 32);
@@ -417,8 +502,8 @@ public:
       }
       return true;
     }
-    if (c == KEY_ENTER && _page == HomePage::BLUETOOTH) {
-      if (_task->isSerialEnabled()) {  // toggle Bluetooth on/off
+    if (c == KEY_ENTER && _page == HomePage::BLUETOOTH && !_task->hasBleCapability()) {
+      if (_task->isSerialEnabled()) {
         _task->disableSerial();
       } else {
         _task->enableSerial();
@@ -449,6 +534,28 @@ public:
 #endif
     if (c == KEY_ENTER && _page == HomePage::SHUTDOWN) {
       _shutdown_init = true;  // need to wait for button to be released
+      return true;
+    }
+#ifdef MULTI_TRANSPORT_COMPANION
+    if (c == KEY_LONG_ENTER && _page == HomePage::NETWORK) {
+      if (_task->isTcpEnabled()) {
+        _task->disableTcp();
+        _task->showAlert("TCP disabled", 1500);
+      } else {
+        _task->enableTcp();
+        _task->showAlert("TCP enabled", 1500);
+      }
+      return true;
+    }
+#endif
+    if (c == KEY_LONG_ENTER && _page == HomePage::BLUETOOTH && _task->hasBleCapability()) {
+      if (_task->isBleEnabled()) {
+        _task->disableBle();
+        _task->showAlert("BLE disabled", 1500);
+      } else {
+        _task->enableBle();
+        _task->showAlert("BLE enabled", 1500);
+      }
       return true;
     }
     return false;
@@ -863,9 +970,9 @@ char UITask::checkDisplayOn(char c) {
 char UITask::handleLongPress(char c) {
   if (millis() - ui_started_at < 8000) {   // long press in first 8 seconds since startup -> CLI/rescue
     the_mesh.enterCLIRescue();
-    c = 0;   // consume event
+    return 0;   // consume event
   }
-  return c;
+  return KEY_LONG_ENTER;   // so screens can distinguish long press (e.g. NETWORK tab: disable TCP)
 }
 
 char UITask::handleDoubleClick(char c) {
