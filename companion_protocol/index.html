@@ -2616,6 +2616,7 @@ response = wait_for_response(PACKET_MSG_SENT)
 <p><strong>Message Handling</strong>:</p>
 </li>
 <li>Send <code>CMD_SYNC_NEXT_MESSAGE</code> when <code>PUSH_CODE_MSG_WAITING</code> is received</li>
+<li>For backfill after reconnect: send <strong>SyncSince (command 62)</strong> with payload 4 bytes LE = last-sync Unix timestamp (or 0); firmware responds with message frames (7/8/16/17) since T then <strong>SyncSinceDone (response 61)</strong>. Use command 62 (not 60; 60 is GET_ALLOWED_REPEAT_FREQ).</li>
 <li>
 <p>Implement message deduplication to avoid display the same message twice</p>
 </li>
