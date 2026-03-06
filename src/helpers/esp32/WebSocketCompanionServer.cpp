@@ -307,9 +307,10 @@ size_t WebSocketCompanionServer::writeToClient(int client_index, const uint8_t s
     hdr[1] = (uint8_t)len;
     hdr_len = 2;
   } else {
+    // RFC 6455: extended payload length is 2-byte big-endian (network order)
     hdr[1] = 126;
-    hdr[2] = len & 0xFF;
-    hdr[3] = (len >> 8) & 0xFF;
+    hdr[2] = (len >> 8) & 0xFF;
+    hdr[3] = len & 0xFF;
     hdr_len = 4;
   }
   if (!writeAllBytes(*cl, hdr, hdr_len, TCP_WRITE_TIMEOUT_MS) ||
