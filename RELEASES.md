@@ -16,6 +16,23 @@ Versioned prebuilts are listed here so you can **roll back** if a newer release 
 
 ---
 
+## v1.14.0.3 — 2026-02-24
+
+**Firmware version:** v1.14.0.3 (meshcomod on upstream 1.14+).
+
+**Highlights:**
+- **WebSocket server for browser-only WiFi:** When TCP is on and WiFi is up, device also listens on port **8765**. Connect with `ws://<device-ip>:8765` for device + browser only (no bridge). Status shows `ws: 8765` or `ws: off`.
+- Sync-Since (62/61) and v1.14.0.2 behavior unchanged.
+
+**Prebuilt binaries (use [flasher.meshcomod.com](https://flasher.meshcomod.com) — Easy mode auto-downloads versions; for manual upload, use Custom firmware):**
+
+| Device   | Merged (recommended) | Non-merged |
+|----------|----------------------|------------|
+| Heltec V4 | [heltec_v4_companion_radio_usb_tcp-merged.bin](prebuilt/releases/v1.14.0.3/heltec_v4_companion_radio_usb_tcp-merged.bin) | [heltec_v4_companion_radio_usb_tcp.bin](prebuilt/releases/v1.14.0.3/heltec_v4_companion_radio_usb_tcp.bin) |
+| Heltec V3 | [Heltec_v3_companion_radio_usb_tcp-merged.bin](prebuilt/releases/v1.14.0.3/Heltec_v3_companion_radio_usb_tcp-merged.bin) | [Heltec_v3_companion_radio_usb_tcp.bin](prebuilt/releases/v1.14.0.3/Heltec_v3_companion_radio_usb_tcp.bin) |
+
+---
+
 ## v1.14.0.2 — 2026-02-25
 
 **Firmware version:** v1.14.0.2 (meshcomod on upstream 1.14+).

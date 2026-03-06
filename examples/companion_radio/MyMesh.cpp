@@ -446,6 +446,11 @@ bool MyMesh::handleMeshcomodCommand(const char* text, int text_len) {
     } else {
       snprintf(ble, sizeof(ble), "n/a");
     }
+    char ws_line[24];
+    if (_serial->isWsStarted())
+      snprintf(ws_line, sizeof(ws_line), "ws: %u", (unsigned)_serial->getWsPort());
+    else
+      snprintf(ws_line, sizeof(ws_line), "ws: off");
 #ifdef ESP32
 #if defined(WIFI_SSID) || defined(MULTI_TRANSPORT_COMPANION)
     char wifi[120];
@@ -457,14 +462,14 @@ bool MyMesh::handleMeshcomodCommand(const char* text, int text_len) {
     } else {
       snprintf(wifi, sizeof(wifi), "wifi: disconnected");
     }
-    char status[240];
-    snprintf(status, sizeof(status), "companion status:\nusb: on\nble: %s\ntcp: %s\n%s", ble, tcp, wifi);
+    char status[280];
+    snprintf(status, sizeof(status), "companion status:\nusb: on\nble: %s\ntcp: %s\n%s\n%s", ble, tcp, ws_line, wifi);
     pushMeshcomodReply(status);
     return true;
 #endif
 #endif
-    char status_basic[160];
-    snprintf(status_basic, sizeof(status_basic), "companion status:\nusb: on\nble: %s\ntcp: %s", ble, tcp);
+    char status_basic[180];
+    snprintf(status_basic, sizeof(status_basic), "companion status:\nusb: on\nble: %s\ntcp: %s\n%s", ble, tcp, ws_line);
     pushMeshcomodReply(status_basic);
     return true;
   }

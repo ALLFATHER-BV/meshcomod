@@ -1,13 +1,11 @@
 # Companion Protocol
 
-- **Last Updated**: 2026-01-03
+- **Last Updated**: 2026-02-25
 - **Protocol Version**: Companion Firmware v1.12.0+
 
 > NOTE: This document is still in development. Some information may be inaccurate.
 
-This document provides a comprehensive guide for communicating with MeshCore devices over Bluetooth Low Energy (BLE).
-
-It is platform-agnostic and can be used for Android, iOS, Python, JavaScript, or any other platform that supports BLE.
+This document describes how to talk to MeshCore companion firmware over **BLE** or **TCP**. The same binary protocol (commands, responses, framing) is used on both transports; only the connection method differs. Use BLE for mobile/close-range; use TCP for the **future custom client** (e.g. desktop/daemon over WiFi) when the device has WiFi and TCP enabled.
 
 ## Official Libraries
 
@@ -29,14 +27,15 @@ All secrets, hashes, and cryptographic values shown in this guide are example va
 ## Table of Contents
 
 1. [BLE Connection](#ble-connection)
-2. [Packet Structure](#packet-structure)
-3. [Commands](#commands)
-4. [Channel Management](#channel-management)
-5. [Message Handling](#message-handling)
-6. [Response Parsing](#response-parsing)
-7. [Example Implementation Flow](#example-implementation-flow)
-8. [Best Practices](#best-practices)
-9. [Troubleshooting](#troubleshooting)
+2. [TCP Connection](#tcp-connection)
+3. [Packet Structure](#packet-structure)
+4. [Commands](#commands)
+5. [Channel Management](#channel-management)
+6. [Message Handling](#message-handling)
+7. [Response Parsing](#response-parsing)
+8. [Example Implementation Flow](#example-implementation-flow)
+9. [Best Practices](#best-practices)
+10. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -140,12 +139,70 @@ For reliable operation, implement a command queue.
 
 ---
 
+## TCP Connection
+
+Companion firmware (USB+TCP build) can expose the same protocol over WiFi. Use TCP for the **future custom client** (e.g. desktop app or daemon) when the device is on the same network and TCP is enabled.
+
+### When TCP is available
+
+- Device runs a build that includes TCP (e.g. `heltec_v4_companion_radio_usb_tcp`).
+- WiFi is configured and connected.
+- TCP server is enabled (e.g. via device UI or Meshcomod command `tcp on`; default port **5000**).
+
+### Connecting over TCP
+
+1. **Discover the device IP**  
+   Use your network’s DHCP table, device display (if shown), or mDNS if the firmware advertises it.
+
+2. **Open a TCP socket**  
+   Connect to `host:5000` (or the configured port). No TLS; the protocol is plain TCP on the LAN.
+
+3. **Use the same frame format as serial**  
+   Each message is:
+   - **Frame header**: 3 bytes — `0x3C` (`'<'`), then payload length as 16-bit little-endian (low byte, high byte).
+   - **Payload**: exactly `length` bytes (command or response: packet type byte + data).
+
+   So you send: `'<'` (1 byte) + `len_lo` (1 byte) + `len_hi` (1 byte) + payload (len bytes). You receive the same framing from the device.
+
+4. **Same command sequence as BLE**  
+   After connection, send in order (and wait for responses):
+   - `CMD_APP_START` (0x01 0x03 "mccli"…)
+   - `CMD_DEVICE_QUERY` (0x16 0x03)
+   - `CMD_SET_DEVICE_TIME`
+   - `CMD_GET_CONTACTS`
+   - `CMD_GET_CHANNEL` for each channel
+   - For backfill after reconnect: **SyncSince (command 62)** with 4-byte LE Unix timestamp (or 0); handle **SyncSinceDone (response 61)**. Use 62 (not 60) for the custom client.
+
+5. **Reconnect and backfill**  
+   On reconnect, run the same startup sequence and use SyncSince (62) with the last sync timestamp to fetch only messages since then; then continue with normal flow.
+
+### TCP-specific notes
+
+- The device may serve up to a few TCP clients at once; each connection is independent and gets the same protocol.
+- If the device loses WiFi or TCP is turned off, the socket will close; implement reconnect and backfill (SyncSince) as above.
+- No application-level keepalive is specified; TCP keepalive or a periodic no-op can help detect dead connections.
+
+### WiFi for browser only: WebSocket server on device
+
+For **device + browser, nothing extra** (no bridge, no helper app), the firmware runs a **WebSocket server** on the device when TCP is enabled and WiFi is up. The browser connects to **`ws://<device-ip>:8765`** (default port 8765; build may use `WS_PORT`). Same companion bytes as binary WebSocket frames.
+
+**Contract for firmware:**
+
+- When WiFi is up, listen for TCP on a configurable port (e.g. 8765).
+- Accept TCP connections and perform a standard **WebSocket handshake** (RFC 6455 HTTP Upgrade).
+- After handshake: one WebSocket connection = one companion serial session. Each **binary** WebSocket frame from the client is fed to the same companion parser as USB/TCP. Outgoing companion bytes are sent as **binary** WebSocket frames. No text frames, no JSON wrapper; byte-transparent.
+- Same command/response stream and Sync-Since (62/61) as other transports.
+
+Full design and client-side contract: **meshcomod-client** repo, `docs/DEVICE_WEBSOCKET_WIFI.md`.
+
+---
+
 ## Packet Structure
 
 The MeshCore protocol uses a binary format with the following structure:
 
-- **Commands**: Sent from app to firmware via RX characteristic
-- **Responses**: Received from firmware via TX characteristic notifications
+- **Commands**: Sent from app to firmware (via BLE RX characteristic, or TCP socket)
+- **Responses**: Received from firmware (via BLE TX notifications, or TCP socket)
 - **All multi-byte integers**: Little-endian byte order (except CayenneLPP which is Big-endian)
 - **All strings**: UTF-8 encoding
 

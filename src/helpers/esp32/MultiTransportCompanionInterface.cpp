@@ -2,7 +2,7 @@
 #include <string.h>
 
 MultiTransportCompanionInterface::MultiTransportCompanionInterface()
-  : _tcp_port(0), _tcp_started(false), _tcp_enabled(true), _isEnabled(false), _broadcast(false), _last_reply_target(REPLY_TARGET_USB)
+  : _tcp_port(0), _ws_port(0), _tcp_started(false), _ws_started(false), _tcp_enabled(true), _isEnabled(false), _broadcast(false), _last_reply_target(REPLY_TARGET_USB)
 #ifdef BLE_PIN_CODE
   , _ble_begun(false), _ble_enabled(false)
 #endif
@@ -11,9 +11,10 @@ MultiTransportCompanionInterface::MultiTransportCompanionInterface()
     _client_ids[i][0] = '\0';
 }
 
-void MultiTransportCompanionInterface::begin(Stream& usb_serial, uint16_t tcp_port) {
+void MultiTransportCompanionInterface::begin(Stream& usb_serial, uint16_t tcp_port, uint16_t ws_port) {
   _usb.begin(usb_serial);
   _tcp_port = tcp_port;
+  _ws_port = ws_port;
   _last_reply_target = REPLY_TARGET_USB;
 }
 
@@ -22,9 +23,17 @@ void MultiTransportCompanionInterface::startTcpServer() {
     _tcp.begin(_tcp_port);
     _tcp_started = true;
   }
+  if (_tcp_enabled && !_ws_started && _ws_port != 0) {
+    _ws.begin(_ws_port);
+    _ws_started = true;
+  }
 }
 
 void MultiTransportCompanionInterface::stopTcpServer() {
+  if (_ws_started) {
+    _ws.stop();
+    _ws_started = false;
+  }
   if (_tcp_started) {
     _tcp.stop();
     _tcp_started = false;
@@ -91,8 +100,9 @@ bool MultiTransportCompanionInterface::isConnected() const {
 #ifdef BLE_PIN_CODE
   if (_ble_begun && _ble_enabled && _ble.isConnected()) return true;
 #endif
-  if (!_tcp_started) return false;
-  return _tcp.connectedCount() > 0;
+  if (_tcp_started && _tcp.connectedCount() > 0) return true;
+  if (_ws_started && _ws.connectedCount() > 0) return true;
+  return false;
 }
 
 bool MultiTransportCompanionInterface::isWriteBusy() const {
@@ -129,6 +139,16 @@ size_t MultiTransportCompanionInterface::checkRecvFrame(uint8_t dest[]) {
     }
   }
 
+  // Then poll WebSocket clients
+  if (_ws_started) {
+    int ws_client = -1;
+    len = _ws.pollRecvFrame(dest, &ws_client);
+    if (len > 0) {
+      _last_reply_target = REPLY_TARGET_WS_0 + ws_client;
+      return len;
+    }
+  }
+
 #ifdef BLE_PIN_CODE
   if (_ble_begun && _ble_enabled) {
     len = _ble.checkRecvFrame(dest);
@@ -151,6 +171,8 @@ size_t MultiTransportCompanionInterface::writeFrame(const uint8_t src[], size_t 
   if (_last_reply_target == REPLY_TARGET_BLE && _ble_begun && _ble_enabled)
     return _ble.writeFrame(src, len);
 #endif
+  if (_last_reply_target >= REPLY_TARGET_WS_0 && _last_reply_target < REPLY_TARGET_WS_0 + WS_COMPANION_MAX_CLIENTS && _ws_started)
+    return _ws.writeToClient(_last_reply_target - REPLY_TARGET_WS_0, src, len);
   if (_tcp_started)
     return _tcp.writeToClient(_last_reply_target, src, len);
   return 0;
@@ -169,6 +191,8 @@ size_t MultiTransportCompanionInterface::writeFrameToAll(const uint8_t src[], si
 #endif
   if (_tcp_started && _tcp.connectedCount() > 0 && _tcp.writeToAllClients(src, len) != len)
     all_ok = false;
+  if (_ws_started && _ws.connectedCount() > 0 && _ws.writeToAllClients(src, len) != len)
+    all_ok = false;
   return all_ok ? len : 0;
 }
 
@@ -176,8 +200,12 @@ int MultiTransportCompanionInterface::_clientIdSlot() const {
 #ifdef BLE_PIN_CODE
   if (_last_reply_target == REPLY_TARGET_USB) return 0;
   if (_last_reply_target == REPLY_TARGET_BLE) return 1;
+  if (_last_reply_target >= REPLY_TARGET_WS_0 && _last_reply_target < REPLY_TARGET_WS_0 + WS_COMPANION_MAX_CLIENTS)
+    return 2 + TCP_COMPANION_MAX_CLIENTS + (_last_reply_target - REPLY_TARGET_WS_0);
   return _last_reply_target + 2;  // TCP 0..N -> slots 2..
 #else
+  if (_last_reply_target >= REPLY_TARGET_WS_0 && _last_reply_target < REPLY_TARGET_WS_0 + WS_COMPANION_MAX_CLIENTS)
+    return 1 + TCP_COMPANION_MAX_CLIENTS + (_last_reply_target - REPLY_TARGET_WS_0);
   return _last_reply_target + 1;
 #endif
 }
@@ -207,9 +235,9 @@ void MultiTransportCompanionInterface::getCurrentClientId(char* dest, size_t max
     return;
   }
 #ifdef BLE_PIN_CODE
-  static const char* const default_ids[] = { "usb", "ble", "tcp0", "tcp1", "tcp2" };
+  static const char* const default_ids[] = { "usb", "ble", "tcp0", "tcp1", "tcp2", "ws0", "ws1" };
 #else
-  static const char* const default_ids[] = { "usb", "tcp0", "tcp1", "tcp2" };
+  static const char* const default_ids[] = { "usb", "tcp0", "tcp1", "tcp2", "ws0", "ws1" };
 #endif
   size_t n = sizeof(default_ids) / sizeof(default_ids[0]);
   if ((size_t)slot < n) {

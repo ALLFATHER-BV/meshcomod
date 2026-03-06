@@ -44,6 +44,9 @@ static uint32_t _atoi(const char* sp) {
     #ifndef TCP_PORT
       #define TCP_PORT 5000
     #endif
+    #ifndef WS_PORT
+      #define WS_PORT 8765
+    #endif
   #elif defined(WIFI_SSID)
     #include <helpers/esp32/SerialWifiInterface.h>
     SerialWifiInterface serial_interface;
@@ -209,8 +212,8 @@ void setup() {
 #ifdef MULTI_TRANSPORT_COMPANION
   board.setInhibitSleep(true);
   // Defer WiFi until first loop() so setup() always completes (display + USB come up even if WiFi would crash/hang)
-  serial_interface.begin(Serial, TCP_PORT);
-  serial_interface.setBroadcastResponses(true);  // RX log, channel messages, etc. go to all clients (USB + TCP [+ BLE]), not only last sender
+  serial_interface.begin(Serial, TCP_PORT, WS_PORT);
+  serial_interface.setBroadcastResponses(true);  // RX log, channel messages, etc. go to all clients (USB + TCP + WS [+ BLE]), not only last sender
 #if defined(BLE_PIN_CODE)
   serial_interface.beginBle(BLE_NAME_PREFIX, the_mesh.getNodePrefs()->node_name, the_mesh.getBLEPin());
 #endif

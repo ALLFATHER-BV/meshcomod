@@ -3,6 +3,7 @@
 #include "../BaseSerialInterface.h"
 #include "../ArduinoSerialInterface.h"
 #include "TCPCompanionServer.h"
+#include "WebSocketCompanionServer.h"
 #ifdef BLE_PIN_CODE
 #include "SerialBLEInterface.h"
 #endif
@@ -11,9 +12,10 @@
 #define TCP_COMPANION_DEFAULT_PORT  5000
 #endif
 
-// Reply target: -1 = USB, -2 = BLE (when BLE_PIN_CODE), 0..N = TCP client index
-#define REPLY_TARGET_USB  (-1)
-#define REPLY_TARGET_BLE  (-2)
+// Reply target: -1 = USB, -2 = BLE (when BLE_PIN_CODE), 0..N = TCP client index, 100+ = WebSocket client index
+#define REPLY_TARGET_USB   (-1)
+#define REPLY_TARGET_BLE   (-2)
+#define REPLY_TARGET_WS_0  100
 
 // Implements BaseSerialInterface for simultaneous USB + TCP companion connections.
 // One shared protocol handler; responses go to originating client, optionally broadcast to all.
@@ -21,8 +23,8 @@ class MultiTransportCompanionInterface : public BaseSerialInterface {
 public:
   MultiTransportCompanionInterface();
 
-  // USB uses Serial (or other Stream). TCP server port is stored; call startTcpServer() after WiFi.begin().
-  void begin(Stream& usb_serial, uint16_t tcp_port = TCP_COMPANION_DEFAULT_PORT);
+  // USB uses Serial (or other Stream). TCP and optional WebSocket ports stored; call startTcpServer() after WiFi.begin().
+  void begin(Stream& usb_serial, uint16_t tcp_port = TCP_COMPANION_DEFAULT_PORT, uint16_t ws_port = 0);
   void startTcpServer();  // call once after WiFi.begin() (idempotent); no-op if TCP disabled
   void stopTcpServer();   // stop TCP server and disconnect clients; prevents startTcpServer until enableTcp()
 
@@ -39,6 +41,8 @@ public:
   void enableTcp() override;
   void disableTcp() override;
   bool isTcpEnabled() const override { return _tcp_enabled; }
+  bool isWsStarted() const override { return _ws_started; }
+  uint16_t getWsPort() const override { return _ws_port; }
 
   void setBroadcastResponses(bool enable) { _broadcast = enable; }
 
@@ -60,16 +64,19 @@ private:
 
   ArduinoSerialInterface _usb;
   TCPCompanionServer _tcp;
+  WebSocketCompanionServer _ws;
   uint16_t _tcp_port;
+  uint16_t _ws_port;
   bool _tcp_started;
+  bool _ws_started;
   bool _tcp_enabled;   // if false, startTcpServer() no-ops until enableTcp()
   bool _isEnabled;
   bool _broadcast;           // if true, also send responses to all other clients
-  int _last_reply_target;    // REPLY_TARGET_USB, REPLY_TARGET_BLE, or TCP client index
+  int _last_reply_target;    // REPLY_TARGET_USB, REPLY_TARGET_BLE, TCP index, or REPLY_TARGET_WS_0 + ws index
 #ifdef BLE_PIN_CODE
   SerialBLEInterface _ble;
   bool _ble_begun;    // beginBle() was called
   bool _ble_enabled;  // user has BLE on (toggle via UI)
 #endif
-  char _client_ids[2 + TCP_COMPANION_MAX_CLIENTS][_max_client_id_len];  // usb, [ble], tcp0..
+  char _client_ids[2 + TCP_COMPANION_MAX_CLIENTS + WS_COMPANION_MAX_CLIENTS][_max_client_id_len];  // usb, [ble], tcp0.., ws0..
 };
