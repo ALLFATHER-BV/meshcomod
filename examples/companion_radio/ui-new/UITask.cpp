@@ -84,6 +84,9 @@ class HomeScreen : public UIScreen {
 #ifdef MULTI_TRANSPORT_COMPANION
     NETWORK,
 #endif
+#if defined(MULTI_TRANSPORT_COMPANION) && (WS_USE_TLS)
+    WSS,
+#endif
 #if ENV_INCLUDE_GPS == 1
     GPS,
 #endif
@@ -355,6 +358,33 @@ public:
       y = 64 - 11;
       display.setColor(DisplayDriver::LIGHT);
       display.drawTextCentered(display.width() / 2, y, _task->isTcpEnabled() ? "OFF: long press" : "ON: long press");
+#endif
+#if defined(MULTI_TRANSPORT_COMPANION) && (WS_USE_TLS)
+    } else if (_page == HomePage::WSS) {
+      display.setColor(DisplayDriver::BLUE);
+      display.setTextSize(1);
+      int y = 10;
+      display.drawTextCentered(display.width() / 2, y, "WSS");
+      y += 12;
+      if (_task->isWsStarted()) {
+        display.setColor(DisplayDriver::GREEN);
+        display.drawTextCentered(display.width() / 2, y, "running");
+        y += 11;
+        snprintf(tmp, sizeof(tmp), "port: %u", (unsigned)_task->getWsPort());
+        display.drawTextCentered(display.width() / 2, y, tmp);
+        y += 11;
+        int n = _task->getWsConnectedCount();
+        snprintf(tmp, sizeof(tmp), "clients: %d", n);
+        display.drawTextCentered(display.width() / 2, y, tmp);
+      } else {
+        display.setColor(DisplayDriver::RED);
+        display.drawTextCentered(display.width() / 2, y, "not running");
+        y += 11;
+        display.setColor(DisplayDriver::LIGHT);
+        display.drawTextCentered(display.width() / 2, y, "starts 10s after");
+        y += 11;
+        display.drawTextCentered(display.width() / 2, y, "WiFi connected");
+      }
 #endif
     } else if (_page == HomePage::ADVERT) {
       display.setColor(DisplayDriver::GREEN);

@@ -16,6 +16,23 @@ Versioned prebuilts are listed here so you can **roll back** if a newer release 
 
 ---
 
+## v1.14.0.11 — 2026-02-24
+
+**Firmware version:** v1.14.0.11 (meshcomod on upstream 1.14+).
+
+**Highlights:**
+- **WSS status tab:** New tab after WiFi/TCP shows WSS running or not, port, client count; when not running, explains 10s-after-WiFi start.
+- WSS (TLS) on port 8765 restored; non-blocking. Build script and v1.14.0.10 unchanged.
+
+**Prebuilt binaries (use [flasher.meshcomod.com](https://flasher.meshcomod.com) — Easy mode auto-downloads versions; for manual upload, use Custom firmware):**
+
+| Device   | Merged (recommended) | Non-merged |
+|----------|----------------------|------------|
+| Heltec V4 | [heltec_v4_companion_radio_usb_tcp-merged.bin](prebuilt/releases/v1.14.0.11/heltec_v4_companion_radio_usb_tcp-merged.bin) | [heltec_v4_companion_radio_usb_tcp.bin](prebuilt/releases/v1.14.0.11/heltec_v4_companion_radio_usb_tcp.bin) |
+| Heltec V3 | [Heltec_v3_companion_radio_usb_tcp-merged.bin](prebuilt/releases/v1.14.0.11/Heltec_v3_companion_radio_usb_tcp-merged.bin) | [Heltec_v3_companion_radio_usb_tcp.bin](prebuilt/releases/v1.14.0.11/Heltec_v3_companion_radio_usb_tcp.bin) |
+
+---
+
 ## v1.14.0.10 — 2026-02-24
 
 **Firmware version:** v1.14.0.10 (meshcomod on upstream 1.14+).

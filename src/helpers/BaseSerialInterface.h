@@ -26,9 +26,10 @@ public:
   virtual void disableTcp() { }
   virtual bool isTcpEnabled() const { return true; }
 
-  // WebSocket only (multi-transport): report if WebSocket server is running and port; no-op for single transport.
+  // WebSocket only (multi-transport): report if WebSocket server is running, port, and client count; no-op for single transport.
   virtual bool isWsStarted() const { return false; }
   virtual uint16_t getWsPort() const { return 0; }
+  virtual int getWsConnectedCount() const { return 0; }
 
   // BLE only (multi-transport with BLE): enable/disable BLE; no-op when BLE not available.
   virtual void enableBle() { }

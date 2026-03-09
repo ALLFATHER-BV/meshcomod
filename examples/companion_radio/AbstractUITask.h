@@ -42,6 +42,9 @@ public:
   bool isTcpEnabled() const { return _serial->isTcpEnabled(); }
   void enableTcp() { _serial->enableTcp(); }
   void disableTcp() { _serial->disableTcp(); }
+  bool isWsStarted() const { return _serial->isWsStarted(); }
+  uint16_t getWsPort() const { return _serial->getWsPort(); }
+  int getWsConnectedCount() const { return _serial->getWsConnectedCount(); }
   bool hasBleCapability() const { return _serial->hasBleCapability(); }
   bool isBleEnabled() const { return _serial->isBleEnabled(); }
   void enableBle() { _serial->enableBle(); }

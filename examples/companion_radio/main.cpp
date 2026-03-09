@@ -289,7 +289,14 @@ void loop() {
       }
     }
   }
-  serial_interface.startTcpServer();  // start TCP server after WiFi (idempotent)
+  // TCP starts immediately; WSS (TLS) starts only after boot delay so UI/mesh run first and version screen can dismiss.
+#if WS_USE_TLS
+  static const uint32_t WSS_DEFER_MS = 10000;  // 10 s after boot before WSS is allowed to start
+  bool allow_wss = (millis() > WSS_DEFER_MS) && (WiFi.status() == WL_CONNECTED);
+  serial_interface.startTcpServer(allow_wss);
+#else
+  serial_interface.startTcpServer(WiFi.status() == WL_CONNECTED);
+#endif
 #endif
   the_mesh.loop();
   sensors.loop();

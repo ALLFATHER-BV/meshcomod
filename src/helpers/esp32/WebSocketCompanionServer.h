@@ -3,6 +3,19 @@
 #include "../BaseSerialInterface.h"
 #include <WiFi.h>
 
+#ifndef WS_USE_TLS
+#define WS_USE_TLS 0
+#endif
+
+#if WS_USE_TLS
+#include <mbedtls/ssl.h>
+#include <mbedtls/net_sockets.h>
+#include <mbedtls/x509.h>
+#include <mbedtls/pk.h>
+#include <mbedtls/entropy.h>
+#include <mbedtls/ctr_drbg.h>
+#endif
+
 #ifndef WS_COMPANION_MAX_CLIENTS
 #define WS_COMPANION_MAX_CLIENTS  2
 #endif
@@ -13,8 +26,15 @@
 
 // Per-client: either HTTP handshake or WebSocket mode with companion state machine
 struct WSClientState {
+#if WS_USE_TLS
+  mbedtls_net_context client_net;
+  mbedtls_ssl_context ssl_ctx;
+  bool in_use;
+  bool ssl_handshake_done;  // TLS handshake complete; then doHandshake reads HTTP
+#else
   mutable WiFiClient client;  // mutable so isClientConnected() const can call connected()
   bool in_use;
+#endif
 
   // Handshake phase (handshake_done set after sending 101)
   bool handshake_done;
@@ -53,7 +73,17 @@ public:
   void disconnectClient(int client_index);
 
 private:
+#if WS_USE_TLS
+  mbedtls_net_context _listen_fd;
+  mbedtls_ssl_config _ssl_conf;
+  mbedtls_x509_crt _srvcert;
+  mbedtls_pk_context _pkey;
+  mbedtls_entropy_context _entropy;
+  mbedtls_ctr_drbg_context _ctr_drbg;
+  bool _tls_initialized;
+#else
   WiFiServer _server;
+#endif
   mutable WSClientState _clients[WS_COMPANION_MAX_CLIENTS];
   uint16_t _port;
   int _poll_start_idx;

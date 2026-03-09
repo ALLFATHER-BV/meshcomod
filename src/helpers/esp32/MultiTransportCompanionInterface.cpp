@@ -18,15 +18,23 @@ void MultiTransportCompanionInterface::begin(Stream& usb_serial, uint16_t tcp_po
   _last_reply_target = REPLY_TARGET_USB;
 }
 
-void MultiTransportCompanionInterface::startTcpServer() {
+void MultiTransportCompanionInterface::startTcpServer(bool wifi_connected) {
   if (_tcp_enabled && !_tcp_started && _tcp_port != 0) {
     _tcp.begin(_tcp_port);
     _tcp_started = true;
   }
+#if WS_USE_TLS
+  // WSS starts on main thread only when wifi_connected (caller defers until 10s after boot to avoid blocking UI during splash).
+  if (_tcp_enabled && !_ws_started && _ws_port != 0 && wifi_connected) {
+    _ws.begin(_ws_port);
+    _ws_started = true;
+  }
+#else
   if (_tcp_enabled && !_ws_started && _ws_port != 0) {
     _ws.begin(_ws_port);
     _ws_started = true;
   }
+#endif
 }
 
 void MultiTransportCompanionInterface::stopTcpServer() {

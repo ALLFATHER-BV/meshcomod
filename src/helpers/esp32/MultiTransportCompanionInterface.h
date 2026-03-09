@@ -25,7 +25,8 @@ public:
 
   // USB uses Serial (or other Stream). TCP and optional WebSocket ports stored; call startTcpServer() after WiFi.begin().
   void begin(Stream& usb_serial, uint16_t tcp_port = TCP_COMPANION_DEFAULT_PORT, uint16_t ws_port = 0);
-  void startTcpServer();  // call once after WiFi.begin() (idempotent); no-op if TCP disabled
+  // When using WSS (WS_USE_TLS=1), pass wifi_connected so WSS server starts only after WiFi is up (avoids boot crash from mbedTLS init before heap is ready).
+  void startTcpServer(bool wifi_connected = true);  // idempotent; no-op if TCP disabled
   void stopTcpServer();   // stop TCP server and disconnect clients; prevents startTcpServer until enableTcp()
 
 #ifdef BLE_PIN_CODE
@@ -43,6 +44,7 @@ public:
   bool isTcpEnabled() const override { return _tcp_enabled; }
   bool isWsStarted() const override { return _ws_started; }
   uint16_t getWsPort() const override { return _ws_port; }
+  int getWsConnectedCount() const override { return _ws.connectedCount(); }
 
   void setBroadcastResponses(bool enable) { _broadcast = enable; }
 
