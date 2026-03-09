@@ -232,7 +232,7 @@ void WebSocketCompanionServer::stop() {
 void WebSocketCompanionServer::acceptNewClients() {
 #if WS_USE_TLS
   if (!_tls_initialized) return;
-  // Advance in-progress TLS handshakes. No select() block; yield with delay(1) on WANT_* so WiFi stack can deliver data (fixes BEACON_TIMEOUT / RESET). Timeout stuck clients.
+  // Advance in-progress TLS handshakes. Yield with delay(0) on WANT_* so WiFi runs without adding ms (delay(1) caused browser to close before handshake finished). Timeout stuck clients.
   const uint32_t WSS_HANDSHAKE_TIMEOUT_MS = 30000;
   for (int i = 0; i < WS_COMPANION_MAX_CLIENTS; i++) {
     if (!_clients[i].in_use || _clients[i].ssl_handshake_done) continue;
@@ -244,7 +244,7 @@ void WebSocketCompanionServer::acceptNewClients() {
       continue;
     }
     mbedtls_ssl_context* ssl = &_clients[i].ssl_ctx;
-    for (int step = 0; step < 25; step++) {
+    for (int step = 0; step < 40; step++) {
       int ret = mbedtls_ssl_handshake(ssl);
       if (ret == 0) {
         _clients[i].ssl_handshake_done = true;
@@ -260,7 +260,7 @@ void WebSocketCompanionServer::acceptNewClients() {
         _clients[i].in_use = false;
         break;
       }
-      delay(1);  // yield so WiFi/LwIP can process and deliver data (avoids BEACON_TIMEOUT / RESET)
+      delay(0);  // yield only; no extra ms so handshake can finish before browser closes
     }
   }
   int slot = -1;
