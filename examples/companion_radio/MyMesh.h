@@ -5,14 +5,14 @@
 #include "AbstractUITask.h"
 
 /*------------ Frame Protocol --------------*/
-#define FIRMWARE_VER_CODE 19
+#define FIRMWARE_VER_CODE 20
 
 #ifndef FIRMWARE_BUILD_DATE
 #define FIRMWARE_BUILD_DATE "06 Mar 2026"
 #endif
 
 #ifndef FIRMWARE_VERSION
-#define FIRMWARE_VERSION "v1.14.0.19"
+#define FIRMWARE_VERSION "v1.14.0.20"
 #endif
 
 #if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
