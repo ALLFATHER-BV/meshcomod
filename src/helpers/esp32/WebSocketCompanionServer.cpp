@@ -7,8 +7,14 @@
 #include "lwip/sockets.h"
 #include <fcntl.h>
 #include <errno.h>
+#include <mbedtls/error.h>
 
 // Non-blocking recv/send for TLS: return WANT_READ/WANT_WRITE on EAGAIN so handshake never blocks (fixes ERR_CONNECTION_RESET on ESP32).
+// WSS debug: set to 1 to log every I/O error (errno) from bio callbacks; 0 = key events only
+#ifndef WSS_DEBUG_IO
+#define WSS_DEBUG_IO 0
+#endif
+
 static int wss_net_recv_nonblock(void* ctx, unsigned char* buf, size_t len) {
   mbedtls_net_context* net = (mbedtls_net_context*)ctx;
   if (net->fd < 0) return MBEDTLS_ERR_NET_INVALID_CONTEXT;
@@ -16,6 +22,9 @@ static int wss_net_recv_nonblock(void* ctx, unsigned char* buf, size_t len) {
   if (n > 0) return n;
   if (n == 0) return MBEDTLS_ERR_SSL_CONN_EOF;
   if (errno == EAGAIN || errno == EWOULDBLOCK) return MBEDTLS_ERR_SSL_WANT_READ;
+#if WSS_DEBUG_IO
+  Serial.printf("[WSS] recv err fd=%d errno=%d\n", net->fd, errno);
+#endif
   return MBEDTLS_ERR_NET_RECV_FAILED;
 }
 static int wss_net_send_nonblock(void* ctx, const unsigned char* buf, size_t len) {
@@ -24,8 +33,12 @@ static int wss_net_send_nonblock(void* ctx, const unsigned char* buf, size_t len
   int n = (int)send(net->fd, buf, len, 0);
   if (n >= 0) return n;
   if (errno == EAGAIN || errno == EWOULDBLOCK) return MBEDTLS_ERR_SSL_WANT_WRITE;
+#if WSS_DEBUG_IO
+  Serial.printf("[WSS] send err fd=%d errno=%d\n", net->fd, errno);
+#endif
   return MBEDTLS_ERR_NET_SEND_FAILED;
 }
+
 #endif
 
 // Optional: build with -DWS_FRAME_DEBUG=1 to log each WS send (client, code 2=START/3=CONTACT/4=END, len, written).
@@ -131,33 +144,55 @@ void WebSocketCompanionServer::begin(uint16_t port) {
     mbedtls_net_init(&_clients[i].client_net);
     mbedtls_ssl_init(&_clients[i].ssl_ctx);
   }
-  if (mbedtls_ctr_drbg_seed(&_ctr_drbg, mbedtls_entropy_func, &_entropy, (const unsigned char*)"wss", 3) != 0 ||
-      mbedtls_x509_crt_parse(&_srvcert, (const unsigned char*)WSS_SERVER_CERT_PEM, strlen(WSS_SERVER_CERT_PEM) + 1) != 0 ||
-      mbedtls_pk_parse_key(&_pkey, (const unsigned char*)WSS_SERVER_KEY_PEM, strlen(WSS_SERVER_KEY_PEM) + 1, NULL, 0) != 0 ||
-      mbedtls_ssl_config_defaults(&_ssl_conf, MBEDTLS_SSL_IS_SERVER, MBEDTLS_SSL_TRANSPORT_STREAM, MBEDTLS_SSL_PRESET_DEFAULT) != 0) {
+  if (mbedtls_ctr_drbg_seed(&_ctr_drbg, mbedtls_entropy_func, &_entropy, (const unsigned char*)"wss", 3) != 0) {
+    Serial.println("[WSS] init failed: ctr_drbg_seed");
     return;
   }
+  if (mbedtls_x509_crt_parse(&_srvcert, (const unsigned char*)WSS_SERVER_CERT_PEM, strlen(WSS_SERVER_CERT_PEM) + 1) != 0) {
+    Serial.println("[WSS] init failed: x509_crt_parse");
+    return;
+  }
+  if (mbedtls_pk_parse_key(&_pkey, (const unsigned char*)WSS_SERVER_KEY_PEM, strlen(WSS_SERVER_KEY_PEM) + 1, NULL, 0) != 0) {
+    Serial.println("[WSS] init failed: pk_parse_key");
+    return;
+  }
+  if (mbedtls_ssl_config_defaults(&_ssl_conf, MBEDTLS_SSL_IS_SERVER, MBEDTLS_SSL_TRANSPORT_STREAM, MBEDTLS_SSL_PRESET_DEFAULT) != 0) {
+    Serial.println("[WSS] init failed: ssl_config_defaults");
+    return;
+  }
+#if defined(MBEDTLS_SSL_PROTO_TLS1_2) && defined(MBEDTLS_SSL_VERSION_TLS1_2)
+  mbedtls_ssl_conf_min_tls_version(&_ssl_conf, MBEDTLS_SSL_VERSION_TLS1_2);
+#endif
   mbedtls_ssl_conf_authmode(&_ssl_conf, MBEDTLS_SSL_VERIFY_NONE);
   mbedtls_ssl_conf_own_cert(&_ssl_conf, &_srvcert, &_pkey);
   mbedtls_ssl_conf_rng(&_ssl_conf, mbedtls_ctr_drbg_random, &_ctr_drbg);
   int fd = socket(AF_INET, SOCK_STREAM, 0);
-  if (fd >= 0) {
-    int opt = 1;
-    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-    struct sockaddr_in addr;
-    memset(&addr, 0, sizeof(addr));
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    addr.sin_port = htons(port);
-    if (bind(fd, (struct sockaddr*)&addr, sizeof(addr)) == 0 && listen(fd, 4) == 0) {
-      int flags = fcntl(fd, F_GETFL, 0);
-      if (flags >= 0) fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-      _listen_fd.fd = fd;
-      _tls_initialized = true;
-    } else {
-      close(fd);
-    }
+  if (fd < 0) {
+    Serial.printf("[WSS] init failed: socket errno=%d\n", errno);
+    return;
   }
+  int opt = 1;
+  setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+  struct sockaddr_in addr;
+  memset(&addr, 0, sizeof(addr));
+  addr.sin_family = AF_INET;
+  addr.sin_addr.s_addr = htonl(INADDR_ANY);
+  addr.sin_port = htons(port);
+  if (bind(fd, (struct sockaddr*)&addr, sizeof(addr)) != 0) {
+    Serial.printf("[WSS] init failed: bind port %u errno=%d\n", (unsigned)port, errno);
+    close(fd);
+    return;
+  }
+  if (listen(fd, 4) != 0) {
+    Serial.printf("[WSS] init failed: listen errno=%d\n", errno);
+    close(fd);
+    return;
+  }
+  int flags = fcntl(fd, F_GETFL, 0);
+  if (flags >= 0) fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+  _listen_fd.fd = fd;
+  _tls_initialized = true;
+  Serial.printf("[WSS] listening port=%u fd=%d\n", (unsigned)port, fd);
 #else
   _server.begin(port);
 #endif
@@ -196,19 +231,26 @@ void WebSocketCompanionServer::stop() {
 void WebSocketCompanionServer::acceptNewClients() {
 #if WS_USE_TLS
   if (!_tls_initialized) return;
-  // First: advance any in-progress TLS handshakes (one step per client per poll so we never block).
+  // Advance in-progress TLS handshakes: up to WSS_HANDSHAKE_STEPS_PER_POLL steps per client (non-blocking I/O so safe).
   for (int i = 0; i < WS_COMPANION_MAX_CLIENTS; i++) {
     if (!_clients[i].in_use || _clients[i].ssl_handshake_done) continue;
     mbedtls_ssl_context* ssl = &_clients[i].ssl_ctx;
-    int ret = mbedtls_ssl_handshake(ssl);
-    if (ret == 0) {
-      _clients[i].ssl_handshake_done = true;
-      continue;
-    }
-    if (ret != MBEDTLS_ERR_SSL_WANT_READ && ret != MBEDTLS_ERR_SSL_WANT_WRITE) {
-      mbedtls_ssl_free(ssl);
-      mbedtls_net_free(&_clients[i].client_net);
-      _clients[i].in_use = false;
+    for (int step = 0; step < 30; step++) {
+      int ret = mbedtls_ssl_handshake(ssl);
+      if (ret == 0) {
+        _clients[i].ssl_handshake_done = true;
+        Serial.printf("[WSS] TLS handshake OK slot=%d\n", i);
+        break;
+      }
+      if (ret != MBEDTLS_ERR_SSL_WANT_READ && ret != MBEDTLS_ERR_SSL_WANT_WRITE) {
+        char errbuf[80];
+        mbedtls_strerror(ret, errbuf, sizeof(errbuf));
+        Serial.printf("[WSS] handshake err %d: %s\n", ret, errbuf);
+        mbedtls_ssl_free(ssl);
+        mbedtls_net_free(&_clients[i].client_net);
+        _clients[i].in_use = false;
+        break;
+      }
     }
   }
   int slot = -1;
@@ -220,6 +262,7 @@ void WebSocketCompanionServer::acceptNewClients() {
   socklen_t addrlen = sizeof(client_addr);
   int client_fd = accept(_listen_fd.fd, (struct sockaddr*)&client_addr, &addrlen);
   if (client_fd < 0) return;  // non-blocking: no client waiting
+  Serial.printf("[WSS] TCP accept slot=%d fd=%d\n", slot, client_fd);
   int flags = fcntl(client_fd, F_GETFL, 0);
   if (flags >= 0) fcntl(client_fd, F_SETFL, flags | O_NONBLOCK);
   mbedtls_net_context* client_net = &_clients[slot].client_net;
@@ -228,11 +271,12 @@ void WebSocketCompanionServer::acceptNewClients() {
   mbedtls_ssl_context* ssl = &_clients[slot].ssl_ctx;
   mbedtls_ssl_init(ssl);
   if (mbedtls_ssl_setup(ssl, &_ssl_conf) != 0) {
+    Serial.println("[WSS] ssl_setup failed, close");
     mbedtls_ssl_free(ssl);
     mbedtls_net_free(client_net);
     return;
   }
-  // Custom non-blocking recv/send so handshake never blocks; WANT_READ/WANT_WRITE on EAGAIN (avoids ERR_CONNECTION_RESET).
+  // recv_timeout = NULL so TLS handshake never blocks (fixes ERR_CONNECTION_RESET when opening https://device:8765).
   mbedtls_ssl_set_bio(ssl, client_net, wss_net_send_nonblock, wss_net_recv_nonblock, NULL);
   _clients[slot].in_use = true;
   _clients[slot].ssl_handshake_done = false;
@@ -243,7 +287,11 @@ void WebSocketCompanionServer::acceptNewClients() {
   int ret = mbedtls_ssl_handshake(ssl);
   if (ret == 0) {
     _clients[slot].ssl_handshake_done = true;
+    Serial.printf("[WSS] TLS handshake OK slot=%d (first try)\n", slot);
   } else if (ret != MBEDTLS_ERR_SSL_WANT_READ && ret != MBEDTLS_ERR_SSL_WANT_WRITE) {
+    char errbuf[80];
+    mbedtls_strerror(ret, errbuf, sizeof(errbuf));
+    Serial.printf("[WSS] new client handshake err %d: %s\n", ret, errbuf);
     mbedtls_ssl_free(ssl);
     mbedtls_net_free(&_clients[slot].client_net);
     _clients[slot].in_use = false;
@@ -303,6 +351,12 @@ bool WebSocketCompanionServer::doHandshake(int idx) {
         c->handshake_buf[c->handshake_len - 3] == '\n' &&
         c->handshake_buf[c->handshake_len - 2] == '\r' &&
         c->handshake_buf[c->handshake_len - 1] == '\n') {
+      char first_line[64];
+      size_t nl = 0;
+      while (nl < c->handshake_len && c->handshake_buf[nl] != '\r' && nl < sizeof(first_line) - 1)
+        first_line[nl] = c->handshake_buf[nl], nl++;
+      first_line[nl] = '\0';
+      Serial.printf("[WSS] HTTP slot=%d: %s\n", idx, first_line);
       const char* key_hdr = "Sec-WebSocket-Key:";
       char* buf = c->handshake_buf;
       for (size_t i = 0; i + 20 < c->handshake_len; i++) {
@@ -345,10 +399,12 @@ bool WebSocketCompanionServer::doHandshake(int idx) {
           c->handshake_done = true;
           c->ws_state = WS_STATE_HEADER_0;
           c->comp_state = COMP_STATE_IDLE;
+          Serial.printf("[WSS] WS upgrade OK slot=%d\n", idx);
           return true;
         }
       }
       // Plain GET (e.g. browser opening https://device:8765): send cert-acceptance page then close.
+      Serial.printf("[WSS] plain GET slot=%d, sending cert page then close\n", idx);
       size_t page_len = strlen(WSS_HTTP_CERT_PAGE);
       size_t written = 0;
       while (written < page_len) {
@@ -361,13 +417,22 @@ bool WebSocketCompanionServer::doHandshake(int idx) {
       c->in_use = false;
       return false;
     }
-  } else if (r != MBEDTLS_ERR_SSL_WANT_READ && r != MBEDTLS_ERR_SSL_WANT_WRITE && r != 0) {
+  } else if (r == 0 || r == MBEDTLS_ERR_SSL_CONN_EOF) {
+    mbedtls_ssl_free(ssl);
+    mbedtls_net_free(&c->client_net);
+    c->in_use = false;
+    return false;
+  } else if (r != MBEDTLS_ERR_SSL_WANT_READ && r != MBEDTLS_ERR_SSL_WANT_WRITE) {
+    char errbuf[80];
+    mbedtls_strerror(r, errbuf, sizeof(errbuf));
+    Serial.printf("[WSS] HTTP read err slot=%d r=%d: %s\n", idx, r, errbuf);
     mbedtls_ssl_free(ssl);
     mbedtls_net_free(&c->client_net);
     c->in_use = false;
     return false;
   }
   if (c->handshake_len >= WS_HANDSHAKE_MAX_LEN - 1) {
+    Serial.printf("[WSS] handshake too long slot=%d, close\n", idx);
     mbedtls_ssl_free(ssl);
     mbedtls_net_free(&c->client_net);
     c->in_use = false;
@@ -474,8 +539,8 @@ size_t WebSocketCompanionServer::pollRecvFrame(uint8_t dest[], int* client_index
         uint8_t len7 = b & 0x7F;
         c->ws_payload_len = len7;
         c->ws_payload_read = 0;
-        if (len7 == 126) c->ws_state = WS_STATE_LEN_EXT;
-        else if (len7 == 127) { c->ws_state = WS_STATE_LEN_EXT; c->ws_payload_len = 0; }
+        if (len7 == 126) { c->ws_state = WS_STATE_LEN_EXT; c->handshake_len = 0; }
+        else if (len7 == 127) { c->ws_state = WS_STATE_LEN_EXT; c->ws_payload_len = 0; c->handshake_len = 0; }
         else c->ws_state = WS_STATE_MASK;
       } else if (c->ws_state == WS_STATE_LEN_EXT) {
         if (c->ws_payload_len == 126) {
@@ -518,7 +583,14 @@ size_t WebSocketCompanionServer::pollRecvFrame(uint8_t dest[], int* client_index
         }
         if (c->ws_payload_read >= c->ws_payload_len) c->ws_state = WS_STATE_HEADER_0;
       }
-    } else if (r != 0 && r != MBEDTLS_ERR_SSL_WANT_READ && r != MBEDTLS_ERR_SSL_WANT_WRITE) {
+    } else if (r == 0 || r == MBEDTLS_ERR_SSL_CONN_EOF) {
+      mbedtls_ssl_free(ssl);
+      mbedtls_net_free(&c->client_net);
+      c->in_use = false;
+    } else if (r != MBEDTLS_ERR_SSL_WANT_READ && r != MBEDTLS_ERR_SSL_WANT_WRITE) {
+      char errbuf[80];
+      mbedtls_strerror(r, errbuf, sizeof(errbuf));
+      Serial.printf("[WSS] frame read err slot=%d r=%d: %s\n", idx, r, errbuf);
       mbedtls_ssl_free(ssl);
       mbedtls_net_free(&c->client_net);
       c->in_use = false;
