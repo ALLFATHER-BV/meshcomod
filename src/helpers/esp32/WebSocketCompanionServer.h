@@ -31,6 +31,7 @@ struct WSClientState {
   mbedtls_ssl_context ssl_ctx;
   bool in_use;
   bool ssl_handshake_done;  // TLS handshake complete; then doHandshake reads HTTP
+  uint32_t handshake_start_ms;  // when in_use && !ssl_handshake_done: accept time for timeout
 #else
   mutable WiFiClient client;  // mutable so isClientConnected() const can call connected()
   bool in_use;

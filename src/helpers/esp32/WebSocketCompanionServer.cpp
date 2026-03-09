@@ -122,6 +122,7 @@ WebSocketCompanionServer::WebSocketCompanionServer()
     _clients[i].comp_state = COMP_STATE_IDLE;
 #if WS_USE_TLS
     _clients[i].ssl_handshake_done = false;
+    _clients[i].handshake_start_ms = 0;
     /* mbedTLS inits moved to begin() so no TLS runs at global-construct time (avoids "Loading..." hang). */
 #endif
   }
@@ -231,11 +232,19 @@ void WebSocketCompanionServer::stop() {
 void WebSocketCompanionServer::acceptNewClients() {
 #if WS_USE_TLS
   if (!_tls_initialized) return;
-  // Advance in-progress TLS handshakes (non-blocking only; no recv_timeout so no select() block).
+  // Advance in-progress TLS handshakes. No select() block; yield with delay(1) on WANT_* so WiFi stack can deliver data (fixes BEACON_TIMEOUT / RESET). Timeout stuck clients.
+  const uint32_t WSS_HANDSHAKE_TIMEOUT_MS = 30000;
   for (int i = 0; i < WS_COMPANION_MAX_CLIENTS; i++) {
     if (!_clients[i].in_use || _clients[i].ssl_handshake_done) continue;
+    if ((uint32_t)(millis() - _clients[i].handshake_start_ms) > WSS_HANDSHAKE_TIMEOUT_MS) {
+      Serial.printf("[WSS] handshake timeout slot=%d\n", i);
+      mbedtls_ssl_free(&_clients[i].ssl_ctx);
+      mbedtls_net_free(&_clients[i].client_net);
+      _clients[i].in_use = false;
+      continue;
+    }
     mbedtls_ssl_context* ssl = &_clients[i].ssl_ctx;
-    for (int step = 0; step < 40; step++) {
+    for (int step = 0; step < 25; step++) {
       int ret = mbedtls_ssl_handshake(ssl);
       if (ret == 0) {
         _clients[i].ssl_handshake_done = true;
@@ -251,6 +260,7 @@ void WebSocketCompanionServer::acceptNewClients() {
         _clients[i].in_use = false;
         break;
       }
+      delay(1);  // yield so WiFi/LwIP can process and deliver data (avoids BEACON_TIMEOUT / RESET)
     }
   }
   int slot = -1;
@@ -280,6 +290,7 @@ void WebSocketCompanionServer::acceptNewClients() {
   mbedtls_ssl_set_bio(ssl, client_net, wss_net_send_nonblock, wss_net_recv_nonblock, NULL);
   _clients[slot].in_use = true;
   _clients[slot].ssl_handshake_done = false;
+  _clients[slot].handshake_start_ms = millis();
   _clients[slot].handshake_done = false;
   _clients[slot].handshake_len = 0;
   _clients[slot].ws_state = WS_STATE_HEADER_0;
