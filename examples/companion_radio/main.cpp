@@ -289,14 +289,17 @@ void loop() {
       }
     }
   }
-  // TCP starts immediately; WSS (TLS) starts only after boot delay so UI/mesh run first and version screen can dismiss.
+  // Defer TCP and WSS until after splash dismisses (3s) so the_mesh.loop() never blocks on accept() before ui_task.loop() runs.
+  static const uint32_t TCP_DEFER_MS = 5000;   // 5 s: don't start TCP/WSS until version screen has dismissed
+  static const uint32_t WSS_DEFER_MS = 10000; // 10 s before WSS (TLS) is allowed
+  if (millis() > TCP_DEFER_MS) {
 #if WS_USE_TLS
-  static const uint32_t WSS_DEFER_MS = 10000;  // 10 s after boot before WSS is allowed to start
-  bool allow_wss = (millis() > WSS_DEFER_MS) && (WiFi.status() == WL_CONNECTED);
-  serial_interface.startTcpServer(allow_wss);
+    bool allow_wss = (millis() > WSS_DEFER_MS) && (WiFi.status() == WL_CONNECTED);
+    serial_interface.startTcpServer(allow_wss);
 #else
-  serial_interface.startTcpServer(WiFi.status() == WL_CONNECTED);
+    serial_interface.startTcpServer(WiFi.status() == WL_CONNECTED);
 #endif
+  }
 #endif
   the_mesh.loop();
   sensors.loop();
