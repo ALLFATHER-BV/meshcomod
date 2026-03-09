@@ -37,6 +37,10 @@ void MultiTransportCompanionInterface::startTcpServer(bool wifi_connected) {
 #endif
 }
 
+void MultiTransportCompanionInterface::tickWssHandshake() {
+  if (_ws_started) _ws.tickHandshake();
+}
+
 void MultiTransportCompanionInterface::stopTcpServer() {
   if (_ws_started) {
     _ws.stop();

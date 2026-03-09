@@ -45,6 +45,8 @@ public:
   bool isWsStarted() const override { return _ws_started; }
   uint16_t getWsPort() const override { return _ws_port; }
   int getWsConnectedCount() const override { return _ws.connectedCount(); }
+  /** Advance WSS handshake without reading frames. Call early in loop() to finish TLS before browser times out. */
+  void tickWssHandshake();
 
   void setBroadcastResponses(bool enable) { _broadcast = enable; }
 

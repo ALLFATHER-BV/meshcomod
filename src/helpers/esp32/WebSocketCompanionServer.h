@@ -65,6 +65,9 @@ public:
   void stop();
 
   size_t pollRecvFrame(uint8_t dest[], int* client_index_out);
+  /** Advance TLS/WS handshakes only (no frame read). Call once per loop to reduce ERR_CONNECTION_CLOSED when recv_timeout is NULL. */
+  void tickHandshake();
+
   size_t writeToClient(int client_index, const uint8_t src[], size_t len);
   size_t writeToAllClients(const uint8_t src[], size_t len);
 

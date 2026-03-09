@@ -16,6 +16,22 @@ Versioned prebuilts are listed here so you can **roll back** if a newer release 
 
 ---
 
+## v1.14.0.23 — 2026-03-09
+
+**Firmware version:** v1.14.0.23 (meshcomod on upstream 1.14+).
+
+**Highlights:**
+- **WSS:** recv_timeout = NULL (no block, fixes RESET); 40 handshake steps per poll; tickWssHandshake() each loop so handshake advances twice per loop (reduces CLOSED).
+
+**Prebuilt binaries (use [flasher.meshcomod.com](https://flasher.meshcomod.com) — Easy mode auto-downloads versions; for manual upload, use Custom firmware):**
+
+| Device   | Merged (recommended) | Non-merged |
+|----------|----------------------|------------|
+| Heltec V4 | [heltec_v4_companion_radio_usb_tcp-merged.bin](prebuilt/releases/v1.14.0.23/heltec_v4_companion_radio_usb_tcp-merged.bin) | [heltec_v4_companion_radio_usb_tcp.bin](prebuilt/releases/v1.14.0.23/heltec_v4_companion_radio_usb_tcp.bin) |
+| Heltec V3 | [Heltec_v3_companion_radio_usb_tcp-merged.bin](prebuilt/releases/v1.14.0.23/Heltec_v3_companion_radio_usb_tcp-merged.bin) | [Heltec_v3_companion_radio_usb_tcp.bin](prebuilt/releases/v1.14.0.23/Heltec_v3_companion_radio_usb_tcp.bin) |
+
+---
+
 ## v1.14.0.22 — 2026-03-09
 
 **Firmware version:** v1.14.0.22 (meshcomod on upstream 1.14+).

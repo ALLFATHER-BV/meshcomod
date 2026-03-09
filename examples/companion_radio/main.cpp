@@ -31,6 +31,7 @@ static uint32_t _atoi(const char* sp) {
   DataStore store(LittleFS, rtc_clock);
 #elif defined(ESP32)
   #include <SPIFFS.h>
+  namespace { struct MainBootTrace { MainBootTrace() { set_boot_phase(2); } } _main_boot_trace; }
   DataStore store(SPIFFS, rtc_clock);
   #if defined(WIFI_SSID) || defined(MULTI_TRANSPORT_COMPANION)
     #include "WiFiConfig.h"
@@ -113,14 +114,22 @@ MyMesh the_mesh(radio_driver, fast_rng, rtc_clock, tables, store
 
 /* END GLOBAL OBJECTS */
 
+#if defined(ESP32)
+volatile int g_boot_phase = 0;
+extern "C" void set_boot_phase(int phase) { g_boot_phase = phase; }
+#endif
+
 void halt() {
   while (1) ;
 }
 
 void setup() {
   Serial.begin(115200);
+  delay(200);
+  Serial.println("[BOOT] setup start");
 
   board.begin();
+  Serial.println("[BOOT] board ok");
 
 #ifdef DISPLAY_CLASS
   DisplayDriver* disp = NULL;
@@ -136,6 +145,7 @@ void setup() {
 #endif
 
   if (!radio_init()) { halt(); }
+  Serial.println("[BOOT] radio ok");
 
   fast_rng.begin(radio_get_rng_seed());
 
@@ -196,6 +206,7 @@ void setup() {
     the_mesh.startInterface(serial_interface);
 #elif defined(ESP32)
   SPIFFS.begin(true);
+  Serial.println("[BOOT] SPIFFS ok");
   store.begin();
   the_mesh.begin(
     #ifdef DISPLAY_CLASS
@@ -204,15 +215,18 @@ void setup() {
         false
     #endif
   );
+  Serial.println("[BOOT] mesh ok");
 
 #if defined(WIFI_SSID) || defined(MULTI_TRANSPORT_COMPANION)
   wifiConfigBegin();
+  Serial.println("[BOOT] wifiConfig ok");
 #endif
 
 #ifdef MULTI_TRANSPORT_COMPANION
   board.setInhibitSleep(true);
   // Defer WiFi until first loop() so setup() always completes (display + USB come up even if WiFi would crash/hang)
   serial_interface.begin(Serial, TCP_PORT, WS_PORT);
+  Serial.println("[BOOT] serial_interface ok");
   serial_interface.setBroadcastResponses(true);  // RX log, channel messages, etc. go to all clients (USB + TCP + WS [+ BLE]), not only last sender
 #if defined(BLE_PIN_CODE)
   serial_interface.beginBle(BLE_NAME_PREFIX, the_mesh.getNodePrefs()->node_name, the_mesh.getBLEPin());
@@ -303,6 +317,7 @@ void loop() {
 #else
     serial_interface.startTcpServer(WiFi.status() == WL_CONNECTED);
 #endif
+    serial_interface.tickWssHandshake();  // Advance WSS TLS handshake early each loop (no blocking) to avoid ERR_CONNECTION_CLOSED
   }
 #endif
   the_mesh.loop();

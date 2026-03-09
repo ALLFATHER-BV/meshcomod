@@ -5,7 +5,6 @@
 #include "wss_cert.h"
 #include <Arduino.h>
 #include "lwip/sockets.h"
-#include <sys/select.h>
 #include <fcntl.h>
 #include <errno.h>
 #include <mbedtls/error.h>
@@ -40,25 +39,6 @@ static int wss_net_send_nonblock(void* ctx, const unsigned char* buf, size_t len
   return MBEDTLS_ERR_NET_SEND_FAILED;
 }
 
-// Short recv_timeout (15ms) so handshake can receive client flights without blocking long (fixes ERR_CONNECTION_CLOSED when main loop doesn't poll often). Cap at 20ms.
-static int wss_net_recv_timeout(void* ctx, unsigned char* buf, size_t len, uint32_t timeout_ms) {
-  mbedtls_net_context* net = (mbedtls_net_context*)ctx;
-  if (net->fd < 0) return MBEDTLS_ERR_NET_INVALID_CONTEXT;
-  if (timeout_ms > 20) timeout_ms = 20;
-  fd_set read_fds;
-  FD_ZERO(&read_fds);
-  FD_SET(net->fd, &read_fds);
-  struct timeval tv;
-  tv.tv_sec = timeout_ms / 1000;
-  tv.tv_usec = (timeout_ms % 1000) * 1000;
-  int r = select(net->fd + 1, &read_fds, NULL, NULL, &tv);
-  if (r <= 0) return MBEDTLS_ERR_SSL_WANT_READ;
-  int n = (int)recv(net->fd, buf, len, 0);
-  if (n > 0) return n;
-  if (n == 0) return MBEDTLS_ERR_SSL_CONN_EOF;
-  if (errno == EAGAIN || errno == EWOULDBLOCK) return MBEDTLS_ERR_SSL_WANT_READ;
-  return MBEDTLS_ERR_NET_RECV_FAILED;
-}
 #endif
 
 // Optional: build with -DWS_FRAME_DEBUG=1 to log each WS send (client, code 2=START/3=CONTACT/4=END, len, written).
@@ -183,7 +163,6 @@ void WebSocketCompanionServer::begin(uint16_t port) {
 #if defined(MBEDTLS_SSL_PROTO_TLS1_2) && defined(MBEDTLS_SSL_VERSION_TLS1_2)
   mbedtls_ssl_conf_min_tls_version(&_ssl_conf, MBEDTLS_SSL_VERSION_TLS1_2);
 #endif
-  mbedtls_ssl_conf_read_timeout(&_ssl_conf, 15);  // 15ms so handshake can receive client data without long block (avoids ERR_CONNECTION_CLOSED)
   mbedtls_ssl_conf_authmode(&_ssl_conf, MBEDTLS_SSL_VERIFY_NONE);
   mbedtls_ssl_conf_own_cert(&_ssl_conf, &_srvcert, &_pkey);
   mbedtls_ssl_conf_rng(&_ssl_conf, mbedtls_ctr_drbg_random, &_ctr_drbg);
@@ -252,11 +231,11 @@ void WebSocketCompanionServer::stop() {
 void WebSocketCompanionServer::acceptNewClients() {
 #if WS_USE_TLS
   if (!_tls_initialized) return;
-  // Advance in-progress TLS handshakes: up to 8 steps per client so 8*15ms timeout doesn't block too long (avoids RESET).
+  // Advance in-progress TLS handshakes (non-blocking only; no recv_timeout so no select() block).
   for (int i = 0; i < WS_COMPANION_MAX_CLIENTS; i++) {
     if (!_clients[i].in_use || _clients[i].ssl_handshake_done) continue;
     mbedtls_ssl_context* ssl = &_clients[i].ssl_ctx;
-    for (int step = 0; step < 8; step++) {
+    for (int step = 0; step < 40; step++) {
       int ret = mbedtls_ssl_handshake(ssl);
       if (ret == 0) {
         _clients[i].ssl_handshake_done = true;
@@ -297,8 +276,8 @@ void WebSocketCompanionServer::acceptNewClients() {
     mbedtls_net_free(client_net);
     return;
   }
-  // Short recv_timeout (15ms) so handshake progresses without long block; avoids both RESET (no 100ms block) and CLOSED (client doesn't time out).
-  mbedtls_ssl_set_bio(ssl, client_net, wss_net_send_nonblock, wss_net_recv_nonblock, wss_net_recv_timeout);
+  // recv_timeout = NULL: handshake never blocks (any select() block causes ERR_CONNECTION_RESET). Rely on frequent main-loop polling.
+  mbedtls_ssl_set_bio(ssl, client_net, wss_net_send_nonblock, wss_net_recv_nonblock, NULL);
   _clients[slot].in_use = true;
   _clients[slot].ssl_handshake_done = false;
   _clients[slot].handshake_done = false;
@@ -523,6 +502,11 @@ bool WebSocketCompanionServer::doHandshake(int idx) {
   }
   return false;
 #endif
+}
+
+void WebSocketCompanionServer::tickHandshake() {
+  acceptNewClients();
+  pruneDisconnected();
 }
 
 size_t WebSocketCompanionServer::pollRecvFrame(uint8_t dest[], int* client_index_out) {
