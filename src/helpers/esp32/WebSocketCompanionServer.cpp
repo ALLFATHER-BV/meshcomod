@@ -16,6 +16,15 @@
 
 #define TCP_WRITE_TIMEOUT_MS   120
 #define WS_MAGIC               "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+// Plain GET (e.g. browser opening https://device:8765): send this so user can accept cert and see confirmation.
+static const char WSS_HTTP_CERT_PAGE[] =
+  "HTTP/1.1 200 OK\r\n"
+  "Content-Type: text/html; charset=utf-8\r\n"
+  "Connection: close\r\n"
+  "\r\n"
+  "<!DOCTYPE html><html><head><meta charset=utf-8><title>meshcomod WSS</title></head><body>"
+  "<h1>meshcomod WSS</h1><p>Secure WebSocket endpoint. If you see this, the certificate was accepted. "
+  "Use the meshcomod client with wss:// this address.</p></body></html>";
 
 // Companion receive states (same as TCPCompanionServer)
 #define COMP_STATE_IDLE        0
@@ -318,6 +327,14 @@ bool WebSocketCompanionServer::doHandshake(int idx) {
           return true;
         }
       }
+      // Plain GET (e.g. browser opening https://device:8765): send cert-acceptance page then close.
+      size_t page_len = strlen(WSS_HTTP_CERT_PAGE);
+      size_t written = 0;
+      while (written < page_len) {
+        r = mbedtls_ssl_write(ssl, (const unsigned char*)WSS_HTTP_CERT_PAGE + written, page_len - written);
+        if (r <= 0) break;
+        written += (size_t)r;
+      }
       mbedtls_ssl_free(ssl);
       mbedtls_net_free(&c->client_net);
       c->in_use = false;
@@ -385,6 +402,8 @@ bool WebSocketCompanionServer::doHandshake(int idx) {
           return true;
         }
       }
+      // Plain GET: send friendly page then close (for wss:// lets user accept cert; for ws:// just confirms endpoint).
+      (void)writeAllBytes(*cl, (const uint8_t*)WSS_HTTP_CERT_PAGE, strlen(WSS_HTTP_CERT_PAGE), TCP_WRITE_TIMEOUT_MS);
       c->client.stop();
       c->in_use = false;
       return false;
