@@ -10,13 +10,13 @@
       
       
       
-        <link rel="canonical" href="https://meshcore-dev.github.io/meshcore/packet_format/">
+        <link rel="canonical" href="https://meshcore-dev.github.io/meshcore/DEVICE_WEBSOCKET_WIFI/">
       
       
-        <link rel="prev" href="../nrf52_power_management/">
+        <link rel="prev" href="..">
       
       
-        <link rel="next" href="../payloads/">
+        <link rel="next" href="../cli_commands/">
       
       
         
@@ -27,7 +27,7 @@
     
     
       
-        <title>Packet Format - MeshCore Docs</title>
+        <title>Device WebSocket over WiFi (WS and WSS) - MeshCore Docs</title>
       
     
     
@@ -70,7 +70,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#packet-format" class="md-skip">
+        <a href="#device-websocket-over-wifi-ws-and-wss" class="md-skip">
           Skip to content
         </a>
       
@@ -105,7 +105,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Packet Format
+              Device WebSocket over WiFi (WS and WSS)
             
           </span>
         </div>
@@ -250,10 +250,37 @@
       
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../DEVICE_WEBSOCKET_WIFI/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Device WebSocket over WiFi (WS and WSS)
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -269,6 +296,109 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#plain-websocket-ws" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Plain WebSocket (ws://)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#optional-tls-wss-so-https-works" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Optional: TLS (wss://) so HTTPS works
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Optional: TLS (wss://) so HTTPS works">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#enabling-wss-in-firmware" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Enabling WSS in firmware
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#client-behaviour" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Client behaviour
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#first-connection-certificate-warning" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        First connection: certificate warning
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#checklist-firmware" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Checklist (firmware)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#references" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        References
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -439,37 +569,10 @@
       
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Packet Format
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../packet_format/" class="md-nav__link">
         
   
   
@@ -485,98 +588,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#version-1-packet-format" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Version 1 Packet Format
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Version 1 Packet Format">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#packet-format_1" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Packet Format
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#header-format" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Header Format
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#route-types" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Route Types
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#payload-types" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Payload Types
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#payload-versions" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Payload Versions
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -716,22 +727,33 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#version-1-packet-format" class="md-nav__link">
+  <a href="#plain-websocket-ws" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Version 1 Packet Format
+        Plain WebSocket (ws://)
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Version 1 Packet Format">
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#optional-tls-wss-so-https-works" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Optional: TLS (wss://) so HTTPS works
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Optional: TLS (wss://) so HTTPS works">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#packet-format_1" class="md-nav__link">
+  <a href="#enabling-wss-in-firmware" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Packet Format
+        Enabling WSS in firmware
       
     </span>
   </a>
@@ -739,10 +761,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#header-format" class="md-nav__link">
+  <a href="#client-behaviour" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Header Format
+        Client behaviour
       
     </span>
   </a>
@@ -750,10 +772,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#route-types" class="md-nav__link">
+  <a href="#first-connection-certificate-warning" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Route Types
+        First connection: certificate warning
       
     </span>
   </a>
@@ -761,10 +783,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#payload-types" class="md-nav__link">
+  <a href="#checklist-firmware" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Payload Types
+        Checklist (firmware)
       
     </span>
   </a>
@@ -772,10 +794,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#payload-versions" class="md-nav__link">
+  <a href="#references" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Payload Versions
+        References
       
     </span>
   </a>
@@ -804,7 +826,7 @@
 
 
   
-    <a href="https://github.com/meshcore-dev/meshcore/edit/main/docs/packet_format.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+    <a href="https://github.com/meshcore-dev/meshcore/edit/main/docs/DEVICE_WEBSOCKET_WIFI.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
       
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
     </a>
@@ -812,304 +834,45 @@
   
 
 
-<h1 id="packet-format">Packet Format</h1>
-<p>This document describes the MeshCore packet format.</p>
+<h1 id="device-websocket-over-wifi-ws-and-wss">Device WebSocket over WiFi (WS and WSS)</h1>
+<p>When TCP is enabled and WiFi is up, the device can serve the companion protocol over <strong>WebSocket</strong> so a browser can connect with <strong>no extra software</strong> (no bridge, no ngrok, no Tailscale).</p>
+<h2 id="plain-websocket-ws">Plain WebSocket (ws://)</h2>
 <ul>
-<li><code>0xYY</code> indicates <code>YY</code> in hex notation.</li>
-<li><code>0bYY</code> indicates <code>YY</code> in binary notation.</li>
-<li>Bit 0 indicates the bit furthest to the right: <code>0000000X</code></li>
-<li>Bit 7 indicates the bit furthest to the left: <code>X0000000</code></li>
+<li><strong>Port:</strong> 8765 (or <code>WS_PORT</code> from build).</li>
+<li><strong>URL:</strong> <code>ws://&lt;device-ip&gt;:8765</code></li>
+<li>Use from <strong>HTTP</strong> pages or <strong>localhost</strong>. Browsers block <code>ws://</code> when the page is loaded over <strong>HTTPS</strong> (mixed content).</li>
 </ul>
-<h2 id="version-1-packet-format">Version 1 Packet Format</h2>
-<p>This is the protocol level packet structure used in MeshCore firmware v1.12.0</p>
-<pre><code>[header][transport_codes(optional)][path_length][path][payload]
-</code></pre>
+<h2 id="optional-tls-wss-so-https-works">Optional: TLS (wss://) so HTTPS works</h2>
+<p>If your web client is served over <strong>HTTPS</strong> (e.g. https://meshcomod.com), the browser will only allow <strong>secure</strong> WebSocket: <strong><code>wss://</code></strong>. To support that with <strong>no extra software</strong>, the device can serve <strong>WSS</strong> (WebSocket over TLS) on the same port.</p>
+<h3 id="enabling-wss-in-firmware">Enabling WSS in firmware</h3>
+<ol>
+<li><strong>Build with TLS:</strong> In the companion env (e.g. <code>heltec_v4_companion_radio_usb_tcp</code>), set in <code>platformio.ini</code> or build flags:</li>
+<li><code>-D WS_USE_TLS=1</code></li>
+<li><strong>Port:</strong> Same port (e.g. 8765). With <code>WS_USE_TLS=1</code>, that port is <strong>TLS-only</strong> (every connection is WSS).</li>
+<li><strong>Certificate:</strong> The firmware uses a <strong>self-signed</strong> certificate (and key) built in; see <code>src/helpers/esp32/wss_cert.h</code>. CN is <code>meshcomod.local</code>.</li>
+</ol>
+<h3 id="client-behaviour">Client behaviour</h3>
 <ul>
-<li><a href="#header-format">header</a> - 1 byte<ul>
-<li>8-bit Format: <code>0bVVPPPPRR</code> - <code>V=Version</code> - <code>P=PayloadType</code> - <code>R=RouteType</code></li>
-<li>Bits 0-1 - 2-bits - <a href="#route-types">Route Type</a><ul>
-<li><code>0x00</code>/<code>0b00</code> - <code>ROUTE_TYPE_TRANSPORT_FLOOD</code> - Flood Routing + Transport Codes</li>
-<li><code>0x01</code>/<code>0b01</code> - <code>ROUTE_TYPE_FLOOD</code> - Flood Routing</li>
-<li><code>0x02</code>/<code>0b10</code> - <code>ROUTE_TYPE_DIRECT</code> - Direct Routing</li>
-<li><code>0x03</code>/<code>0b11</code> - <code>ROUTE_TYPE_TRANSPORT_DIRECT</code> - Direct Routing + Transport Codes</li>
+<li>On <strong>HTTPS</strong>, when the user enters <strong>IP:port</strong> (e.g. <code>192.168.20.230:8765</code>), the client should connect to <strong><code>wss://&lt;ip&gt;:8765</code></strong> (e.g. <code>wss://192.168.20.230:8765</code>).</li>
+<li>On HTTP or localhost, the client can still use <strong><code>ws://</code></strong> for IP:port — but if the firmware is built with <strong>WSS only</strong> (<code>WS_USE_TLS=1</code>), then <strong>only</strong> <code>wss://</code> is accepted on that port.</li>
 </ul>
-</li>
-<li>Bits 2-5 - 4-bits - <a href="#payload-types">Payload Type</a><ul>
-<li><code>0x00</code>/<code>0b0000</code> - <code>PAYLOAD_TYPE_REQ</code> - Request (destination/source hashes + MAC)</li>
-<li><code>0x01</code>/<code>0b0001</code> - <code>PAYLOAD_TYPE_RESPONSE</code> - Response to <code>REQ</code> or <code>ANON_REQ</code></li>
-<li><code>0x02</code>/<code>0b0010</code> - <code>PAYLOAD_TYPE_TXT_MSG</code> - Plain text message</li>
-<li><code>0x03</code>/<code>0b0011</code> - <code>PAYLOAD_TYPE_ACK</code> - Acknowledgment</li>
-<li><code>0x04</code>/<code>0b0100</code> - <code>PAYLOAD_TYPE_ADVERT</code> - Node advertisement</li>
-<li><code>0x05</code>/<code>0b0101</code> - <code>PAYLOAD_TYPE_GRP_TXT</code> - Group text message (unverified)</li>
-<li><code>0x06</code>/<code>0b0110</code> - <code>PAYLOAD_TYPE_GRP_DATA</code> - Group datagram (unverified)</li>
-<li><code>0x07</code>/<code>0b0111</code> - <code>PAYLOAD_TYPE_ANON_REQ</code> - Anonymous request</li>
-<li><code>0x08</code>/<code>0b1000</code> - <code>PAYLOAD_TYPE_PATH</code> - Returned path</li>
-<li><code>0x09</code>/<code>0b1001</code> - <code>PAYLOAD_TYPE_TRACE</code> - Trace a path, collecting SNR for each hop</li>
-<li><code>0x0A</code>/<code>0b1010</code> - <code>PAYLOAD_TYPE_MULTIPART</code> - Packet is part of a sequence of packets</li>
-<li><code>0x0B</code>/<code>0b1011</code> - <code>PAYLOAD_TYPE_CONTROL</code> - Control packet data (unencrypted)</li>
-<li><code>0x0C</code>/<code>0b1100</code> - reserved</li>
-<li><code>0x0D</code>/<code>0b1101</code> - reserved</li>
-<li><code>0x0E</code>/<code>0b1110</code> - reserved</li>
-<li><code>0x0F</code>/<code>0b1111</code> - <code>PAYLOAD_TYPE_RAW_CUSTOM</code> - Custom packet (raw bytes, custom encryption)</li>
+<h3 id="first-connection-certificate-warning">First connection: certificate warning</h3>
+<ul>
+<li>The first time you connect to <code>wss://&lt;device-ip&gt;:8765</code>, the browser will show a <strong>certificate warning</strong> (self-signed / untrusted).</li>
+<li>The user must click <strong>Advanced</strong> → <strong>Proceed to &lt;address&gt;</strong> (or equivalent) <strong>once</strong>. After that, the connection works from HTTPS with no extra tools.</li>
 </ul>
-</li>
-<li>Bits 6-7 - 2-bits - <a href="#payload-versions">Payload Version</a><ul>
-<li><code>0x00</code>/<code>0b00</code> - v1 - 1-byte src/dest hashes, 2-byte MAC</li>
-<li><code>0x01</code>/<code>0b01</code> - v2 - Future version (e.g., 2-byte hashes, 4-byte MAC)</li>
-<li><code>0x02</code>/<code>0b10</code> - v3 - Future version</li>
-<li><code>0x03</code>/<code>0b11</code> - v4 - Future version</li>
+<h3 id="checklist-firmware">Checklist (firmware)</h3>
+<ul>
+<li>[x] TLS server listen on the WebSocket port (e.g. 8765) when <code>WS_USE_TLS=1</code>.</li>
+<li>[x] Load self-signed certificate and private key (embedded in <code>wss_cert.h</code>).</li>
+<li>[x] After TLS handshake, perform WebSocket HTTP Upgrade and binary framing as today.</li>
+<li>[x] Document for users: “First connection to the device from HTTPS may show a certificate warning; accept it once.”</li>
 </ul>
-</li>
+<h3 id="references">References</h3>
+<ul>
+<li><strong>Client:</strong> When on HTTPS, connect to <code>wss://${host}:${port}</code> for IP:port input.</li>
+<li><strong>Firmware:</strong> <a href="https://github.com/ALLFATHER-BV/meshcomod">meshcomod</a> — WSS behind <code>WS_USE_TLS=1</code> in <code>WebSocketCompanionServer</code> and <code>wss_cert.h</code>.</li>
 </ul>
-</li>
-<li><code>transport_codes</code> - 4 bytes (optional)<ul>
-<li>Only present for <code>ROUTE_TYPE_TRANSPORT_FLOOD</code> and <code>ROUTE_TYPE_TRANSPORT_DIRECT</code></li>
-<li><code>transport_code_1</code> - 2 bytes - <code>uint16_t</code> - calculated from region scope</li>
-<li><code>transport_code_2</code> - 2 bytes - <code>uint16_t</code> - reserved</li>
-</ul>
-</li>
-<li><code>path_length</code> - 1 byte - Length of the path field in bytes</li>
-<li><code>path</code> - size provided by <code>path_length</code> - Path to use for Direct Routing<ul>
-<li>Up to a maximum of 64 bytes, defined by <code>MAX_PATH_SIZE</code></li>
-<li>v1.12.0 firmware and older drops packets with <code>path_length</code> <a href="https://github.com/meshcore-dev/MeshCore/blob/e812632235274ffd2382adf5354168aec765d416/src/Dispatcher.cpp#L144">larger than 64</a></li>
-</ul>
-</li>
-<li><code>payload</code> - variable length - Payload Data<ul>
-<li>Up to a maximum 184 bytes, defined by <code>MAX_PACKET_PAYLOAD</code></li>
-<li>Generally this is the remainder of the raw packet data</li>
-<li>The firmware parses this data based on the provided Payload Type</li>
-<li>v1.12.0 firmware and older drops packets with <code>payload</code> sizes <a href="https://github.com/meshcore-dev/MeshCore/blob/e812632235274ffd2382adf5354168aec765d416/src/Dispatcher.cpp#L152">larger than 184</a></li>
-</ul>
-</li>
-</ul>
-<h3 id="packet-format_1">Packet Format</h3>
-<table>
-<thead>
-<tr>
-<th>Field</th>
-<th>Size (bytes)</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>header</td>
-<td>1</td>
-<td>Contains routing type, payload type, and payload version</td>
-</tr>
-<tr>
-<td>transport_codes</td>
-<td>4 (optional)</td>
-<td>2x 16-bit transport codes (if ROUTE_TYPE_TRANSPORT_*)</td>
-</tr>
-<tr>
-<td>path_length</td>
-<td>1</td>
-<td>Length of the path field in bytes</td>
-</tr>
-<tr>
-<td>path</td>
-<td>up to 64 (<code>MAX_PATH_SIZE</code>)</td>
-<td>Stores the routing path if applicable</td>
-</tr>
-<tr>
-<td>payload</td>
-<td>up to 184 (<code>MAX_PACKET_PAYLOAD</code>)</td>
-<td>Data for the provided Payload Type</td>
-</tr>
-</tbody>
-</table>
-<blockquote>
-<p>NOTE: see the <a href="../payloads/">Payloads</a> documentation for more information about the content of specific payload types.</p>
-</blockquote>
-<h3 id="header-format">Header Format</h3>
-<p>Bit 0 means the lowest bit (1s place)</p>
-<table>
-<thead>
-<tr>
-<th>Bits</th>
-<th>Mask</th>
-<th>Field</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>0-1</td>
-<td><code>0x03</code></td>
-<td>Route Type</td>
-<td>Flood, Direct, etc</td>
-</tr>
-<tr>
-<td>2-5</td>
-<td><code>0x3C</code></td>
-<td>Payload Type</td>
-<td>Request, Response, ACK, etc</td>
-</tr>
-<tr>
-<td>6-7</td>
-<td><code>0xC0</code></td>
-<td>Payload Version</td>
-<td>Versioning of the payload format</td>
-</tr>
-</tbody>
-</table>
-<h3 id="route-types">Route Types</h3>
-<table>
-<thead>
-<tr>
-<th>Value</th>
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>0x00</code></td>
-<td><code>ROUTE_TYPE_TRANSPORT_FLOOD</code></td>
-<td>Flood Routing + Transport Codes</td>
-</tr>
-<tr>
-<td><code>0x01</code></td>
-<td><code>ROUTE_TYPE_FLOOD</code></td>
-<td>Flood Routing</td>
-</tr>
-<tr>
-<td><code>0x02</code></td>
-<td><code>ROUTE_TYPE_DIRECT</code></td>
-<td>Direct Routing</td>
-</tr>
-<tr>
-<td><code>0x03</code></td>
-<td><code>ROUTE_TYPE_TRANSPORT_DIRECT</code></td>
-<td>Direct Routing + Transport Codes</td>
-</tr>
-</tbody>
-</table>
-<h3 id="payload-types">Payload Types</h3>
-<table>
-<thead>
-<tr>
-<th>Value</th>
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>0x00</code></td>
-<td><code>PAYLOAD_TYPE_REQ</code></td>
-<td>Request (destination/source hashes + MAC)</td>
-</tr>
-<tr>
-<td><code>0x01</code></td>
-<td><code>PAYLOAD_TYPE_RESPONSE</code></td>
-<td>Response to <code>REQ</code> or <code>ANON_REQ</code></td>
-</tr>
-<tr>
-<td><code>0x02</code></td>
-<td><code>PAYLOAD_TYPE_TXT_MSG</code></td>
-<td>Plain text message</td>
-</tr>
-<tr>
-<td><code>0x03</code></td>
-<td><code>PAYLOAD_TYPE_ACK</code></td>
-<td>Acknowledgment</td>
-</tr>
-<tr>
-<td><code>0x04</code></td>
-<td><code>PAYLOAD_TYPE_ADVERT</code></td>
-<td>Node advertisement</td>
-</tr>
-<tr>
-<td><code>0x05</code></td>
-<td><code>PAYLOAD_TYPE_GRP_TXT</code></td>
-<td>Group text message (unverified)</td>
-</tr>
-<tr>
-<td><code>0x06</code></td>
-<td><code>PAYLOAD_TYPE_GRP_DATA</code></td>
-<td>Group datagram (unverified)</td>
-</tr>
-<tr>
-<td><code>0x07</code></td>
-<td><code>PAYLOAD_TYPE_ANON_REQ</code></td>
-<td>Anonymous request</td>
-</tr>
-<tr>
-<td><code>0x08</code></td>
-<td><code>PAYLOAD_TYPE_PATH</code></td>
-<td>Returned path</td>
-</tr>
-<tr>
-<td><code>0x09</code></td>
-<td><code>PAYLOAD_TYPE_TRACE</code></td>
-<td>Trace a path, collecting SNR for each hop</td>
-</tr>
-<tr>
-<td><code>0x0A</code></td>
-<td><code>PAYLOAD_TYPE_MULTIPART</code></td>
-<td>Packet is part of a sequence of packets</td>
-</tr>
-<tr>
-<td><code>0x0B</code></td>
-<td><code>PAYLOAD_TYPE_CONTROL</code></td>
-<td>Control packet data (unencrypted)</td>
-</tr>
-<tr>
-<td><code>0x0C</code></td>
-<td>reserved</td>
-<td>reserved</td>
-</tr>
-<tr>
-<td><code>0x0D</code></td>
-<td>reserved</td>
-<td>reserved</td>
-</tr>
-<tr>
-<td><code>0x0E</code></td>
-<td>reserved</td>
-<td>reserved</td>
-</tr>
-<tr>
-<td><code>0x0F</code></td>
-<td><code>PAYLOAD_TYPE_RAW_CUSTOM</code></td>
-<td>Custom packet (raw bytes, custom encryption)</td>
-</tr>
-</tbody>
-</table>
-<h3 id="payload-versions">Payload Versions</h3>
-<table>
-<thead>
-<tr>
-<th>Value</th>
-<th>Version</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>0x00</code></td>
-<td>1</td>
-<td>1-byte src/dest hashes, 2-byte MAC</td>
-</tr>
-<tr>
-<td><code>0x01</code></td>
-<td>2</td>
-<td>Future version (e.g., 2-byte hashes, 4-byte MAC)</td>
-</tr>
-<tr>
-<td><code>0x02</code></td>
-<td>3</td>
-<td>Future version</td>
-</tr>
-<tr>
-<td><code>0x03</code></td>
-<td>4</td>
-<td>Future version</td>
-</tr>
-</tbody>
-</table>
 
 
 
