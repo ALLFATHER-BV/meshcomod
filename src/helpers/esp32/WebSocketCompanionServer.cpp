@@ -120,6 +120,8 @@ void WebSocketCompanionServer::begin(uint16_t port) {
   mbedtls_ssl_conf_authmode(&_ssl_conf, MBEDTLS_SSL_VERIFY_NONE);
   mbedtls_ssl_conf_own_cert(&_ssl_conf, &_srvcert, &_pkey);
   mbedtls_ssl_conf_rng(&_ssl_conf, mbedtls_ctr_drbg_random, &_ctr_drbg);
+  // Short read timeout (100ms) so handshake can receive data without blocking the loop for seconds.
+  mbedtls_ssl_conf_read_timeout(&_ssl_conf, 100);
   int fd = socket(AF_INET, SOCK_STREAM, 0);
   if (fd >= 0) {
     int opt = 1;
@@ -212,8 +214,8 @@ void WebSocketCompanionServer::acceptNewClients() {
     mbedtls_net_free(client_net);
     return;
   }
-  // Use NULL recv_timeout so handshake never blocks (socket is non-blocking; recv returns WANT_READ when no data).
-  mbedtls_ssl_set_bio(ssl, client_net, mbedtls_net_send, mbedtls_net_recv, NULL);
+  // Use recv_timeout with 100ms (see mbedtls_ssl_conf_read_timeout) so handshake completes without long blocks.
+  mbedtls_ssl_set_bio(ssl, client_net, mbedtls_net_send, mbedtls_net_recv, mbedtls_net_recv_timeout);
   _clients[slot].in_use = true;
   _clients[slot].ssl_handshake_done = false;
   _clients[slot].handshake_done = false;
