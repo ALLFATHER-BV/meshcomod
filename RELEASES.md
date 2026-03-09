@@ -16,6 +16,22 @@ Versioned prebuilts are listed here so you can **roll back** if a newer release 
 
 ---
 
+## v1.14.0.12 — 2026-02-24
+
+**Firmware version:** v1.14.0.12 (meshcomod on upstream 1.14+).
+
+**Highlights:**
+- **WSS boot fix:** mbedTLS init moved from global constructor to `begin()` (10s after boot, WiFi up). Fixes device stuck on "Loading..."; splash and home screen now appear.
+
+**Prebuilt binaries (use [flasher.meshcomod.com](https://flasher.meshcomod.com) — Easy mode auto-downloads versions; for manual upload, use Custom firmware):**
+
+| Device   | Merged (recommended) | Non-merged |
+|----------|----------------------|------------|
+| Heltec V4 | [heltec_v4_companion_radio_usb_tcp-merged.bin](prebuilt/releases/v1.14.0.12/heltec_v4_companion_radio_usb_tcp-merged.bin) | [heltec_v4_companion_radio_usb_tcp.bin](prebuilt/releases/v1.14.0.12/heltec_v4_companion_radio_usb_tcp.bin) |
+| Heltec V3 | [Heltec_v3_companion_radio_usb_tcp-merged.bin](prebuilt/releases/v1.14.0.12/Heltec_v3_companion_radio_usb_tcp-merged.bin) | [Heltec_v3_companion_radio_usb_tcp.bin](prebuilt/releases/v1.14.0.12/Heltec_v3_companion_radio_usb_tcp.bin) |
+
+---
+
 ## v1.14.0.11 — 2026-02-24
 
 **Firmware version:** v1.14.0.11 (meshcomod on upstream 1.14+).

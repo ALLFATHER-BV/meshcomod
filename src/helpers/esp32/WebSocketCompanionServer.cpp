@@ -80,23 +80,28 @@ WebSocketCompanionServer::WebSocketCompanionServer()
     _clients[i].comp_state = COMP_STATE_IDLE;
 #if WS_USE_TLS
     _clients[i].ssl_handshake_done = false;
-    mbedtls_net_init(&_clients[i].client_net);
-    mbedtls_ssl_init(&_clients[i].ssl_ctx);
+    /* mbedTLS inits moved to begin() so no TLS runs at global-construct time (avoids "Loading..." hang). */
 #endif
   }
 #if WS_USE_TLS
-  mbedtls_net_init(&_listen_fd);
-  mbedtls_ssl_config_init(&_ssl_conf);
-  mbedtls_x509_crt_init(&_srvcert);
-  mbedtls_pk_init(&_pkey);
-  mbedtls_entropy_init(&_entropy);
-  mbedtls_ctr_drbg_init(&_ctr_drbg);
+  /* mbedTLS inits deferred to begin() so setup()/display can complete before any TLS/heap use. */
 #endif
 }
 
 void WebSocketCompanionServer::begin(uint16_t port) {
   _port = port;
 #if WS_USE_TLS
+  // Defer all mbedTLS init to here (not constructor) so device boots past "Loading..." and UI runs first.
+  mbedtls_net_init(&_listen_fd);
+  mbedtls_ssl_config_init(&_ssl_conf);
+  mbedtls_x509_crt_init(&_srvcert);
+  mbedtls_pk_init(&_pkey);
+  mbedtls_entropy_init(&_entropy);
+  mbedtls_ctr_drbg_init(&_ctr_drbg);
+  for (int i = 0; i < WS_COMPANION_MAX_CLIENTS; i++) {
+    mbedtls_net_init(&_clients[i].client_net);
+    mbedtls_ssl_init(&_clients[i].ssl_ctx);
+  }
   if (mbedtls_ctr_drbg_seed(&_ctr_drbg, mbedtls_entropy_func, &_entropy, (const unsigned char*)"wss", 3) != 0 ||
       mbedtls_x509_crt_parse(&_srvcert, (const unsigned char*)WSS_SERVER_CERT_PEM, strlen(WSS_SERVER_CERT_PEM) + 1) != 0 ||
       mbedtls_pk_parse_key(&_pkey, (const unsigned char*)WSS_SERVER_KEY_PEM, strlen(WSS_SERVER_KEY_PEM) + 1, NULL, 0) != 0 ||
