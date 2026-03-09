@@ -6,6 +6,26 @@
 #include <Arduino.h>
 #include "lwip/sockets.h"
 #include <fcntl.h>
+#include <errno.h>
+
+// Non-blocking recv/send for TLS: return WANT_READ/WANT_WRITE on EAGAIN so handshake never blocks (fixes ERR_CONNECTION_RESET on ESP32).
+static int wss_net_recv_nonblock(void* ctx, unsigned char* buf, size_t len) {
+  mbedtls_net_context* net = (mbedtls_net_context*)ctx;
+  if (net->fd < 0) return MBEDTLS_ERR_NET_INVALID_CONTEXT;
+  int n = (int)recv(net->fd, buf, len, 0);
+  if (n > 0) return n;
+  if (n == 0) return MBEDTLS_ERR_SSL_CONN_EOF;
+  if (errno == EAGAIN || errno == EWOULDBLOCK) return MBEDTLS_ERR_SSL_WANT_READ;
+  return MBEDTLS_ERR_NET_RECV_FAILED;
+}
+static int wss_net_send_nonblock(void* ctx, const unsigned char* buf, size_t len) {
+  mbedtls_net_context* net = (mbedtls_net_context*)ctx;
+  if (net->fd < 0) return MBEDTLS_ERR_NET_INVALID_CONTEXT;
+  int n = (int)send(net->fd, buf, len, 0);
+  if (n >= 0) return n;
+  if (errno == EAGAIN || errno == EWOULDBLOCK) return MBEDTLS_ERR_SSL_WANT_WRITE;
+  return MBEDTLS_ERR_NET_SEND_FAILED;
+}
 #endif
 
 // Optional: build with -DWS_FRAME_DEBUG=1 to log each WS send (client, code 2=START/3=CONTACT/4=END, len, written).
@@ -120,8 +140,6 @@ void WebSocketCompanionServer::begin(uint16_t port) {
   mbedtls_ssl_conf_authmode(&_ssl_conf, MBEDTLS_SSL_VERIFY_NONE);
   mbedtls_ssl_conf_own_cert(&_ssl_conf, &_srvcert, &_pkey);
   mbedtls_ssl_conf_rng(&_ssl_conf, mbedtls_ctr_drbg_random, &_ctr_drbg);
-  // Short read timeout (100ms) so handshake can receive data without blocking the loop for seconds.
-  mbedtls_ssl_conf_read_timeout(&_ssl_conf, 100);
   int fd = socket(AF_INET, SOCK_STREAM, 0);
   if (fd >= 0) {
     int opt = 1;
@@ -214,8 +232,8 @@ void WebSocketCompanionServer::acceptNewClients() {
     mbedtls_net_free(client_net);
     return;
   }
-  // Use recv_timeout with 100ms (see mbedtls_ssl_conf_read_timeout) so handshake completes without long blocks.
-  mbedtls_ssl_set_bio(ssl, client_net, mbedtls_net_send, mbedtls_net_recv, mbedtls_net_recv_timeout);
+  // Custom non-blocking recv/send so handshake never blocks; WANT_READ/WANT_WRITE on EAGAIN (avoids ERR_CONNECTION_RESET).
+  mbedtls_ssl_set_bio(ssl, client_net, wss_net_send_nonblock, wss_net_recv_nonblock, NULL);
   _clients[slot].in_use = true;
   _clients[slot].ssl_handshake_done = false;
   _clients[slot].handshake_done = false;
