@@ -251,6 +251,10 @@ void setup() {
 }
 
 void loop() {
+  // Run UI first every iteration so splash can dismiss at 3s even if mesh/serial blocks later (was stuck on version screen when the_mesh.loop() ran before ui_task.loop()).
+#ifdef DISPLAY_CLASS
+  ui_task.loop();
+#endif
 #ifdef MULTI_TRANSPORT_COMPANION
   static bool wifi_started = false;
   static uint32_t last_wifi_retry_ms = 0;
@@ -303,8 +307,5 @@ void loop() {
 #endif
   the_mesh.loop();
   sensors.loop();
-#ifdef DISPLAY_CLASS
-  ui_task.loop();
-#endif
   rtc_clock.tick();
 }
