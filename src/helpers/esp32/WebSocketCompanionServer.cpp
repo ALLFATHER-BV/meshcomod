@@ -212,7 +212,8 @@ void WebSocketCompanionServer::acceptNewClients() {
     mbedtls_net_free(client_net);
     return;
   }
-  mbedtls_ssl_set_bio(ssl, client_net, mbedtls_net_send, mbedtls_net_recv, mbedtls_net_recv_timeout);
+  // Use NULL recv_timeout so handshake never blocks (socket is non-blocking; recv returns WANT_READ when no data).
+  mbedtls_ssl_set_bio(ssl, client_net, mbedtls_net_send, mbedtls_net_recv, NULL);
   _clients[slot].in_use = true;
   _clients[slot].ssl_handshake_done = false;
   _clients[slot].handshake_done = false;
