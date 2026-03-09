@@ -83,8 +83,6 @@ class HomeScreen : public UIScreen {
     ADVERT,
 #ifdef MULTI_TRANSPORT_COMPANION
     NETWORK,
-#endif
-#if defined(MULTI_TRANSPORT_COMPANION) && (WS_USE_TLS)
     WSS,
 #endif
 #if ENV_INCLUDE_GPS == 1
@@ -359,12 +357,16 @@ public:
       display.setColor(DisplayDriver::LIGHT);
       display.drawTextCentered(display.width() / 2, y, _task->isTcpEnabled() ? "OFF: long press" : "ON: long press");
 #endif
-#if defined(MULTI_TRANSPORT_COMPANION) && (WS_USE_TLS)
+#ifdef MULTI_TRANSPORT_COMPANION
     } else if (_page == HomePage::WSS) {
       display.setColor(DisplayDriver::BLUE);
       display.setTextSize(1);
       int y = 10;
+#if WS_USE_TLS
       display.drawTextCentered(display.width() / 2, y, "WSS");
+#else
+      display.drawTextCentered(display.width() / 2, y, "WS");
+#endif
       y += 12;
       if (_task->isWsStarted()) {
         display.setColor(DisplayDriver::GREEN);

@@ -21,7 +21,7 @@
 #endif
 
 #ifndef WS_HANDSHAKE_MAX_LEN
-#define WS_HANDSHAKE_MAX_LEN  512
+#define WS_HANDSHAKE_MAX_LEN  1536
 #endif
 
 // Per-client: either HTTP handshake or WebSocket mode with companion state machine
