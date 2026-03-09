@@ -70,9 +70,6 @@ case $1 in
     ;;
 esac
 
-# cache project config json for use in get_platform_for_env()
-PIO_CONFIG_JSON=$($PIO_CMD project config --json-output)
-
 # $1 should be the string to find (case insensitive)
 get_pio_envs_containing_string() {
   shopt -s nocasematch
@@ -99,11 +96,13 @@ get_pio_envs_ending_with_string() {
 # $1 should be the environment name
 get_platform_for_env() {
   local env_name=$1
-  echo "$PIO_CONFIG_JSON" | python3 -c "
+  local result
+  result=$($PIO_CMD project config --json-output | python3 -c "
 import sys, json, re
 data = json.load(sys.stdin)
+env_name = sys.argv[1] if len(sys.argv) > 1 else ''
 for section, options in data:
-    if section == 'env:$env_name':
+    if section == 'env:' + env_name:
         for key, value in options:
             if key == 'build_flags':
                 for flag in value:
@@ -111,7 +110,12 @@ for section, options in data:
                     if match:
                         print(match.group(1))
                         sys.exit(0)
-"
+" "$env_name")
+  if [ -z "$result" ] && [ -f ".pio/build/$env_name/bootloader.bin" ] && [ -f ".pio/build/$env_name/partitions.bin" ]; then
+    echo "ESP32_PLATFORM"
+  else
+    echo "$result"
+  fi
 }
 
 # disable all debug logging flags if DISABLE_DEBUG=1 is set
@@ -251,12 +255,9 @@ build_firmwares() {
   build_room_server_firmwares
 }
 
-# clean build dir
-rm -rf out
-mkdir -p out
-
-# handle script args
+# handle script args (clean out/ only for bulk builds so build-firmware runs accumulate bins)
 if [[ $1 == "build-firmware" ]]; then
+  mkdir -p out
   TARGETS=${@:2}
   if [ "$TARGETS" ]; then
     for env in $TARGETS; do
@@ -267,6 +268,8 @@ if [[ $1 == "build-firmware" ]]; then
     exit 1
   fi
 elif [[ $1 == "build-matching-firmwares" ]]; then
+  rm -rf out
+  mkdir -p out
   if [ "$2" ]; then
      build_all_firmwares_matching $2
   else
@@ -274,11 +277,19 @@ elif [[ $1 == "build-matching-firmwares" ]]; then
     exit 1
   fi
 elif [[ $1 == "build-firmwares" ]]; then
+  rm -rf out
+  mkdir -p out
   build_firmwares
 elif [[ $1 == "build-companion-firmwares" ]]; then
+  rm -rf out
+  mkdir -p out
   build_companion_firmwares
 elif [[ $1 == "build-repeater-firmwares" ]]; then
+  rm -rf out
+  mkdir -p out
   build_repeater_firmwares
 elif [[ $1 == "build-room-server-firmwares" ]]; then
+  rm -rf out
+  mkdir -p out
   build_room_server_firmwares
 fi

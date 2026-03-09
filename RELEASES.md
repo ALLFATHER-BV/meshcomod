@@ -16,6 +16,23 @@ Versioned prebuilts are listed here so you can **roll back** if a newer release 
 
 ---
 
+## v1.14.0.10 — 2026-02-24
+
+**Firmware version:** v1.14.0.10 (meshcomod on upstream 1.14+).
+
+**Highlights:**
+- **Build script improvements:** `build-firmware <target>` no longer wipes `out/`; only bulk builds clear it so V4 then V3 bins accumulate. Platform detection for ESP32 mergebin/copy fixed (pio pipe + ESP32 fallback when bootloader/partitions present).
+- Same firmware as v1.14.0.9 (plain ws:// port 8765; GetContacts over WiFi fix). WSS removed.
+
+**Prebuilt binaries (use [flasher.meshcomod.com](https://flasher.meshcomod.com) — Easy mode auto-downloads versions; for manual upload, use Custom firmware):**
+
+| Device   | Merged (recommended) | Non-merged |
+|----------|----------------------|------------|
+| Heltec V4 | [heltec_v4_companion_radio_usb_tcp-merged.bin](prebuilt/releases/v1.14.0.10/heltec_v4_companion_radio_usb_tcp-merged.bin) | [heltec_v4_companion_radio_usb_tcp.bin](prebuilt/releases/v1.14.0.10/heltec_v4_companion_radio_usb_tcp.bin) |
+| Heltec V3 | [Heltec_v3_companion_radio_usb_tcp-merged.bin](prebuilt/releases/v1.14.0.10/Heltec_v3_companion_radio_usb_tcp-merged.bin) | [Heltec_v3_companion_radio_usb_tcp.bin](prebuilt/releases/v1.14.0.10/Heltec_v3_companion_radio_usb_tcp.bin) |
+
+---
+
 ## v1.14.0.9 — 2026-02-24
 
 **Firmware version:** v1.14.0.9 (meshcomod on upstream 1.14+).
