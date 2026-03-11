@@ -45,6 +45,9 @@ public:
   bool isWsStarted() const override { return _ws_started; }
   uint16_t getWsPort() const override { return _ws_port; }
   int getWsConnectedCount() const override { return _ws.connectedCount(); }
+  void enableWss() override;
+  void disableWss() override;
+  bool isWssEnabled() const override { return _wss_enabled; }
   /** Advance WSS handshake without reading frames. Call early in loop() to finish TLS before browser times out. */
   void tickWssHandshake();
 
@@ -77,6 +80,7 @@ private:
   bool _tcp_started;
   bool _ws_started;
   bool _tcp_enabled;   // if false, startTcpServer() no-ops until enableTcp()
+  bool _wss_enabled;   // when true use WSS (TLS) on WS port; when false use plain WS (only when TLS supported in build)
   bool _isEnabled;
   bool _broadcast;           // if true, also send responses to all other clients
   int _last_reply_target;    // REPLY_TARGET_USB, REPLY_TARGET_BLE, TCP index, or REPLY_TARGET_WS_0 + ws index

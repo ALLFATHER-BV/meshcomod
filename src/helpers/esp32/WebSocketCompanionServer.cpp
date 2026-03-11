@@ -89,7 +89,7 @@ static void base64Encode20(const uint8_t* in, char* out) {
   *out = '\0';
 }
 
-#if !WS_USE_TLS
+// Used for plain WS writes (non-TLS build and TLS build when _use_wss=false).
 static bool writeAllBytes(WiFiClient& client, const uint8_t* buf, size_t len, uint32_t timeout_ms) {
   size_t sent = 0;
   uint32_t start = millis();
@@ -105,11 +105,10 @@ static bool writeAllBytes(WiFiClient& client, const uint8_t* buf, size_t len, ui
   }
   return true;
 }
-#endif
 
 WebSocketCompanionServer::WebSocketCompanionServer()
 #if WS_USE_TLS
-  : _port(0), _poll_start_idx(0), _tls_initialized(false)
+  : _port(0), _poll_start_idx(0), _tls_initialized(false), _use_wss(true)
 #else
   : _server(WiFiServer()), _port(0), _poll_start_idx(0)
 #endif
@@ -131,9 +130,11 @@ WebSocketCompanionServer::WebSocketCompanionServer()
 #endif
 }
 
-void WebSocketCompanionServer::begin(uint16_t port) {
+void WebSocketCompanionServer::begin(uint16_t port, bool use_wss) {
   _port = port;
 #if WS_USE_TLS
+  _use_wss = use_wss;
+  if (_use_wss) {
   // Defer all mbedTLS init to here (not constructor) so device boots past "Loading..." and UI runs first.
   mbedtls_net_init(&_listen_fd);
   mbedtls_ssl_config_init(&_ssl_conf);
@@ -194,13 +195,19 @@ void WebSocketCompanionServer::begin(uint16_t port) {
   _listen_fd.fd = fd;
   _tls_initialized = true;
   Serial.printf("[WSS] listening port=%u fd=%d\n", (unsigned)port, fd);
+  } else {
+  _server.begin(port);
+  Serial.printf("[WS] listening port=%u (plain)\n", (unsigned)port);
+  }
 #else
+  (void)use_wss;
   _server.begin(port);
 #endif
 }
 
 void WebSocketCompanionServer::stop() {
 #if WS_USE_TLS
+  if (_use_wss) {
   if (_listen_fd.fd >= 0) {
     close(_listen_fd.fd);
     _listen_fd.fd = -1;
@@ -218,6 +225,15 @@ void WebSocketCompanionServer::stop() {
   mbedtls_ctr_drbg_free(&_ctr_drbg);
   mbedtls_entropy_free(&_entropy);
   _tls_initialized = false;
+  } else {
+  _server.stop();
+  for (int i = 0; i < WS_COMPANION_MAX_CLIENTS; i++) {
+    if (_clients[i].in_use) {
+      _clients[i].client.stop();
+      _clients[i].in_use = false;
+    }
+  }
+  }
 #else
   _server.stop();
   for (int i = 0; i < WS_COMPANION_MAX_CLIENTS; i++) {
@@ -231,6 +247,7 @@ void WebSocketCompanionServer::stop() {
 
 void WebSocketCompanionServer::acceptNewClients() {
 #if WS_USE_TLS
+  if (_use_wss) {
   if (!_tls_initialized) return;
   // Advance in-progress TLS handshakes. Yield with delay(0) on WANT_* so WiFi runs without adding ms (delay(1) caused browser to close before handshake finished). Timeout stuck clients.
   const uint32_t WSS_HANDSHAKE_TIMEOUT_MS = 30000;
@@ -307,6 +324,29 @@ void WebSocketCompanionServer::acceptNewClients() {
     mbedtls_net_free(&_clients[slot].client_net);
     _clients[slot].in_use = false;
   }
+  } else {
+  while (_server.hasClient()) {
+    WiFiClient incoming = _server.accept();
+    if (!incoming) continue;
+    int slot = -1;
+    for (int i = 0; i < WS_COMPANION_MAX_CLIENTS; i++) {
+      if (!_clients[i].in_use) {
+        slot = i;
+        break;
+      }
+    }
+    if (slot >= 0) {
+      _clients[slot].client = incoming;
+      _clients[slot].in_use = true;
+      _clients[slot].handshake_done = false;
+      _clients[slot].handshake_len = 0;
+      _clients[slot].ws_state = WS_STATE_HEADER_0;
+      _clients[slot].comp_state = COMP_STATE_IDLE;
+    } else {
+      incoming.stop();
+    }
+  }
+  }
 #else
   while (_server.hasClient()) {
     WiFiClient incoming = _server.accept();
@@ -334,20 +374,23 @@ void WebSocketCompanionServer::acceptNewClients() {
 
 void WebSocketCompanionServer::pruneDisconnected() {
 #if WS_USE_TLS
-  (void)0;  // TLS: disconnect is detected on read in doHandshake/pollRecvFrame
-#else
+  if (!_use_wss) {
+#endif
   for (int i = 0; i < WS_COMPANION_MAX_CLIENTS; i++) {
     if (_clients[i].in_use && !_clients[i].client.connected()) {
       _clients[i].client.stop();
       _clients[i].in_use = false;
     }
   }
+#if WS_USE_TLS
+  }  // TLS WSS path: disconnect detected on read in doHandshake/pollRecvFrame
 #endif
 }
 
 bool WebSocketCompanionServer::doHandshake(int idx) {
   WSClientState* c = &_clients[idx];
 #if WS_USE_TLS
+  if (_use_wss) {
   if (!c->ssl_handshake_done) return false;  // TLS handshake still in progress (done in acceptNewClients)
   mbedtls_ssl_context* ssl = &c->ssl_ctx;
   unsigned char byte;
@@ -450,7 +493,8 @@ bool WebSocketCompanionServer::doHandshake(int idx) {
     return false;
   }
   return false;
-#else
+  } else {
+  // Plain WS mode
   WiFiClient* cl = &c->client;
   while (cl->available() && c->handshake_len < WS_HANDSHAKE_MAX_LEN - 1) {
     char ch = (char)cl->read();
@@ -512,6 +556,68 @@ bool WebSocketCompanionServer::doHandshake(int idx) {
     return false;
   }
   return false;
+  }
+#else
+  WiFiClient* cl = &c->client;
+  while (cl->available() && c->handshake_len < WS_HANDSHAKE_MAX_LEN - 1) {
+    char ch = (char)cl->read();
+    c->handshake_buf[c->handshake_len++] = ch;
+    c->handshake_buf[c->handshake_len] = '\0';
+    if (c->handshake_len >= 4 &&
+        c->handshake_buf[c->handshake_len - 4] == '\r' &&
+        c->handshake_buf[c->handshake_len - 3] == '\n' &&
+        c->handshake_buf[c->handshake_len - 2] == '\r' &&
+        c->handshake_buf[c->handshake_len - 1] == '\n') {
+      const char* key_hdr = "Sec-WebSocket-Key:";
+      char* buf = c->handshake_buf;
+      for (size_t i = 0; i + 20 < c->handshake_len; i++) {
+        if (strncasecmp(buf + i, key_hdr, 18) == 0) {
+          char* key_start = buf + i + 18;
+          while (*key_start == ' ' || *key_start == '\t') key_start++;
+          char* key_end = key_start;
+          while (*key_end && *key_end != '\r' && *key_end != '\n') key_end++;
+          size_t key_len = key_end - key_start;
+          if (key_len == 0 || key_len > 128) break;
+
+          char concat[128 + sizeof(WS_MAGIC)];
+          memcpy(concat, key_start, key_len);
+          memcpy(concat + key_len, WS_MAGIC, sizeof(WS_MAGIC) - 1);
+          size_t concat_len = key_len + sizeof(WS_MAGIC) - 1;
+          uint8_t hash[20];
+          mbedtls_sha1((const unsigned char*)concat, concat_len, hash);
+          char b64[32];
+          base64Encode20(hash, b64);
+
+          const char* resp = "HTTP/1.1 101 Switching Protocols\r\n"
+            "Upgrade: websocket\r\n"
+            "Connection: Upgrade\r\n"
+            "Sec-WebSocket-Accept: ";
+          size_t resp_len = strlen(resp);
+          if (!writeAllBytes(*cl, (const uint8_t*)resp, resp_len, TCP_WRITE_TIMEOUT_MS))
+            return false;
+          if (!writeAllBytes(*cl, (const uint8_t*)b64, 28, TCP_WRITE_TIMEOUT_MS))
+            return false;
+          if (!writeAllBytes(*cl, (const uint8_t*)"\r\n\r\n", 4, TCP_WRITE_TIMEOUT_MS))
+            return false;
+
+          c->handshake_done = true;
+          c->ws_state = WS_STATE_HEADER_0;
+          c->comp_state = COMP_STATE_IDLE;
+          return true;
+        }
+      }
+      (void)writeAllBytes(*cl, (const uint8_t*)WSS_HTTP_CERT_PAGE, strlen(WSS_HTTP_CERT_PAGE), TCP_WRITE_TIMEOUT_MS);
+      c->client.stop();
+      c->in_use = false;
+      return false;
+    }
+  }
+  if (c->handshake_len >= WS_HANDSHAKE_MAX_LEN - 1) {
+    c->client.stop();
+    c->in_use = false;
+    return false;
+  }
+  return false;
 #endif
 }
 
@@ -530,7 +636,8 @@ size_t WebSocketCompanionServer::pollRecvFrame(uint8_t dest[], int* client_index
   for (int off = 0; off < WS_COMPANION_MAX_CLIENTS; off++) {
     int idx = (start + off) % WS_COMPANION_MAX_CLIENTS;
 #if WS_USE_TLS
-    if (!_clients[idx].in_use || _clients[idx].client_net.fd < 0) continue;
+    if (!_clients[idx].in_use) continue;
+    if (_use_wss ? _clients[idx].client_net.fd < 0 : !_clients[idx].client.connected()) continue;
 #else
     if (!_clients[idx].in_use || !_clients[idx].client.connected()) continue;
 #endif
@@ -542,6 +649,7 @@ size_t WebSocketCompanionServer::pollRecvFrame(uint8_t dest[], int* client_index
     }
 
 #if WS_USE_TLS
+    if (_use_wss) {
     // TLS: read one byte at a time
     mbedtls_ssl_context* ssl = &c->ssl_ctx;
     unsigned char b;
@@ -612,9 +720,10 @@ size_t WebSocketCompanionServer::pollRecvFrame(uint8_t dest[], int* client_index
       c->in_use = false;
     }
     continue;
-#else
+    }
+#endif
     WiFiClient* cl = &c->client;
-    // WebSocket frame state machine
+    // WebSocket frame state machine (plain WS: WS_USE_TLS=0 or TLS build with _use_wss=false)
     while (cl->available()) {
       if (c->ws_state == WS_STATE_HEADER_0) {
         uint8_t b = (uint8_t)cl->read();
@@ -700,7 +809,6 @@ size_t WebSocketCompanionServer::pollRecvFrame(uint8_t dest[], int* client_index
           break;
       }
     }
-#endif
   }  // close for
   _poll_start_idx = (start + 1) % WS_COMPANION_MAX_CLIENTS;
   return 0;
@@ -709,6 +817,7 @@ size_t WebSocketCompanionServer::pollRecvFrame(uint8_t dest[], int* client_index
 size_t WebSocketCompanionServer::writeToClient(int client_index, const uint8_t src[], size_t len) {
   if (client_index < 0 || client_index >= WS_COMPANION_MAX_CLIENTS || len > MAX_FRAME_SIZE) return 0;
 #if WS_USE_TLS
+  if (_use_wss) {
   if (!_clients[client_index].in_use || _clients[client_index].client_net.fd < 0) return 0;
   mbedtls_ssl_context* ssl = &_clients[client_index].ssl_ctx;
   uint8_t hdr[4];
@@ -745,7 +854,8 @@ size_t WebSocketCompanionServer::writeToClient(int client_index, const uint8_t s
   Serial.printf("WS frame client=%d code=%u len=%u written=%u\n", client_index, (unsigned)(len ? src[0] : 0), (unsigned)len, (unsigned)len);
 #endif
   return len;
-#else
+  }
+#endif
   if (!_clients[client_index].in_use || !_clients[client_index].client.connected()) return 0;
 
   WiFiClient* cl = &_clients[client_index].client;
@@ -775,7 +885,6 @@ size_t WebSocketCompanionServer::writeToClient(int client_index, const uint8_t s
   Serial.printf("WS frame client=%d code=%u len=%u written=%u\n", client_index, (unsigned)(len ? src[0] : 0), (unsigned)len, (unsigned)len);
 #endif
   return len;
-#endif
 }
 
 size_t WebSocketCompanionServer::writeToAllClients(const uint8_t src[], size_t len) {
@@ -784,10 +893,11 @@ size_t WebSocketCompanionServer::writeToAllClients(const uint8_t src[], size_t l
   int sent = 0;
   for (int i = 0; i < WS_COMPANION_MAX_CLIENTS; i++) {
 #if WS_USE_TLS
-    if (_clients[i].in_use && _clients[i].client_net.fd >= 0 && _clients[i].handshake_done) {
+    bool ok = _clients[i].in_use && _clients[i].handshake_done && (_use_wss ? _clients[i].client_net.fd >= 0 : _clients[i].client.connected());
 #else
-    if (_clients[i].in_use && _clients[i].client.connected() && _clients[i].handshake_done) {
+    bool ok = _clients[i].in_use && _clients[i].client.connected() && _clients[i].handshake_done;
 #endif
+    if (ok) {
       connected++;
       if (writeToClient(i, src, len) == len) sent++;
     }
@@ -799,7 +909,7 @@ bool WebSocketCompanionServer::isClientConnected(int client_index) const {
   if (client_index < 0 || client_index >= WS_COMPANION_MAX_CLIENTS) return false;
   const WSClientState* c = &_clients[client_index];
 #if WS_USE_TLS
-  return c->in_use && c->client_net.fd >= 0 && c->handshake_done;
+  return c->in_use && c->handshake_done && (_use_wss ? c->client_net.fd >= 0 : c->client.connected());
 #else
   return c->in_use && c->client.connected() && c->handshake_done;
 #endif
@@ -809,7 +919,7 @@ int WebSocketCompanionServer::connectedCount() const {
   int n = 0;
   for (int i = 0; i < WS_COMPANION_MAX_CLIENTS; i++) {
 #if WS_USE_TLS
-    if (_clients[i].in_use && _clients[i].client_net.fd >= 0 && _clients[i].handshake_done)
+    if (_clients[i].in_use && _clients[i].handshake_done && (_use_wss ? _clients[i].client_net.fd >= 0 : _clients[i].client.connected()))
 #else
     if (_clients[i].in_use && _clients[i].client.connected() && _clients[i].handshake_done)
 #endif
@@ -821,8 +931,12 @@ int WebSocketCompanionServer::connectedCount() const {
 void WebSocketCompanionServer::disconnectClient(int client_index) {
   if (client_index >= 0 && client_index < WS_COMPANION_MAX_CLIENTS && _clients[client_index].in_use) {
 #if WS_USE_TLS
-    mbedtls_ssl_free(&_clients[client_index].ssl_ctx);
-    mbedtls_net_free(&_clients[client_index].client_net);
+    if (_use_wss) {
+      mbedtls_ssl_free(&_clients[client_index].ssl_ctx);
+      mbedtls_net_free(&_clients[client_index].client_net);
+    } else {
+      _clients[client_index].client.stop();
+    }
 #else
     _clients[client_index].client.stop();
 #endif

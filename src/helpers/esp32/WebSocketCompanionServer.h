@@ -32,8 +32,9 @@ struct WSClientState {
   bool in_use;
   bool ssl_handshake_done;  // TLS handshake complete; then doHandshake reads HTTP
   uint32_t handshake_start_ms;  // when in_use && !ssl_handshake_done: accept time for timeout
+  mutable WiFiClient client;    // for plain WS mode when server runs with use_wss=false
 #else
-  mutable WiFiClient client;  // mutable so isClientConnected() const can call connected()
+  mutable WiFiClient client;
   bool in_use;
 #endif
 
@@ -62,7 +63,8 @@ class WebSocketCompanionServer {
 public:
   WebSocketCompanionServer();
 
-  void begin(uint16_t port);
+  /** Start server. When WS_USE_TLS=1, use_wss=true selects WSS (TLS), use_wss=false selects plain WS. When WS_USE_TLS=0, use_wss is ignored. */
+  void begin(uint16_t port, bool use_wss = true);
   void stop();
 
   size_t pollRecvFrame(uint8_t dest[], int* client_index_out);
@@ -85,6 +87,8 @@ private:
   mbedtls_entropy_context _entropy;
   mbedtls_ctr_drbg_context _ctr_drbg;
   bool _tls_initialized;
+  bool _use_wss;       // true = WSS (TLS), false = plain WS on _server
+  WiFiServer _server;  // used when _use_wss is false
 #else
   WiFiServer _server;
 #endif

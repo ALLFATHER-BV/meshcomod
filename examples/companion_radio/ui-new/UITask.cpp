@@ -363,7 +363,7 @@ public:
       display.setTextSize(1);
       int y = 10;
 #if WS_USE_TLS
-      display.drawTextCentered(display.width() / 2, y, "WSS");
+      display.drawTextCentered(display.width() / 2, y, _task->isWssEnabled() ? "WSS" : "WS");
 #else
       display.drawTextCentered(display.width() / 2, y, "WS");
 #endif
@@ -387,6 +387,11 @@ public:
         y += 11;
         display.drawTextCentered(display.width() / 2, y, "WiFi connected");
       }
+#if WS_USE_TLS
+      y = 64 - 11;
+      display.setColor(DisplayDriver::LIGHT);
+      display.drawTextCentered(display.width() / 2, y, _task->isWssEnabled() ? "WS: long press" : "WSS: long press");
+#endif
 #endif
     } else if (_page == HomePage::ADVERT) {
       display.setColor(DisplayDriver::GREEN);
@@ -573,6 +578,18 @@ public:
       }
       return true;
     }
+#if WS_USE_TLS
+    if (c == KEY_LONG_ENTER && _page == HomePage::WSS) {
+      if (_task->isWssEnabled()) {
+        _task->disableWss();
+        _task->showAlert("WSS off, using WS", 1500);
+      } else {
+        _task->enableWss();
+        _task->showAlert("WSS on", 1500);
+      }
+      return true;
+    }
+#endif
 #endif
     if (c == KEY_LONG_ENTER && _page == HomePage::BLUETOOTH && _task->hasBleCapability()) {
       if (_task->isBleEnabled()) {

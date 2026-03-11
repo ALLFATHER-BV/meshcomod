@@ -30,6 +30,10 @@ public:
   virtual bool isWsStarted() const { return false; }
   virtual uint16_t getWsPort() const { return 0; }
   virtual int getWsConnectedCount() const { return 0; }
+  // WSS/WS toggle (multi-transport with TLS): when supported, enableWss=WSS (TLS), disableWss=plain WS. No-op when not supported.
+  virtual void enableWss() { }
+  virtual void disableWss() { }
+  virtual bool isWssEnabled() const { return false; }
 
   // BLE only (multi-transport with BLE): enable/disable BLE; no-op when BLE not available.
   virtual void enableBle() { }

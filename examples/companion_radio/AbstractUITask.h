@@ -45,6 +45,9 @@ public:
   bool isWsStarted() const { return _serial->isWsStarted(); }
   uint16_t getWsPort() const { return _serial->getWsPort(); }
   int getWsConnectedCount() const { return _serial->getWsConnectedCount(); }
+  void enableWss() { _serial->enableWss(); }
+  void disableWss() { _serial->disableWss(); }
+  bool isWssEnabled() const { return _serial->isWssEnabled(); }
   bool hasBleCapability() const { return _serial->hasBleCapability(); }
   bool isBleEnabled() const { return _serial->isBleEnabled(); }
   void enableBle() { _serial->enableBle(); }

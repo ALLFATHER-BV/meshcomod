@@ -2,7 +2,7 @@
 #include <string.h>
 
 MultiTransportCompanionInterface::MultiTransportCompanionInterface()
-  : _tcp_port(0), _ws_port(0), _tcp_started(false), _ws_started(false), _tcp_enabled(true), _isEnabled(false), _broadcast(false), _last_reply_target(REPLY_TARGET_USB)
+  : _tcp_port(0), _ws_port(0), _tcp_started(false), _ws_started(false), _tcp_enabled(true), _wss_enabled(false), _isEnabled(false), _broadcast(false), _last_reply_target(REPLY_TARGET_USB)
 #ifdef BLE_PIN_CODE
   , _ble_begun(false), _ble_enabled(false)
 #endif
@@ -24,14 +24,14 @@ void MultiTransportCompanionInterface::startTcpServer(bool wifi_connected) {
     _tcp_started = true;
   }
 #if WS_USE_TLS
-  // WSS starts on main thread only when wifi_connected (caller defers until 10s after boot to avoid blocking UI during splash).
+  // WSS/WS starts on main thread only when wifi_connected (caller defers until 10s after boot to avoid blocking UI during splash).
   if (_tcp_enabled && !_ws_started && _ws_port != 0 && wifi_connected) {
-    _ws.begin(_ws_port);
+    _ws.begin(_ws_port, _wss_enabled);
     _ws_started = true;
   }
 #else
   if (_tcp_enabled && !_ws_started && _ws_port != 0) {
-    _ws.begin(_ws_port);
+    _ws.begin(_ws_port, false);  // plain WS only
     _ws_started = true;
   }
 #endif
@@ -39,6 +39,22 @@ void MultiTransportCompanionInterface::startTcpServer(bool wifi_connected) {
 
 void MultiTransportCompanionInterface::tickWssHandshake() {
   if (_ws_started) _ws.tickHandshake();
+}
+
+void MultiTransportCompanionInterface::enableWss() {
+  _wss_enabled = true;
+  if (_ws_started) {
+    _ws.stop();
+    _ws_started = false;
+  }
+}
+
+void MultiTransportCompanionInterface::disableWss() {
+  _wss_enabled = false;
+  if (_ws_started) {
+    _ws.stop();
+    _ws_started = false;
+  }
 }
 
 void MultiTransportCompanionInterface::stopTcpServer() {
