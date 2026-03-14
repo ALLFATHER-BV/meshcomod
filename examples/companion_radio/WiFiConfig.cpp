@@ -28,6 +28,7 @@ void wifiConfigBegin() {
 
 bool wifiConfigHasRuntime() {
   if (!s_begun) wifiConfigBegin();
+  if (!s_prefs.isKey(WIFI_CONFIG_SSID_KEY)) return false;
   char ssid[WIFI_CONFIG_SSID_MAX];
   s_prefs.getString(WIFI_CONFIG_SSID_KEY, ssid, sizeof(ssid));
   return ssid[0] != '\0';
@@ -37,7 +38,8 @@ void wifiConfigGetSsid(char* buf, size_t len) {
   if (!buf || len == 0) return;
   buf[0] = '\0';
   if (!s_begun) wifiConfigBegin();
-  s_prefs.getString(WIFI_CONFIG_SSID_KEY, buf, len);
+  if (s_prefs.isKey(WIFI_CONFIG_SSID_KEY))
+    s_prefs.getString(WIFI_CONFIG_SSID_KEY, buf, len);
   buf[len - 1] = '\0';
 }
 
@@ -45,7 +47,8 @@ void wifiConfigGetPwd(char* buf, size_t len) {
   if (!buf || len == 0) return;
   buf[0] = '\0';
   if (!s_begun) wifiConfigBegin();
-  s_prefs.getString(WIFI_CONFIG_PWD_KEY, buf, len);
+  if (s_prefs.isKey(WIFI_CONFIG_PWD_KEY))
+    s_prefs.getString(WIFI_CONFIG_PWD_KEY, buf, len);
   buf[len - 1] = '\0';
 }
 

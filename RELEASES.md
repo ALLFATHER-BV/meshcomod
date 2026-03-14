@@ -16,6 +16,22 @@ Versioned prebuilts are listed here so you can **roll back** if a newer release 
 
 ---
 
+## v1.14.0.31 — 2026-03-14
+
+**Firmware version:** v1.14.0.31 (meshcomod on upstream 1.14+).
+
+**Highlights:**
+- **WiFi/NVS logs no longer in public chat:** Only read `wifi_ssid` / `wifi_pwd` from Preferences when the key exists (`isKey()` first). Avoids Arduino Preferences `getString()` logging "nvs_get_str len fail: wifi_ssid NOT_FOUND" to Serial, which was being forwarded into the mesh and shown in Channel 0.
+
+**Prebuilt binaries (use [flasher.meshcomod.com](https://flasher.meshcomod.com) — Easy mode auto-downloads versions; for manual upload, use Custom firmware):**
+
+| Device   | Merged (recommended) | Non-merged |
+|----------|----------------------|------------|
+| Heltec V4 | [heltec_v4_companion_radio_usb_tcp-merged.bin](prebuilt/releases/v1.14.0.31/heltec_v4_companion_radio_usb_tcp-merged.bin) | [heltec_v4_companion_radio_usb_tcp.bin](prebuilt/releases/v1.14.0.31/heltec_v4_companion_radio_usb_tcp.bin) |
+| Heltec V3 | [Heltec_v3_companion_radio_usb_tcp-merged.bin](prebuilt/releases/v1.14.0.31/Heltec_v3_companion_radio_usb_tcp-merged.bin) | [Heltec_v3_companion_radio_usb_tcp.bin](prebuilt/releases/v1.14.0.31/Heltec_v3_companion_radio_usb_tcp.bin) |
+
+---
+
 ## v1.14.0.30 — 2026-03-14
 
 **Firmware version:** v1.14.0.30 (meshcomod on upstream 1.14+).
