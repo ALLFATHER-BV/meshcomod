@@ -16,6 +16,22 @@ Versioned prebuilts are listed here so you can **roll back** if a newer release 
 
 ---
 
+## v1.14.0.28 — 2026-03-09
+
+**Firmware version:** v1.14.0.28 (meshcomod on upstream 1.14+).
+
+**Highlights:**
+- **Device resources tab:** New tab on the home screen (V4/V3) showing CPU MHz, RAM free %, PSRAM free % (V4; n/a on V3), and Flash free %. One more dot before Shutdown.
+
+**Prebuilt binaries (use [flasher.meshcomod.com](https://flasher.meshcomod.com) — Easy mode auto-downloads versions; for manual upload, use Custom firmware):**
+
+| Device   | Merged (recommended) | Non-merged |
+|----------|----------------------|------------|
+| Heltec V4 | [heltec_v4_companion_radio_usb_tcp-merged.bin](prebuilt/releases/v1.14.0.28/heltec_v4_companion_radio_usb_tcp-merged.bin) | [heltec_v4_companion_radio_usb_tcp.bin](prebuilt/releases/v1.14.0.28/heltec_v4_companion_radio_usb_tcp.bin) |
+| Heltec V3 | [Heltec_v3_companion_radio_usb_tcp-merged.bin](prebuilt/releases/v1.14.0.28/Heltec_v3_companion_radio_usb_tcp-merged.bin) | [Heltec_v3_companion_radio_usb_tcp.bin](prebuilt/releases/v1.14.0.28/Heltec_v3_companion_radio_usb_tcp.bin) |
+
+---
+
 ## v1.14.0.27 — 2026-03-09
 
 **Firmware version:** v1.14.0.27 (meshcomod on upstream 1.14+).

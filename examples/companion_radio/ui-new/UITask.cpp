@@ -2,6 +2,9 @@
 #include <helpers/TxtDataHelpers.h>
 #include "../MyMesh.h"
 #include "target.h"
+#ifdef ESP32
+  #include <ESP.h>
+#endif
 #ifdef WIFI_SSID
   #include <WiFi.h>
 #endif
@@ -90,6 +93,9 @@ class HomeScreen : public UIScreen {
 #endif
 #if UI_SENSORS_PAGE == 1
     SENSORS,
+#endif
+#ifdef ESP32
+    RESOURCES,
 #endif
     SHUTDOWN,
     Count    // keep as last
@@ -508,7 +514,39 @@ public:
       if (sensors_scroll) sensors_scroll_offset = (sensors_scroll_offset+1)%sensors_nb;
       else sensors_scroll_offset = 0;
 #endif
+#ifdef ESP32
+    } else if (_page == HomePage::RESOURCES) {
+      display.setColor(DisplayDriver::LIGHT);
+      display.setTextSize(1);
+      int y = 18;
+      snprintf(tmp, sizeof(tmp), "CPU %u MHz", (unsigned)ESP.getCpuFreqMHz());
+      display.drawTextCentered(display.width() / 2, y, tmp);
+      y += 11;
+      uint32_t heapFree = ESP.getFreeHeap();
+      uint32_t heapTotal = ESP.getHeapSize();
+      unsigned pct = heapTotal > 0 ? (unsigned)((uint64_t)heapFree * 100 / heapTotal) : 0;
+      snprintf(tmp, sizeof(tmp), "RAM %u%% %lu/%lu KB", pct, (unsigned long)(heapFree / 1024), (unsigned long)(heapTotal / 1024));
+      display.drawTextCentered(display.width() / 2, y, tmp);
+      y += 11;
+      uint32_t psramTotal = ESP.getPsramSize();
+      if (psramTotal > 0) {
+        uint32_t psramFree = ESP.getFreePsram();
+        pct = (unsigned)((uint64_t)psramFree * 100 / psramTotal);
+        snprintf(tmp, sizeof(tmp), "PSRAM %u%% %lu/%lu KB", pct, (unsigned long)(psramFree / 1024), (unsigned long)(psramTotal / 1024));
+      } else {
+        snprintf(tmp, sizeof(tmp), "PSRAM n/a");
+      }
+      display.drawTextCentered(display.width() / 2, y, tmp);
+      y += 11;
+      uint32_t flashTotal = ESP.getFlashChipSize();
+      uint32_t sketchFree = ESP.getFreeSketchSpace();
+      pct = flashTotal > 0 ? (unsigned)((uint64_t)sketchFree * 100 / flashTotal) : 0;
+      snprintf(tmp, sizeof(tmp), "Flash %u%% %lu/%lu KB", pct, (unsigned long)(sketchFree / 1024), (unsigned long)(flashTotal / 1024));
+      display.drawTextCentered(display.width() / 2, y, tmp);
     } else if (_page == HomePage::SHUTDOWN) {
+#else
+    } else if (_page == HomePage::SHUTDOWN) {
+#endif
       display.setColor(DisplayDriver::GREEN);
       display.setTextSize(1);
       if (_shutdown_init) {
