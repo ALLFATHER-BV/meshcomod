@@ -10,22 +10,28 @@
       
       
       
+        <link rel="canonical" href="https://meshcore-dev.github.io/meshcore/V3_BOOT_DEBUG/">
       
+      
+        <link rel="prev" href="../DEVICE_WEBSOCKET_WIFI/">
+      
+      
+        <link rel="next" href="../cli_commands/">
       
       
         
       
       
-      <link rel="icon" href="/meshcore/assets/images/favicon.png">
+      <link rel="icon" href="../assets/images/favicon.png">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.5">
     
     
       
-        <title>MeshCore Docs</title>
+        <title>Heltec V3 boot-loop debug build - MeshCore Docs</title>
       
     
     
-      <link rel="stylesheet" href="/meshcore/assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
       
       
 
@@ -44,9 +50,9 @@
       
     
     
-      <link rel="stylesheet" href="/meshcore/_stylesheets/extra.css">
+      <link rel="stylesheet" href="../_stylesheets/extra.css">
     
-    <script>__md_scope=new URL("/meshcore/",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
 
@@ -63,6 +69,11 @@
     <label class="md-overlay" for="__drawer"></label>
     <div data-md-component="skip">
       
+        
+        <a href="#heltec-v3-boot-loop-debug-build" class="md-skip">
+          Skip to content
+        </a>
+      
     </div>
     <div data-md-component="announce">
       
@@ -75,9 +86,9 @@
 
 <header class="md-header md-header--shadow" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="/meshcore/." title="MeshCore Docs" class="md-header__button md-logo" aria-label="MeshCore Docs" data-md-component="logo">
+    <a href=".." title="MeshCore Docs" class="md-header__button md-logo" aria-label="MeshCore Docs" data-md-component="logo">
       
-  <img src="/meshcore/_assets/meshcore_tm.svg" alt="logo">
+  <img src="../_assets/meshcore_tm.svg" alt="logo">
 
     </a>
     <label class="md-header__button md-icon" for="__drawer">
@@ -94,7 +105,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              
+              Heltec V3 boot-loop debug build
             
           </span>
         </div>
@@ -186,9 +197,9 @@
 
 <nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href="/meshcore/." title="MeshCore Docs" class="md-nav__button md-logo" aria-label="MeshCore Docs" data-md-component="logo">
+    <a href=".." title="MeshCore Docs" class="md-nav__button md-logo" aria-label="MeshCore Docs" data-md-component="logo">
       
-  <img src="/meshcore/_assets/meshcore_tm.svg" alt="logo">
+  <img src="../_assets/meshcore_tm.svg" alt="logo">
 
     </a>
     MeshCore Docs
@@ -215,7 +226,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/meshcore/." class="md-nav__link">
+      <a href=".." class="md-nav__link">
         
   
   
@@ -242,7 +253,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/meshcore/DEVICE_WEBSOCKET_WIFI/" class="md-nav__link">
+      <a href="../DEVICE_WEBSOCKET_WIFI/" class="md-nav__link">
         
   
   
@@ -266,10 +277,37 @@
       
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="/meshcore/V3_BOOT_DEBUG/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Heltec V3 boot-loop debug build
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -285,6 +323,81 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-flash-the-debug-build" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Flash the debug build
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-open-usb-serial-before-powering-or-resetting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Open USB serial before powering or resetting
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-what-to-capture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. What to capture
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#building-the-debug-image-yourself" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Building the debug image yourself
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-this-build-enables" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What this build enables
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -296,7 +409,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/meshcore/cli_commands/" class="md-nav__link">
+      <a href="../cli_commands/" class="md-nav__link">
         
   
   
@@ -323,7 +436,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/meshcore/companion_protocol/" class="md-nav__link">
+      <a href="../companion_protocol/" class="md-nav__link">
         
   
   
@@ -350,7 +463,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/meshcore/docs/" class="md-nav__link">
+      <a href="../docs/" class="md-nav__link">
         
   
   
@@ -377,7 +490,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/meshcore/faq/" class="md-nav__link">
+      <a href="../faq/" class="md-nav__link">
         
   
   
@@ -404,7 +517,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/meshcore/kiss_modem_protocol/" class="md-nav__link">
+      <a href="../kiss_modem_protocol/" class="md-nav__link">
         
   
   
@@ -431,7 +544,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/meshcore/nrf52_power_management/" class="md-nav__link">
+      <a href="../nrf52_power_management/" class="md-nav__link">
         
   
   
@@ -458,7 +571,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/meshcore/packet_format/" class="md-nav__link">
+      <a href="../packet_format/" class="md-nav__link">
         
   
   
@@ -485,7 +598,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/meshcore/payloads/" class="md-nav__link">
+      <a href="../payloads/" class="md-nav__link">
         
   
   
@@ -512,7 +625,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/meshcore/qr_codes/" class="md-nav__link">
+      <a href="../qr_codes/" class="md-nav__link">
         
   
   
@@ -539,7 +652,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/meshcore/stats_binary_frames/" class="md-nav__link">
+      <a href="../stats_binary_frames/" class="md-nav__link">
         
   
   
@@ -566,7 +679,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/meshcore/terminal_chat_cli/" class="md-nav__link">
+      <a href="../terminal_chat_cli/" class="md-nav__link">
         
   
   
@@ -603,6 +716,71 @@
   
   
   
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-flash-the-debug-build" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Flash the debug build
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-open-usb-serial-before-powering-or-resetting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Open USB serial before powering or resetting
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-what-to-capture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. What to capture
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#building-the-debug-image-yourself" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Building the debug image yourself
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-this-build-enables" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What this build enables
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
   
 </nav>
                   </div>
@@ -615,8 +793,70 @@
               
               <article class="md-content__inner md-typeset">
                 
-  <h1>404 - Not found</h1>
+                  
 
+
+  
+    <a href="https://github.com/meshcore-dev/meshcore/edit/main/docs/V3_BOOT_DEBUG.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="heltec-v3-boot-loop-debug-build">Heltec V3 boot-loop debug build</h1>
+<p>If your <strong>Heltec WiFi LoRa 32 V3</strong> gets stuck in a boot loop (e.g. shows the boot logo then hangs or resets), use this debug firmware to see where it stops. It prints verbose logs over <strong>USB serial</strong> so you can capture the last messages before the hang.</p>
+<h2 id="1-flash-the-debug-build">1. Flash the debug build</h2>
+<ul>
+<li><strong>Merged image (recommended):</strong> Use the file <strong><code>Heltec_v3_BOOT_DEBUG_FLASH_THIS-merged.bin</code></strong> in the MeshCore repo root (or build your own — see below).</li>
+<li>Flash it the same way as normal meshcomod firmware, e.g. <a href="https://flasher.meshcomod.com">flasher.meshcomod.com</a> → <strong>Custom firmware</strong> → upload this merged <code>.bin</code>. Use full erase if the device is unstable.</li>
+</ul>
+<h2 id="2-open-usb-serial-before-powering-or-resetting">2. Open USB serial <strong>before</strong> powering or resetting</h2>
+<ul>
+<li>Connect the V3 over USB.</li>
+<li>Open a serial console at <strong>115200 baud</strong>:</li>
+<li><strong>Web:</strong> <a href="https://console.meshcomod.com">console.meshcomod.com</a> or the Console tab on the flasher — select the V3’s serial port, set 115200.</li>
+<li><strong>Desktop:</strong> PuTTY, screen, or PlatformIO Serial Monitor at 115200.</li>
+<li>Then power the device or press reset. The debug build prints mesh, WiFi, BLE, and core logs from early boot. <strong>Capture or note the last lines</strong> before it stops or reboots — that shows where the boot is failing.</li>
+</ul>
+<h2 id="3-what-to-capture">3. What to capture</h2>
+<ul>
+<li>Copy or screenshot the <strong>last 20–50 lines</strong> of serial output when the device gets stuck or just before it resets.</li>
+<li>Share that with the meshcomod maintainers (e.g. GitHub issue or your usual channel). The log will show which init step (display, WiFi, TCP, BLE, mesh, etc.) is hanging or crashing.</li>
+</ul>
+<h2 id="building-the-debug-image-yourself">Building the debug image yourself</h2>
+<p>From the MeshCore repo:</p>
+<pre><code class="language-bash">cd MeshCore
+export FIRMWARE_VERSION=v1.14.0.29-boot-debug
+export WIFI_SSID=&quot;YourSSID&quot;   # optional, for WiFi init logs
+export WIFI_PWD=&quot;YourPassword&quot;
+sh build.sh build-firmware Heltec_v3_companion_radio_usb_tcp_boot_debug
+</code></pre>
+<p>The merged image is written to:</p>
+<p><code>out/Heltec_v3_companion_radio_usb_tcp_boot_debug-&lt;version&gt;-&lt;sha&gt;-merged.bin</code></p>
+<p>Copy it to a convenient name (e.g. <code>Heltec_v3_BOOT_DEBUG_FLASH_THIS-merged.bin</code>) and flash that file.</p>
+<h2 id="what-this-build-enables">What this build enables</h2>
+<ul>
+<li><strong>MESH_DEBUG=1</strong> — mesh/routing debug messages</li>
+<li><strong>BLE_DEBUG_LOGGING=1</strong> — Bluetooth stack logs</li>
+<li><strong>WIFI_DEBUG_LOGGING=1</strong> — WiFi/connection logs  </li>
+<li><strong>CORE_DEBUG_LEVEL=5</strong> — ESP32 core verbose logs</li>
+</ul>
+<p>Serial remains at <strong>115200</strong> baud. After troubleshooting, re-flash a normal (non-debug) meshcomod build from <a href="RELEASES.md">RELEASES.md</a>.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
               </article>
             </div>
           
@@ -653,10 +893,10 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "/meshcore/", "features": ["content.action.edit", "content.code.copy", "search.highlight", "search.suggest"], "search": "/meshcore/assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["content.action.edit", "content.code.copy", "search.highlight", "search.suggest"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="/meshcore/assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>
