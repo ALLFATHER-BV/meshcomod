@@ -80,6 +80,16 @@ Upstream: **[github.com/meshcore-dev/MeshCore](https://github.com/meshcore-dev/M
 
 Otherwise this is the same codebase as MeshCore; we sync from upstream and add our addon customizations on top.
 
+---
+
+## Home Assistant tab
+
+You can run the **full meshcomod web client as a tab inside Home Assistant**. Connect your companion device over **TCP (WiFi)** or **USB** to the machine running Home Assistant, then add the [meshcomod client](https://meshcomod.com) as an iframe or panel. That gives you a dedicated **MESHCOMOD** tab in the sidebar with the full client UI: voltage, state of charge (SOC), temperature, uptime, and realtime/trend graphs—all in one place next to your other HA dashboards. The client talks to the device over the same companion protocol (TCP or USB), so you get live data and control without leaving Home Assistant.
+
+<p align="left">
+  <img width="700" alt="Meshcomod client as a Home Assistant tab" src="docs/meshcomod-ha-tab.png" />
+</p>
+
 <p align="center">
   <img width="600" height="170" alt="image" src="https://github.com/user-attachments/assets/02e2ddd4-a910-499d-8714-1dedf4b856a6" />
 </p>
