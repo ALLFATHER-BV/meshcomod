@@ -17,6 +17,13 @@ static bool s_begun = false;
 void wifiConfigBegin() {
   if (s_begun) return;
   s_begun = s_prefs.begin(WIFI_CONFIG_NAMESPACE, true);
+  if (!s_begun) {
+    // Namespace may not exist yet (first boot or NVS erase). Create it read-write then reopen read-only.
+    if (s_prefs.begin(WIFI_CONFIG_NAMESPACE, false)) {
+      s_prefs.end();
+      s_begun = s_prefs.begin(WIFI_CONFIG_NAMESPACE, true);
+    }
+  }
 }
 
 bool wifiConfigHasRuntime() {

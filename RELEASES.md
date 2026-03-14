@@ -16,6 +16,23 @@ Versioned prebuilts are listed here so you can **roll back** if a newer release 
 
 ---
 
+## v1.14.0.30 — 2026-03-14
+
+**Firmware version:** v1.14.0.30 (meshcomod on upstream 1.14+).
+
+**Highlights:**
+- **V3 boot fix:** Prevents crash/reboot when device has no WiFi credentials (first boot or NVS erase). WiFi/tcpip stack is always started so the TCP server can bind without triggering LwIP "Invalid mbox" assert.
+- **NVS:** Creates the `meshcomod` Preferences namespace on first boot when missing, eliminating repeated `nvs_open failed: NOT_FOUND` errors.
+
+**Prebuilt binaries (use [flasher.meshcomod.com](https://flasher.meshcomod.com) — Easy mode auto-downloads versions; for manual upload, use Custom firmware):**
+
+| Device   | Merged (recommended) | Non-merged |
+|----------|----------------------|------------|
+| Heltec V4 | [heltec_v4_companion_radio_usb_tcp-merged.bin](prebuilt/releases/v1.14.0.30/heltec_v4_companion_radio_usb_tcp-merged.bin) | [heltec_v4_companion_radio_usb_tcp.bin](prebuilt/releases/v1.14.0.30/heltec_v4_companion_radio_usb_tcp.bin) |
+| Heltec V3 | [Heltec_v3_companion_radio_usb_tcp-merged.bin](prebuilt/releases/v1.14.0.30/Heltec_v3_companion_radio_usb_tcp-merged.bin) | [Heltec_v3_companion_radio_usb_tcp.bin](prebuilt/releases/v1.14.0.30/Heltec_v3_companion_radio_usb_tcp.bin) |
+
+---
+
 ## v1.14.0.29 — 2026-03-09
 
 **Firmware version:** v1.14.0.29 (meshcomod on upstream 1.14+).

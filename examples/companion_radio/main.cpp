@@ -283,10 +283,14 @@ void loop() {
       if (strlen(ssid) > 0) {
         WiFi.begin(ssid, pwd[0] ? pwd : nullptr);
         last_wifi_retry_ms = millis();
+      } else {
+        WiFi.begin("", "");  // no credentials: still start WiFi/tcpip stack so startTcpServer() does not assert (Invalid mbox)
       }
     } else if (strlen(WIFI_SSID) > 0) {
       WiFi.begin(WIFI_SSID, WIFI_PWD);
       last_wifi_retry_ms = millis();
+    } else {
+      WiFi.begin("", "");  // no credentials: still start WiFi/tcpip stack so startTcpServer() does not assert (Invalid mbox)
     }
   }
   // Automatic WiFi recovery for TCP mode: retry connection periodically if link drops.
