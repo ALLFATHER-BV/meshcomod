@@ -10,9 +10,25 @@ Versioned prebuilts are listed here so you can **roll back** if a newer release 
 2. **Build** — Build both Heltec V4 and V3 USB+TCP firmware: `export FIRMWARE_VERSION=v1.14.0.1` then `sh build.sh build-firmware heltec_v4_companion_radio_usb_tcp` and `sh build.sh build-firmware Heltec_v3_companion_radio_usb_tcp`.
 3. **Create versioned folder** — Create `prebuilt/releases/<version>/` and copy the four prebuilt bins into it (and into `prebuilt/` as latest). E.g. run `sh scripts/copy-release-bins.sh v1.14.0.1`. Add `notes.md` in the version folder (often done in step 4).
 4. **Update this file** — Add a new section above with the new version number, date, highlights, and table linking to the new release paths.
-5. **Commit and push** — Commit the new/updated prebuilts and RELEASES.md, then push.
+5. **Commit and push** — Always commit and push: stage version bump, prebuilts, `prebuilt/releases/<version>/` (bins + notes.md), and RELEASES.md; commit with a short message (e.g. `v1.14.0.N: <highlights>`); push to the release remote (e.g. `git push allfather main`). Do not skip this step.
 
 **Summary:** `prebuilt/` = latest only. `prebuilt/releases/<version>/` = one folder per version (with bins + `notes.md`); keep all of them so users can roll back.
+
+---
+
+## v1.14.0.29 — 2026-03-09
+
+**Firmware version:** v1.14.0.29 (meshcomod on upstream 1.14+).
+
+**Highlights:**
+- **Resources tab:** % in use (not free). Sizes ≥ 1000 KB as 3.3K to fit the screen (e.g. RAM 78% 256/328, Flash 61% 3.9K/6.4K).
+
+**Prebuilt binaries (use [flasher.meshcomod.com](https://flasher.meshcomod.com) — Easy mode auto-downloads versions; for manual upload, use Custom firmware):**
+
+| Device   | Merged (recommended) | Non-merged |
+|----------|----------------------|------------|
+| Heltec V4 | [heltec_v4_companion_radio_usb_tcp-merged.bin](prebuilt/releases/v1.14.0.29/heltec_v4_companion_radio_usb_tcp-merged.bin) | [heltec_v4_companion_radio_usb_tcp.bin](prebuilt/releases/v1.14.0.29/heltec_v4_companion_radio_usb_tcp.bin) |
+| Heltec V3 | [Heltec_v3_companion_radio_usb_tcp-merged.bin](prebuilt/releases/v1.14.0.29/Heltec_v3_companion_radio_usb_tcp-merged.bin) | [Heltec_v3_companion_radio_usb_tcp.bin](prebuilt/releases/v1.14.0.29/Heltec_v3_companion_radio_usb_tcp.bin) |
 
 ---
 

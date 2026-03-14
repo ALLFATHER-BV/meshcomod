@@ -524,15 +524,26 @@ public:
       y += 11;
       uint32_t heapFree = ESP.getFreeHeap();
       uint32_t heapTotal = ESP.getHeapSize();
-      unsigned pct = heapTotal > 0 ? (unsigned)((uint64_t)heapFree * 100 / heapTotal) : 0;
-      snprintf(tmp, sizeof(tmp), "RAM %u%% %lu/%lu KB", pct, (unsigned long)(heapFree / 1024), (unsigned long)(heapTotal / 1024));
+      uint32_t heapUsed = heapTotal > heapFree ? heapTotal - heapFree : 0;
+      unsigned pctUsed = heapTotal > 0 ? (unsigned)((uint64_t)heapUsed * 100 / heapTotal) : 0;
+      uint32_t heapUsedK = heapUsed / 1024;
+      uint32_t heapTotalK = heapTotal / 1024;
+      char s1[8], s2[8];
+      if (heapUsedK >= 1000) snprintf(s1, sizeof(s1), "%.1fK", heapUsedK / 1000.0); else snprintf(s1, sizeof(s1), "%lu", (unsigned long)heapUsedK);
+      if (heapTotalK >= 1000) snprintf(s2, sizeof(s2), "%.1fK", heapTotalK / 1000.0); else snprintf(s2, sizeof(s2), "%lu", (unsigned long)heapTotalK);
+      snprintf(tmp, sizeof(tmp), "RAM %u%% %s/%s", pctUsed, s1, s2);
       display.drawTextCentered(display.width() / 2, y, tmp);
       y += 11;
       uint32_t psramTotal = ESP.getPsramSize();
       if (psramTotal > 0) {
         uint32_t psramFree = ESP.getFreePsram();
-        pct = (unsigned)((uint64_t)psramFree * 100 / psramTotal);
-        snprintf(tmp, sizeof(tmp), "PSRAM %u%% %lu/%lu KB", pct, (unsigned long)(psramFree / 1024), (unsigned long)(psramTotal / 1024));
+        uint32_t psramUsed = psramTotal > psramFree ? psramTotal - psramFree : 0;
+        pctUsed = (unsigned)((uint64_t)psramUsed * 100 / psramTotal);
+        uint32_t psramUsedK = psramUsed / 1024;
+        uint32_t psramTotalK = psramTotal / 1024;
+        if (psramUsedK >= 1000) snprintf(s1, sizeof(s1), "%.1fK", psramUsedK / 1000.0); else snprintf(s1, sizeof(s1), "%lu", (unsigned long)psramUsedK);
+        if (psramTotalK >= 1000) snprintf(s2, sizeof(s2), "%.1fK", psramTotalK / 1000.0); else snprintf(s2, sizeof(s2), "%lu", (unsigned long)psramTotalK);
+        snprintf(tmp, sizeof(tmp), "PSRAM %u%% %s/%s", pctUsed, s1, s2);
       } else {
         snprintf(tmp, sizeof(tmp), "PSRAM n/a");
       }
@@ -540,8 +551,13 @@ public:
       y += 11;
       uint32_t flashTotal = ESP.getFlashChipSize();
       uint32_t sketchFree = ESP.getFreeSketchSpace();
-      pct = flashTotal > 0 ? (unsigned)((uint64_t)sketchFree * 100 / flashTotal) : 0;
-      snprintf(tmp, sizeof(tmp), "Flash %u%% %lu/%lu KB", pct, (unsigned long)(sketchFree / 1024), (unsigned long)(flashTotal / 1024));
+      uint32_t flashUsed = flashTotal > sketchFree ? flashTotal - sketchFree : 0;
+      pctUsed = flashTotal > 0 ? (unsigned)((uint64_t)flashUsed * 100 / flashTotal) : 0;
+      uint32_t flashUsedK = flashUsed / 1024;
+      uint32_t flashTotalK = flashTotal / 1024;
+      if (flashUsedK >= 1000) snprintf(s1, sizeof(s1), "%.1fK", flashUsedK / 1000.0); else snprintf(s1, sizeof(s1), "%lu", (unsigned long)flashUsedK);
+      if (flashTotalK >= 1000) snprintf(s2, sizeof(s2), "%.1fK", flashTotalK / 1000.0); else snprintf(s2, sizeof(s2), "%lu", (unsigned long)flashTotalK);
+      snprintf(tmp, sizeof(tmp), "Flash %u%% %s/%s", pctUsed, s1, s2);
       display.drawTextCentered(display.width() / 2, y, tmp);
     } else if (_page == HomePage::SHUTDOWN) {
 #else
