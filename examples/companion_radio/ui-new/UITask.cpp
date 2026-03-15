@@ -741,8 +741,9 @@ public:
       }
       return true;
     }
-    if (c == KEY_ENTER) {
-      num_unread = 0;  // clear unread queue
+    if (c == KEY_ENTER || c == KEY_LONG_ENTER) {
+      // KEY_ENTER: single press = clear all and go home. KEY_LONG_ENTER: long press = same, so user can skip through all unread at once.
+      num_unread = 0;
       _task->gotoHomeScreen();
       return true;
     }
