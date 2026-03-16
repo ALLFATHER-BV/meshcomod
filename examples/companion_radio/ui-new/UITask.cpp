@@ -284,12 +284,10 @@ public:
         // TCP-style layout: title, state, PIN when on, footer with long-press hint
         display.setColor(DisplayDriver::BLUE);
         display.setTextSize(1);
-        int y = 10;
-        display.drawTextCentered(display.width() / 2, y, "BLE");
-        y += 12;
+        int y = 20;
         if (_task->isBleEnabled()) {
           display.setColor(DisplayDriver::GREEN);
-          snprintf(tmp, sizeof(tmp), "Pin: %lu", (unsigned long)the_mesh.getBLEPin());
+          snprintf(tmp, sizeof(tmp), "BLE Pin: %lu", (unsigned long)the_mesh.getBLEPin());
           display.drawTextCentered(display.width() / 2, y, tmp);
           y += 11;
 
@@ -299,6 +297,7 @@ public:
             y += 11;
             display.drawTextCentered(display.width() / 2, y, peer);
           } else {
+            y += 5;
             display.drawTextCentered(display.width() / 2, y, "Waiting for device");
           }
         } else {
@@ -321,20 +320,18 @@ public:
     } else if (_page == HomePage::NETWORK) {
       display.setColor(DisplayDriver::BLUE);
       display.setTextSize(1);
-      int y = 10;
-      display.drawTextCentered(display.width() / 2, y, "TCP");
-      y += 12;
+      int y = 20;
+#ifndef TCP_PORT
+#define TCP_PORT 5000
+#endif
+      snprintf(tmp, sizeof(tmp), "TCP Port: %d", TCP_PORT);
+      display.drawTextCentered(display.width() / 2, y, tmp);
+      y += 11;
       if (_task->isTcpEnabled()) {
 #ifdef WIFI_SSID
         IPAddress ip = WiFi.localIP();
         if (ip[0] != 0 || ip[1] != 0 || ip[2] != 0 || ip[3] != 0) {
           snprintf(tmp, sizeof(tmp), "IP: %d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
-          display.drawTextCentered(display.width() / 2, y, tmp);
-          y += 11;
-#ifndef TCP_PORT
-#define TCP_PORT 5000
-#endif
-          snprintf(tmp, sizeof(tmp), "Port: %d", TCP_PORT);
           display.drawTextCentered(display.width() / 2, y, tmp);
           y += 11;
           display.setColor(DisplayDriver::GREEN);
@@ -367,16 +364,14 @@ public:
     } else if (_page == HomePage::WSS) {
       display.setColor(DisplayDriver::BLUE);
       display.setTextSize(1);
-      int y = 10;
-#if WS_USE_TLS
-      display.drawTextCentered(display.width() / 2, y, _task->isWssEnabled() ? "WSS" : "WS");
-#else
-      display.drawTextCentered(display.width() / 2, y, "WS");
-#endif
-      y += 12;
+      int y = 20;
       if (_task->isWsStarted()) {
         display.setColor(DisplayDriver::GREEN);
-        display.drawTextCentered(display.width() / 2, y, "running");
+#if WS_USE_TLS
+        display.drawTextCentered(display.width() / 2, y, _task->isWssEnabled() ? "WSS" : "WS");
+#else
+        display.drawTextCentered(display.width() / 2, y, "WS running");
+#endif
         y += 11;
         snprintf(tmp, sizeof(tmp), "port: %u", (unsigned)_task->getWsPort());
         display.drawTextCentered(display.width() / 2, y, tmp);
@@ -386,7 +381,7 @@ public:
         display.drawTextCentered(display.width() / 2, y, tmp);
       } else {
         display.setColor(DisplayDriver::RED);
-        display.drawTextCentered(display.width() / 2, y, "not running");
+        display.drawTextCentered(display.width() / 2, y, "WS not running");
         y += 11;
         display.setColor(DisplayDriver::LIGHT);
         display.drawTextCentered(display.width() / 2, y, "starts 10s after");
@@ -402,22 +397,22 @@ public:
     } else if (_page == HomePage::ADVERT) {
       display.setColor(DisplayDriver::GREEN);
       display.drawXbm((display.width() - 32) / 2, 18, advert_icon, 32, 32);
-      display.drawTextCentered(display.width() / 2, 64 - 11, "advert: " PRESS_LABEL);
+      display.drawTextCentered(display.width() / 2, 64 - 11, "ADVERT: " PRESS_LABEL);
 #if ENV_INCLUDE_GPS == 1
     } else if (_page == HomePage::GPS) {
       LocationProvider* nmea = sensors.getLocationProvider();
       char buf[50];
-      int y = 18;
+      int y = 20;
       bool gps_state = _task->getGPSState();
 #ifdef PIN_GPS_SWITCH
       bool hw_gps_state = digitalRead(PIN_GPS_SWITCH);
       if (gps_state != hw_gps_state) {
-        strcpy(buf, gps_state ? "gps off(hw)" : "gps off(sw)");
+        strcpy(buf, gps_state ? "GPS off(hw)" : "GPS off(sw)");
       } else {
-        strcpy(buf, gps_state ? "gps on" : "gps off");
+        strcpy(buf, gps_state ? "GPS on" : "GPS off");
       }
 #else
-      strcpy(buf, gps_state ? "gps on" : "gps off");
+      strcpy(buf, gps_state ? "GPS on" : "GPS off");
 #endif
       display.drawTextLeftAlign(0, y, buf);
       if (nmea == NULL) {
@@ -444,7 +439,7 @@ public:
 #endif
 #if UI_SENSORS_PAGE == 1
     } else if (_page == HomePage::SENSORS) {
-      int y = 18;
+      int y = 20;
       refresh_sensors();
       char buf[30];
       char name[30];
@@ -518,7 +513,7 @@ public:
     } else if (_page == HomePage::RESOURCES) {
       display.setColor(DisplayDriver::LIGHT);
       display.setTextSize(1);
-      int y = 18;
+      int y = 20;
       snprintf(tmp, sizeof(tmp), "CPU %u MHz", (unsigned)ESP.getCpuFreqMHz());
       display.drawTextCentered(display.width() / 2, y, tmp);
       y += 11;
@@ -569,7 +564,7 @@ public:
         display.drawTextCentered(display.width() / 2, 34, "hibernating...");
       } else {
         display.drawXbm((display.width() - 32) / 2, 18, power_icon, 32, 32);
-        display.drawTextCentered(display.width() / 2, 64 - 11, "hibernate:" PRESS_LABEL);
+        display.drawTextCentered(display.width() / 2, 64 - 11, "HIBERNATE:" PRESS_LABEL);
       }
     }
     return 5000;   // next render after 5000 ms
