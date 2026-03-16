@@ -19,7 +19,7 @@ jobs:
         environment:
           # ESP32-S3 (most common platform)
           - Heltec_v3_companion_radio_usb_tcp
-          - Heltec_v4_companion_radio_usb_tcp
+          - heltec_v4_companion_radio_usb_tcp
 
     steps:
       - name: Clone Repo
