@@ -3,7 +3,7 @@
 #include "../MyMesh.h"
 #include "target.h"
 #ifdef ESP32
-  #include <ESP.h>
+  #include <Esp.h>
 #endif
 #ifdef WIFI_SSID
   #include <WiFi.h>
