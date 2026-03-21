@@ -24,6 +24,18 @@ copy_one() {
   echo "Copied -> prebuilt/$dest_name and $RELDIR/$dest_name"
 }
 
+copy_one_optional() {
+  local src="$1"
+  local dest_name="$2"
+  if [ -z "$src" ] || [ ! -f "$src" ]; then
+    echo "Skip (optional): $dest_name — run pio run -t mergebin and copy merged to out/ if you need it"
+    return 0
+  fi
+  cp "$src" "prebuilt/$dest_name"
+  cp "$src" "$RELDIR/$dest_name"
+  echo "Copied -> prebuilt/$dest_name and $RELDIR/$dest_name"
+}
+
 # Use newest by mtime so we copy latest build when multiple same-version bins exist
 V4_PLAIN=$(ls -t out/heltec_v4_companion_radio_usb_tcp-${VERSION}-*.bin 2>/dev/null | grep -v merged | head -1)
 V4_MERGED=$(ls -t out/heltec_v4_companion_radio_usb_tcp-${VERSION}-*-merged.bin 2>/dev/null | head -1)
@@ -31,8 +43,8 @@ V3_PLAIN=$(ls -t out/Heltec_v3_companion_radio_usb_tcp-${VERSION}-*.bin 2>/dev/n
 V3_MERGED=$(ls -t out/Heltec_v3_companion_radio_usb_tcp-${VERSION}-*-merged.bin 2>/dev/null | head -1)
 
 copy_one "$V4_PLAIN"   "heltec_v4_companion_radio_usb_tcp.bin"
-copy_one "$V4_MERGED"  "heltec_v4_companion_radio_usb_tcp-merged.bin"
+copy_one_optional "$V4_MERGED"  "heltec_v4_companion_radio_usb_tcp-merged.bin"
 copy_one "$V3_PLAIN"   "Heltec_v3_companion_radio_usb_tcp.bin"
-copy_one "$V3_MERGED"  "Heltec_v3_companion_radio_usb_tcp-merged.bin"
+copy_one_optional "$V3_MERGED"  "Heltec_v3_companion_radio_usb_tcp-merged.bin"
 
 echo "Done. prebuilt/ and $RELDIR updated."

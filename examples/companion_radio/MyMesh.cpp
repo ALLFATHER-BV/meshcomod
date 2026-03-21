@@ -181,6 +181,8 @@ static const char* kMeshcomodHelpMsg =
   "wifi set ssid <v>\n"
   "wifi set pwd <v>\n"
   "wifi status\n"
+  "wifi on\n"
+  "wifi off\n"
   "wifi apply\n"
   "wifi clear\n"
   "tcp on\n"
@@ -546,6 +548,16 @@ bool MyMesh::handleMeshcomodCommand(const char* text, int text_len) {
 
 #ifdef ESP32
 #if defined(WIFI_SSID) || defined(MULTI_TRANSPORT_COMPANION)
+  if (strncasecmp(p, "on", 2) == 0 && (p[2] == '\0' || p[2] == ' ' || p[2] == '\t')) {
+    wifiConfigSetRadioEnabled(true);
+    pushMeshcomodReply("OK wifi radio on");
+    return true;
+  }
+  if (strncasecmp(p, "off", 3) == 0 && (p[3] == '\0' || p[3] == ' ' || p[3] == '\t')) {
+    wifiConfigSetRadioEnabled(false);
+    pushMeshcomodReply("OK wifi radio off");
+    return true;
+  }
   if (strncasecmp(p, "set", 3) == 0 && (p[3] == '\0' || p[3] == ' ' || p[3] == '\t')) {
     p += 3;
     while (*p == ' ' || *p == '\t') p++;
@@ -579,6 +591,10 @@ bool MyMesh::handleMeshcomodCommand(const char* text, int text_len) {
     return true;
   }
   if (strncasecmp(p, "scan", 4) == 0 && (p[4] == '\0' || p[4] == ' ' || p[4] == '\t')) {
+    if (!wifiConfigGetRadioEnabled()) {
+      pushMeshcomodReply("error: wifi radio off — send wifi on first");
+      return true;
+    }
     // Ensure STA is fully up before scan; disconnected STA needs a bit more settle time.
     wifi_mode_t mode = WiFi.getMode();
     if ((mode & WIFI_MODE_STA) == 0) {
@@ -670,17 +686,18 @@ bool MyMesh::handleMeshcomodCommand(const char* text, int text_len) {
     char ssid[WIFI_CONFIG_SSID_MAX];
     wifiConfigGetSsid(ssid, sizeof(ssid));
     bool has_runtime = wifiConfigHasRuntime();
-    char reply[96];
+    int re = wifiConfigGetRadioEnabled() ? 1 : 0;
+    char reply[112];
     if (!has_runtime || ssid[0] == '\0') {
-      snprintf(reply, sizeof(reply), "ssid=(none) runtime=0");
+      snprintf(reply, sizeof(reply), "radio_enabled=%d ssid=(none) runtime=0", re);
     } else {
       int connected = (WiFi.status() == WL_CONNECTED) ? 1 : 0;
       if (connected) {
         IPAddress ip = WiFi.localIP();
-        snprintf(reply, sizeof(reply), "ssid=%s connected=1 ip=%d.%d.%d.%d",
-                 ssid, ip[0], ip[1], ip[2], ip[3]);
+        snprintf(reply, sizeof(reply), "radio_enabled=%d ssid=%s connected=1 ip=%d.%d.%d.%d", re, ssid,
+                 ip[0], ip[1], ip[2], ip[3]);
       } else {
-        snprintf(reply, sizeof(reply), "ssid=%s connected=0", ssid);
+        snprintf(reply, sizeof(reply), "radio_enabled=%d ssid=%s connected=0", re, ssid);
       }
     }
     pushMeshcomodReply(reply);
@@ -692,6 +709,10 @@ bool MyMesh::handleMeshcomodCommand(const char* text, int text_len) {
     return true;
   }
   if (strncasecmp(p, "apply", 5) == 0 && (p[5] == '\0' || p[5] == ' ' || p[5] == '\t')) {
+    if (!wifiConfigGetRadioEnabled()) {
+      pushMeshcomodReply("error: wifi radio off — send wifi on first");
+      return true;
+    }
     if (!wifiConfigHasRuntime()) {
       pushMeshcomodReply("No runtime credentials; set ssid/pwd first");
       return true;
@@ -2756,10 +2777,24 @@ void MyMesh::checkCLIRescueCmd() {
 #else
         Serial.println("  Error: WiFi config only supported on ESP32 builds");
 #endif
+      } else if (memcmp(config, "wifi.radio ", 11) == 0) {
+#ifdef ESP32
+#if defined(WIFI_SSID) || defined(MULTI_TRANSPORT_COMPANION)
+        int v = atoi(&config[11]);
+        wifiConfigSetRadioEnabled(v != 0);
+        Serial.println(v ? "  > OK: wifi radio on" : "  > OK: wifi radio off");
+#else
+        Serial.println("  Error: WiFi config not enabled in this build");
+#endif
+#else
+        Serial.println("  Error: WiFi config only supported on ESP32 builds");
+#endif
       } else if (strcmp(config, "wifi.apply") == 0) {
 #ifdef ESP32
 #if defined(WIFI_SSID) || defined(MULTI_TRANSPORT_COMPANION)
-        if (!wifiConfigHasRuntime()) {
+        if (!wifiConfigGetRadioEnabled()) {
+          Serial.println("  Error: wifi radio off; set wifi.radio 1 first");
+        } else if (!wifiConfigHasRuntime()) {
           Serial.println("  Error: no runtime credentials set");
         } else {
           wifiConfigApply();
@@ -2803,7 +2838,9 @@ void MyMesh::checkCLIRescueCmd() {
       char ssid[WIFI_CONFIG_SSID_MAX];
       wifiConfigGetSsid(ssid, sizeof(ssid));
       bool has_runtime = wifiConfigHasRuntime();
-      Serial.printf("  > runtime=%d ssid=%s\n", has_runtime ? 1 : 0, (ssid[0] ? ssid : "(none)"));
+      int re = wifiConfigGetRadioEnabled() ? 1 : 0;
+      Serial.printf("  > runtime=%d radio_enabled=%d ssid=%s\n", has_runtime ? 1 : 0, re,
+                    (ssid[0] ? ssid : "(none)"));
       if (WiFi.status() == WL_CONNECTED) {
         IPAddress ip = WiFi.localIP();
         Serial.printf("  > connected=1 ip=%d.%d.%d.%d\n", ip[0], ip[1], ip[2], ip[3]);
@@ -2811,10 +2848,10 @@ void MyMesh::checkCLIRescueCmd() {
         Serial.println("  > connected=0");
       }
 #else
-      Serial.println("  Error: WiFi config not enabled in this build");
+        Serial.println("  Error: WiFi config not enabled in this build");
 #endif
 #else
-      Serial.println("  Error: WiFi config only supported on ESP32 builds");
+        Serial.println("  Error: WiFi config only supported on ESP32 builds");
 #endif
     } else if (strcmp(cli_command, "wifi.status") == 0) {
 #ifdef ESP32
@@ -2822,7 +2859,9 @@ void MyMesh::checkCLIRescueCmd() {
       char ssid[WIFI_CONFIG_SSID_MAX];
       wifiConfigGetSsid(ssid, sizeof(ssid));
       bool has_runtime = wifiConfigHasRuntime();
-      Serial.printf("  > runtime=%d ssid=%s\n", has_runtime ? 1 : 0, (ssid[0] ? ssid : "(none)"));
+      int re = wifiConfigGetRadioEnabled() ? 1 : 0;
+      Serial.printf("  > runtime=%d radio_enabled=%d ssid=%s\n", has_runtime ? 1 : 0, re,
+                    (ssid[0] ? ssid : "(none)"));
       if (WiFi.status() == WL_CONNECTED) {
         IPAddress ip = WiFi.localIP();
         Serial.printf("  > connected=1 ip=%d.%d.%d.%d\n", ip[0], ip[1], ip[2], ip[3]);
@@ -2830,25 +2869,27 @@ void MyMesh::checkCLIRescueCmd() {
         Serial.println("  > connected=0");
       }
 #else
-      Serial.println("  Error: WiFi config not enabled in this build");
+        Serial.println("  Error: WiFi config not enabled in this build");
 #endif
 #else
-      Serial.println("  Error: WiFi config only supported on ESP32 builds");
+        Serial.println("  Error: WiFi config only supported on ESP32 builds");
 #endif
     } else if (strcmp(cli_command, "wifi.apply") == 0) {
 #ifdef ESP32
 #if defined(WIFI_SSID) || defined(MULTI_TRANSPORT_COMPANION)
-      if (!wifiConfigHasRuntime()) {
+      if (!wifiConfigGetRadioEnabled()) {
+        Serial.println("  Error: wifi radio off; set wifi.radio 1 first");
+      } else if (!wifiConfigHasRuntime()) {
         Serial.println("  Error: no runtime credentials set");
       } else {
         wifiConfigApply();
         Serial.println("  > OK: reconnecting WiFi");
       }
 #else
-      Serial.println("  Error: WiFi config not enabled in this build");
+        Serial.println("  Error: WiFi config not enabled in this build");
 #endif
 #else
-      Serial.println("  Error: WiFi config only supported on ESP32 builds");
+        Serial.println("  Error: WiFi config only supported on ESP32 builds");
 #endif
     } else if (strcmp(cli_command, "wifi.clear") == 0) {
 #ifdef ESP32

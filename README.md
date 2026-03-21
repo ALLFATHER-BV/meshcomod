@@ -227,7 +227,7 @@ Build/flash guidance:
 
 If the display stays black after flashing and resetting:
 
-1. **Prefer merged firmware** — If the display stays black or boot is unstable, flash the **merged** `.bin` (includes bootloader + partition table). The build script puts it in `out/<env>-<version>-<sha>-merged.bin` or `.pio/build/<env>/firmware-merged.bin`.
+1. **Prefer merged firmware** — If the display stays black or boot is unstable, flash the **merged** `.bin` (includes bootloader + partition table). Generate it with `pio run -t mergebin -e <env>`; it lands in `.pio/build/<env>/firmware-merged.bin`. (`build.sh` / default `out/` copies are **app-only** `firmware.bin`.)
 2. **Flash with the web flasher** — On [flasher.meshcomod.com](https://flasher.meshcomod.com), choose **Custom firmware** and upload the merged file. The flasher uses the correct layout (writes from 0x0).
 3. **If it's still black** — Try uploading the merged file again via **Custom firmware**. If the flasher offers an erase option, use it first, then upload the merged `.bin`. This wipes all data (contacts, etc.).
 4. **V4 merged only:** If the merged image still gives a black screen on Heltec V4 (while V3 is fine), try flashing the **non-merged** `.bin` at app offset **0x10000** (your device must already have a valid bootloader and partition table from a previous flash). Newer firmware also adds longer pre-display delay and watchdog feeds on first boot to improve merged boot reliability.

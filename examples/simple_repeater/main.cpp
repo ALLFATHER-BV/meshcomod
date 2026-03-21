@@ -3,6 +3,13 @@
 
 #include "MyMesh.h"
 
+#if defined(ESP32)
+volatile int g_boot_phase = 0;
+extern "C" void set_boot_phase(int phase) {
+  g_boot_phase = phase;
+}
+#endif
+
 #ifdef DISPLAY_CLASS
   #include "UITask.h"
   static UITask ui_task(display);

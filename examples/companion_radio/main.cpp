@@ -273,41 +273,62 @@ void loop() {
   static bool wifi_started = false;
   static uint32_t last_wifi_retry_ms = 0;
   static const uint32_t WIFI_RETRY_INTERVAL_MS = 10000;
-  if (!wifi_started) {
-    wifi_started = true;
-    if (wifiConfigHasRuntime()) {
-      char ssid[WIFI_CONFIG_SSID_MAX];
-      char pwd[WIFI_CONFIG_PWD_MAX];
-      wifiConfigGetSsid(ssid, sizeof(ssid));
-      wifiConfigGetPwd(pwd, sizeof(pwd));
-      if (strlen(ssid) > 0) {
-        WiFi.begin(ssid, pwd[0] ? pwd : nullptr);
-        last_wifi_retry_ms = millis();
-      } else {
-        WiFi.begin("", "");  // no credentials: still start WiFi/tcpip stack so startTcpServer() does not assert (Invalid mbox)
-      }
-    } else if (strlen(WIFI_SSID) > 0) {
-      WiFi.begin(WIFI_SSID, WIFI_PWD);
-      last_wifi_retry_ms = millis();
-    } else {
-      WiFi.begin("", "");  // no credentials: still start WiFi/tcpip stack so startTcpServer() does not assert (Invalid mbox)
+  static bool wifi_radio_prev = true;
+  static bool wifi_radio_inited = false;
+  bool wifi_radio_en = wifiConfigGetRadioEnabled();
+  if (!wifi_radio_inited) {
+    wifi_radio_inited = true;
+    wifi_radio_prev = wifi_radio_en;
+  } else if (wifi_radio_en != wifi_radio_prev) {
+    wifi_radio_prev = wifi_radio_en;
+    if (!wifi_radio_en) {
+      WiFi.disconnect(true);
+      delay(50);
+      WiFi.mode(WIFI_OFF);
     }
+    wifi_started = false;
   }
-  // Automatic WiFi recovery for TCP mode: retry connection periodically if link drops.
-  if (WiFi.status() != WL_CONNECTED) {
-    uint32_t now = millis();
-    if ((uint32_t)(now - last_wifi_retry_ms) >= WIFI_RETRY_INTERVAL_MS) {
-      last_wifi_retry_ms = now;
+  if (wifi_radio_en) {
+    if (!wifi_started) {
+      wifi_started = true;
       if (wifiConfigHasRuntime()) {
         char ssid[WIFI_CONFIG_SSID_MAX];
         char pwd[WIFI_CONFIG_PWD_MAX];
         wifiConfigGetSsid(ssid, sizeof(ssid));
         wifiConfigGetPwd(pwd, sizeof(pwd));
         if (strlen(ssid) > 0) {
+          WiFi.mode(WIFI_STA);
           WiFi.begin(ssid, pwd[0] ? pwd : nullptr);
+          last_wifi_retry_ms = millis();
+        } else {
+          WiFi.mode(WIFI_STA);
+          WiFi.begin("", "");  // no credentials: still start WiFi/tcpip stack so startTcpServer() does not assert (Invalid mbox)
         }
       } else if (strlen(WIFI_SSID) > 0) {
+        WiFi.mode(WIFI_STA);
         WiFi.begin(WIFI_SSID, WIFI_PWD);
+        last_wifi_retry_ms = millis();
+      } else {
+        WiFi.mode(WIFI_STA);
+        WiFi.begin("", "");  // no credentials: still start WiFi/tcpip stack so startTcpServer() does not assert (Invalid mbox)
+      }
+    }
+    // Automatic WiFi recovery for TCP mode: retry connection periodically if link drops.
+    if (WiFi.status() != WL_CONNECTED) {
+      uint32_t now = millis();
+      if ((uint32_t)(now - last_wifi_retry_ms) >= WIFI_RETRY_INTERVAL_MS) {
+        last_wifi_retry_ms = now;
+        if (wifiConfigHasRuntime()) {
+          char ssid[WIFI_CONFIG_SSID_MAX];
+          char pwd[WIFI_CONFIG_PWD_MAX];
+          wifiConfigGetSsid(ssid, sizeof(ssid));
+          wifiConfigGetPwd(pwd, sizeof(pwd));
+          if (strlen(ssid) > 0) {
+            WiFi.begin(ssid, pwd[0] ? pwd : nullptr);
+          }
+        } else if (strlen(WIFI_SSID) > 0) {
+          WiFi.begin(WIFI_SSID, WIFI_PWD);
+        }
       }
     }
   }
