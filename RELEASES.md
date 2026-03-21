@@ -16,6 +16,24 @@ Versioned prebuilts are listed here so you can **roll back** if a newer release 
 
 ---
 
+## v1.14.0.33 — 2026-03-21
+
+**Firmware version:** v1.14.0.33 (meshcomod on upstream 1.14+).
+
+**Highlights:**
+- **Companion ↔ MeshCore app 1.14:** `CMD_SET_PATH_HASH_MODE` (61), device-info `path_hash_mode`, flood path-hash size from prefs; auto-add get/set includes `autoadd_max_hops`.
+- **`/new_prefs` = upstream layout** (93 bytes) with **`rx_boosted_gain`**; automatic migration from legacy 91-byte Meshcomod prefs on first load.
+- **SX1262/8:** Persisted RX boosted gain; applied at boot and after radio param changes.
+
+**Prebuilt binaries (use [flasher.meshcomod.com](https://flasher.meshcomod.com) — Easy mode auto-downloads versions; for manual upload, use Custom firmware):**
+
+| Device   | Merged (recommended) | Non-merged |
+|----------|----------------------|------------|
+| Heltec V4 | [heltec_v4_companion_radio_usb_tcp-merged.bin](prebuilt/releases/v1.14.0.33/heltec_v4_companion_radio_usb_tcp-merged.bin) | [heltec_v4_companion_radio_usb_tcp.bin](prebuilt/releases/v1.14.0.33/heltec_v4_companion_radio_usb_tcp.bin) |
+| Heltec V3 | [Heltec_v3_companion_radio_usb_tcp-merged.bin](prebuilt/releases/v1.14.0.33/Heltec_v3_companion_radio_usb_tcp-merged.bin) | [Heltec_v3_companion_radio_usb_tcp.bin](prebuilt/releases/v1.14.0.33/Heltec_v3_companion_radio_usb_tcp.bin) |
+
+---
+
 ## v1.14.0.32 — 2026-03-14
 
 **Firmware version:** v1.14.0.32 (meshcomod on upstream 1.14+).

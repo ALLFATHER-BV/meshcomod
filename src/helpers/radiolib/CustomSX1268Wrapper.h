@@ -22,4 +22,8 @@ public:
   }
 
   void doResetAGC() override { sx126xResetAGC((SX126x *)_radio); }
+
+  int16_t setRxBoostedGainMode(bool enable) {
+    return ((CustomSX1268 *)_radio)->setRxBoostedGainMode(enable);
+  }
 };

@@ -65,6 +65,7 @@
 #define CMD_SET_AUTOADD_CONFIG        58
 #define CMD_GET_AUTOADD_CONFIG        59
 #define CMD_GET_ALLOWED_REPEAT_FREQ   60
+#define CMD_SET_PATH_HASH_MODE        61  // v10+: payload [0, mode]; mode 0..2 (1/2/3-byte path hashes when sending)
 #define CMD_SYNC_SINCE                62  // client sends T (4 bytes LE Unix sec); response: stream of 7/8/16/17 then 61
 
 // Stats sub-types for CMD_GET_STATS
@@ -1188,24 +1189,26 @@ bool MyMesh::allowPacketForward(const mesh::Packet* packet) {
 
 void MyMesh::sendFloodScoped(const ContactInfo& recipient, mesh::Packet* pkt, uint32_t delay_millis) {
   // TODO: dynamic send_scope, depending on recipient and current 'home' Region
+  uint8_t phs = (uint8_t)(_prefs.path_hash_mode + 1);
   if (send_scope.isNull()) {
-    sendFlood(pkt, delay_millis);
+    sendFlood(pkt, delay_millis, phs);
   } else {
     uint16_t codes[2];
     codes[0] = send_scope.calcTransportCode(pkt);
     codes[1] = 0;  // REVISIT: set to 'home' Region, for sender/return region?
-    sendFlood(pkt, codes, delay_millis);
+    sendFlood(pkt, codes, delay_millis, phs);
   }
 }
 void MyMesh::sendFloodScoped(const mesh::GroupChannel& channel, mesh::Packet* pkt, uint32_t delay_millis) {
   // TODO: have per-channel send_scope
+  uint8_t phs = (uint8_t)(_prefs.path_hash_mode + 1);
   if (send_scope.isNull()) {
-    sendFlood(pkt, delay_millis);
+    sendFlood(pkt, delay_millis, phs);
   } else {
     uint16_t codes[2];
     codes[0] = send_scope.calcTransportCode(pkt);
     codes[1] = 0;  // REVISIT: set to 'home' Region, for sender/return region?
-    sendFlood(pkt, codes, delay_millis);
+    sendFlood(pkt, codes, delay_millis, phs);
   }
 }
 
@@ -1537,6 +1540,13 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   _prefs.gps_enabled = 0;       // GPS disabled by default
   _prefs.gps_interval = 0;      // No automatic GPS updates by default
   //_prefs.rx_delay_base = 10.0f;  enable once new algo fixed
+#if defined(USE_SX1262) || defined(USE_SX1268) || defined(SX126X_RX_BOOSTED_GAIN)
+  #ifdef SX126X_RX_BOOSTED_GAIN
+  _prefs.rx_boosted_gain = (SX126X_RX_BOOSTED_GAIN != 0) ? 1 : 0;
+  #else
+  _prefs.rx_boosted_gain = 1;
+  #endif
+#endif
 }
 
 void MyMesh::begin(bool has_display) {
@@ -1575,6 +1585,10 @@ void MyMesh::begin(bool has_display) {
   _prefs.tx_power_dbm = constrain(_prefs.tx_power_dbm, -9, MAX_LORA_TX_POWER);
   _prefs.gps_enabled = constrain(_prefs.gps_enabled, 0, 1);  // Ensure boolean 0 or 1
   _prefs.gps_interval = constrain(_prefs.gps_interval, 0, 86400);  // Max 24 hours
+  _prefs.path_hash_mode = constrain(_prefs.path_hash_mode, 0, 2);
+  if (_prefs.autoadd_max_hops > 64) {
+    _prefs.autoadd_max_hops = 64;
+  }
 
 #ifdef BLE_PIN_CODE // 123456 by default
   if (_prefs.ble_pin == 0) {
@@ -1603,6 +1617,11 @@ void MyMesh::begin(bool has_display) {
 
   radio_set_params(_prefs.freq, _prefs.bw, _prefs.sf, _prefs.cr);
   radio_set_tx_power(_prefs.tx_power_dbm);
+#if defined(USE_SX1262) || defined(USE_SX1268) || defined(SX126X_RX_BOOSTED_GAIN)
+  _prefs.rx_boosted_gain = _prefs.rx_boosted_gain ? 1 : 0;
+  radio_driver.setRxBoostedGainMode(_prefs.rx_boosted_gain != 0);
+  MESH_DEBUG_PRINTLN("RX Boosted Gain (prefs): %s", _prefs.rx_boosted_gain ? "on" : "off");
+#endif
 }
 
 const char *MyMesh::getNodeName() {
@@ -1660,6 +1679,7 @@ void MyMesh::handleCmdFrame(size_t len) {
     StrHelper::strzcpy((char *)&out_frame[i], FIRMWARE_VERSION, 20);
     i += 20;
     out_frame[i++] = _prefs.client_repeat;   // v9+
+    out_frame[i++] = _prefs.path_hash_mode;  // v10+ (matches upstream 1.14 companion protocol)
     _serial->writeFrame(out_frame, i);
   } else if (cmd_frame[0] == CMD_APP_START &&
              len >= 8) { // sent when app establishes connection, respond with node ID
@@ -1907,7 +1927,7 @@ void MyMesh::handleCmdFrame(size_t len) {
     }
     if (pkt) {
       if (len >= 2 && cmd_frame[1] == 1) { // optional param (1 = flood, 0 = zero hop)
-        sendFlood(pkt);
+        sendFlood(pkt, 0, (uint8_t)(_prefs.path_hash_mode + 1));
       } else {
         sendZeroHop(pkt);
       }
@@ -2115,6 +2135,9 @@ void MyMesh::handleCmdFrame(size_t len) {
       savePrefs();
 
       radio_set_params(_prefs.freq, _prefs.bw, _prefs.sf, _prefs.cr);
+#if defined(USE_SX1262) || defined(USE_SX1268) || defined(SX126X_RX_BOOSTED_GAIN)
+      radio_driver.setRxBoostedGainMode(_prefs.rx_boosted_gain != 0);
+#endif
       MESH_DEBUG_PRINTLN("OK: CMD_SET_RADIO_PARAMS: f=%d, bw=%d, sf=%d, cr=%d", freq, bw, (uint32_t)sf,
                          (uint32_t)cr);
 
@@ -2168,6 +2191,14 @@ void MyMesh::handleCmdFrame(size_t len) {
     }
     savePrefs();
     writeOKFrame();
+  } else if (cmd_frame[0] == CMD_SET_PATH_HASH_MODE && cmd_frame[1] == 0 && len >= 3) {
+    if (cmd_frame[2] >= 3) {
+      writeErrFrame(ERR_CODE_ILLEGAL_ARG);
+    } else {
+      _prefs.path_hash_mode = cmd_frame[2];
+      savePrefs();
+      writeOKFrame();
+    }
   } else if (cmd_frame[0] == CMD_REBOOT && memcmp(&cmd_frame[1], "reboot", 6) == 0) {
     if (dirty_contacts_expiry) { // is there are pending dirty contacts write needed?
       saveContacts();
@@ -2631,12 +2662,17 @@ void MyMesh::handleCmdFrame(size_t len) {
     }
   } else if (cmd_frame[0] == CMD_SET_AUTOADD_CONFIG) {
     _prefs.autoadd_config = cmd_frame[1];
+    if (len >= 3) {
+      uint8_t mh = cmd_frame[2];
+      _prefs.autoadd_max_hops = mh > 64 ? 64 : mh;
+    }
     savePrefs();
     writeOKFrame();  
   } else if (cmd_frame[0] == CMD_GET_AUTOADD_CONFIG) {
     int i = 0;
     out_frame[i++] = RESP_CODE_AUTOADD_CONFIG;
     out_frame[i++] = _prefs.autoadd_config;
+    out_frame[i++] = _prefs.autoadd_max_hops;
     _serial->writeFrame(out_frame, i);
   } else if (cmd_frame[0] == CMD_GET_ALLOWED_REPEAT_FREQ) {
     int i = 0;
@@ -3033,7 +3069,7 @@ void MyMesh::loop() {
   } else {
     // Prefer plain-text console commands (e.g. flasher Console) before binary
     // companion parsing — but only when the first byte looks like a command
-    // letter (a-z, A-Z). App binary frames use command bytes 1–60; 32–60 are
+    // letter (a-z, A-Z). App binary frames use command bytes 1–62; 32–62 are
     // printable, so we must not treat them as console or we break USB app connection.
 #if defined(ESP32)
     if (Serial.available() > 0) {
