@@ -2,12 +2,14 @@
 
 Binaries are **not** always committed; this folder defines **where promoted builds live** so tools and humans match the same layout.
 
-## Layout (same for companion and repeater TCP)
+## Layout
 
 | Path | Meaning |
 |------|--------|
 | **`prebuilt/<short-name>.bin`** | Latest **promoted** build for that product (overwritten when you run the copy script for a new release). |
-| **`prebuilt/releases/<version>/`** | **Immutable** copy for that version (e.g. `v1.14.0.20`). Add a `notes.md` here when you cut a release. |
+| **`prebuilt/releases/<version>/`** | **Immutable** copy for that version. Add a `notes.md` here when you cut a release. |
+
+**Companion** versions look like **`v1.14.0.20`** (meshcomod radio). **Repeater TCP** uses its **own** labels, e.g. **`repeater-1.0.0`** — see [`docs/REPEATER_RELEASE_PROCEDURE.md`](../docs/REPEATER_RELEASE_PROCEDURE.md).
 
 **Companion** (USB+TCP meshcomod radio): after versioned builds in `out/`, run:
 
@@ -37,14 +39,14 @@ Produces:
 
 `out/<env>-<version>-<gitsha>.bin`
 
-Example:
+Repeater example (own version train):
 
 ```bash
-export FIRMWARE_VERSION=v1.14.0.20
+export REPEATER_FIRMWARE_VERSION=repeater-1.0.0
 sh build.sh build-repeater-firmwares
-sh scripts/copy-repeater-release-bins.sh v1.14.0.20
+sh scripts/copy-repeater-release-bins.sh repeater-1.0.0
 ```
 
 Ad-hoc **`pio run`** (without `build.sh`) still drops **`out/<env>.bin`** and stamped copies via `merge-bin.py`; those names **do not** match the copy scripts — use **`build.sh`** (or manual rename) before promoting to `prebuilt/`.
 
-See also: [`docs/RELEASE_PROCEDURE.md`](../docs/RELEASE_PROCEDURE.md) (companion), [`WHERE_IS_REPEATER_FIRMWARE.md`](../WHERE_IS_REPEATER_FIRMWARE.md), [`docs/REPEATER_TCP_COMPANION.md`](../docs/REPEATER_TCP_COMPANION.md).
+See also: [`docs/RELEASE_PROCEDURE.md`](../docs/RELEASE_PROCEDURE.md) (companion), [`docs/REPEATER_RELEASE_PROCEDURE.md`](../docs/REPEATER_RELEASE_PROCEDURE.md) (repeater), [`WHERE_IS_REPEATER_FIRMWARE.md`](../WHERE_IS_REPEATER_FIRMWARE.md), [`docs/REPEATER_TCP_COMPANION.md`](../docs/REPEATER_TCP_COMPANION.md).

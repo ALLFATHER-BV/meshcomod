@@ -18,7 +18,7 @@ Commands:
   build-firmwares: Build all firmwares for all targets.
   build-matching-firmwares <build-match-spec>: Build all firmwares for build targets containing the string given for <build-match-spec>.
   build-companion-firmwares: Build all companion firmwares for all build targets.
-  build-repeater-firmwares: Build all repeater firmwares for all build targets.
+  build-repeater-firmwares: Build all TCP repeater firmwares (env names ending in _repeater_tcp).
   build-room-server-firmwares: Build all chat room server firmwares for all build targets.
 
 Examples:
@@ -40,6 +40,9 @@ $ sh build.sh build-room-server-firmwares
 Environment Variables:
   DISABLE_DEBUG=1: Disables all debug logging flags (MESH_DEBUG, MESH_PACKET_LOGGING, etc.)
                    If not set, debug flags from variant platformio.ini files are used.
+  REPEATER_FIRMWARE_VERSION: For env names ending in _repeater_tcp only, overrides FIRMWARE_VERSION
+                   for the compile-time version string and out/ filenames — use a repeater-specific
+                   label (e.g. repeater-1.0.0) so TCP repeater releases are not tied to companion v1.14.x.
 
 Examples:
 Build without debug logging:
@@ -50,6 +53,10 @@ $ sh build.sh build-firmware RAK_4631_repeater
 Build with debug logging (default, uses flags from variant files):
 $ export FIRMWARE_VERSION=v1.0.0
 $ sh build.sh build-firmware RAK_4631_repeater
+
+TCP repeater (own release train, no companion version needed):
+$ export REPEATER_FIRMWARE_VERSION=repeater-1.0.0
+$ sh build.sh build-repeater-firmwares
 EOF
 }
 
@@ -136,15 +143,19 @@ build_firmware() {
   # set firmware build date
   FIRMWARE_BUILD_DATE=$(date '+%d-%b-%Y')
 
-  # get FIRMWARE_VERSION, which should be provided by the environment
-  if [ -z "$FIRMWARE_VERSION" ]; then
-    echo "FIRMWARE_VERSION must be set in environment"
+  # Version string: companion / generic builds use FIRMWARE_VERSION; *_repeater_tcp can use REPEATER_FIRMWARE_VERSION instead.
+  EFFECTIVE_FW_VERSION="$FIRMWARE_VERSION"
+  if [[ "$1" == *_repeater_tcp ]] && [ -n "$REPEATER_FIRMWARE_VERSION" ]; then
+    EFFECTIVE_FW_VERSION="$REPEATER_FIRMWARE_VERSION"
+  fi
+  if [ -z "$EFFECTIVE_FW_VERSION" ]; then
+    echo "FIRMWARE_VERSION must be set in environment (or REPEATER_FIRMWARE_VERSION for *_repeater_tcp)"
     exit 1
   fi
 
   # set firmware version string
-  # e.g: v1.0.0-abcdef
-  FIRMWARE_VERSION_STRING="${FIRMWARE_VERSION}-${COMMIT_HASH}"
+  # e.g: v1.0.0-abcdef or repeater-1.0.0-abcdef
+  FIRMWARE_VERSION_STRING="${EFFECTIVE_FW_VERSION}-${COMMIT_HASH}"
 
   # craft filename
   # e.g: RAK_4631_Repeater-v1.0.0-SHA
@@ -159,11 +170,9 @@ build_firmware() {
   # build firmware target
   $PIO_CMD run -e $1
 
-  # build merge-bin for esp32 fresh install, copy .bins to out folder (e.g: Heltec_v3_room_server-v1.0.0-SHA.bin)
+  # App image only in out/ (flash at partition app offset). For a single merged file use: pio run -t mergebin -e <env>
   if [ "$ENV_PLATFORM" == "ESP32_PLATFORM" ]; then
-    $PIO_CMD run -t mergebin -e $1
     cp .pio/build/$1/firmware.bin out/${FIRMWARE_FILENAME}.bin 2>/dev/null || true
-    cp .pio/build/$1/firmware-merged.bin out/${FIRMWARE_FILENAME}-merged.bin 2>/dev/null || true
   fi
 
   # build .uf2 for nrf52 boards, copy .uf2 and .zip to out folder (e.g: RAK_4631_Repeater-v1.0.0-SHA.uf2)
@@ -205,16 +214,8 @@ build_all_firmwares_by_suffix() {
 
 build_repeater_firmwares() {
 
-#  # build specific repeater firmwares
-#  build_firmware "Heltec_v2_repeater"
-#  build_firmware "Heltec_v3_repeater"
-#  build_firmware "Xiao_C3_Repeater_sx1262"
-#  build_firmware "Xiao_S3_WIO_Repeater"
-#  build_firmware "LilyGo_T3S3_sx1262_Repeater"
-#  build_firmware "RAK_4631_Repeater"
-
-  # build all repeater firmwares
-  build_all_firmwares_by_suffix "_repeater"
+  # TCP companion repeaters only (e.g. heltec_v4_repeater_tcp, Heltec_v3_repeater_tcp), not plain *_repeater
+  build_all_firmwares_by_suffix "_repeater_tcp"
 
 }
 

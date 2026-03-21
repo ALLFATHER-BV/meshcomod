@@ -2,18 +2,17 @@
 # Copy TCP repeater build outputs from out/ to prebuilt/ and prebuilt/releases/<version>.
 # Same layout as scripts/copy-release-bins.sh (companion).
 #
-# Run after building with a version (versioned names in out/):
-#   export FIRMWARE_VERSION=v1.14.0.20
+# Run after building with a repeater-specific version (independent of companion v1.14.x):
+#   export REPEATER_FIRMWARE_VERSION=repeater-1.0.0
 #   sh build.sh build-repeater-firmwares
-#   # or single env:
+#   # or single env (REPEATER_FIRMWARE_VERSION still applies):
 #   sh build.sh build-firmware heltec_v4_repeater_tcp
-#   sh build.sh build-firmware Heltec_v3_repeater_tcp
 #
 # Usage: sh scripts/copy-repeater-release-bins.sh <version>
-# Example: sh scripts/copy-repeater-release-bins.sh v1.14.0.20
+# Example: sh scripts/copy-repeater-release-bins.sh repeater-1.0.0
 
 set -e
-VERSION="${1:?Usage: $0 <version> e.g. v1.14.0.20}"
+VERSION="${1:?Usage: $0 <repeater-version> e.g. repeater-1.0.0}"
 RELDIR="prebuilt/releases/${VERSION}"
 mkdir -p "prebuilt" "$RELDIR"
 
