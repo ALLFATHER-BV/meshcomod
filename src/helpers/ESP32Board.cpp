@@ -81,6 +81,32 @@ static bool meshcoreHttpOtaUrlAllowed(const char* u) {
   return false;
 }
 
+/**
+ * `https://github.com/owner/repo/raw/ref/path` -> `https://raw.githubusercontent.com/owner/repo/ref/path`
+ * GitHub returns 302 for the former; ESP32 HTTPClient defaults to not following redirects, which breaks OTA.
+ */
+static bool meshcoreGithubRawToRawUsercontent(const char* url, char* out, size_t cap) {
+  static const char gh[] = "https://github.com/";
+  const size_t gh_len = sizeof(gh) - 1;
+  if (strncmp(url, gh, gh_len) != 0) return false;
+  const char* cursor = url + gh_len;
+  const char* rawtok = strstr(cursor, "/raw/");
+  if (!rawtok) return false;
+  size_t owner_repo_len = (size_t)(rawtok - cursor);
+  if (owner_repo_len < 3 || owner_repo_len > 240) return false;
+  const char* past_raw = rawtok + 5;
+  if (!past_raw[0]) return false;
+  const char* path_after_ref = strchr(past_raw, '/');
+  if (!path_after_ref || path_after_ref == past_raw) return false;
+  size_t ref_len = (size_t)(path_after_ref - past_raw);
+  if (ref_len == 0 || ref_len > 200) return false;
+  const char* file_path = path_after_ref + 1;
+  if (!file_path[0]) return false;
+  int n = snprintf(out, cap, "https://raw.githubusercontent.com/%.*s/%.*s/%s", (int)owner_repo_len, cursor,
+                   (int)ref_len, past_raw, file_path);
+  return n > 0 && (size_t)n < cap;
+}
+
 bool ESP32Board::startOTAUpdate(const char* id, char reply[]) {
   inhibit_sleep = true;   // prevent sleep during OTA
   WiFi.softAP("MeshCore-OTA", NULL);
@@ -132,11 +158,17 @@ bool ESP32Board::startHttpOtaFromUrl(const char* url, char* reply) {
 
   HTTPClient https;
   https.setTimeout(90000);
-#if defined(HTTPC_STRICT_FOLLOW_REDIRECTS)
-  https.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
-#endif
+  // Default is HTTPC_DISABLE_FOLLOW_REDIRECTS; `defined(HTTPC_STRICT_...)` was always false (enum, not macro).
+  https.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
+  https.setUserAgent("MeshCore-OTA/1.0");
 
-  if (!https.begin(client, url)) {
+  static char ota_url_buf[512];
+  const char* fetch_url = url;
+  if (meshcoreGithubRawToRawUsercontent(url, ota_url_buf, sizeof(ota_url_buf))) {
+    fetch_url = ota_url_buf;
+  }
+
+  if (!https.begin(client, fetch_url)) {
     httpOtaDisplayReset();
     strcpy(reply, "ERR: HTTP begin failed");
     return true;
