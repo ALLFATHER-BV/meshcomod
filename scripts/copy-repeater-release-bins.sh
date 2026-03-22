@@ -40,11 +40,13 @@ copy_one_optional() {
   echo "Copied -> prebuilt/$dest_name and $RELDIR/$dest_name"
 }
 
-# Newest by mtime when multiple same-version bins exist (matches copy-release-bins.sh)
-V4_PLAIN=$(ls -t out/heltec_v4_repeater_tcp-${VERSION}-*.bin 2>/dev/null | grep -v merged | head -1)
-V4_MERGED=$(ls -t out/heltec_v4_repeater_tcp-${VERSION}-*-merged.bin 2>/dev/null | head -1)
-V3_PLAIN=$(ls -t out/Heltec_v3_repeater_tcp-${VERSION}-*.bin 2>/dev/null | grep -v merged | head -1)
-V3_MERGED=$(ls -t out/Heltec_v3_repeater_tcp-${VERSION}-*-merged.bin 2>/dev/null | head -1)
+# Newest by mtime when multiple same-version bins exist (matches copy-release-bins.sh).
+# build.sh names images either heltec_v4_repeater_tcp-${VERSION}-<sha>.bin or
+# heltec_v4_repeater_tcp-meshcomod-${VERSION}-<sha>.bin (meshcomod- prefix on FIRMWARE_VERSION).
+V4_PLAIN=$(ls -t out/heltec_v4_repeater_tcp-"${VERSION}"-*.bin out/heltec_v4_repeater_tcp-meshcomod-"${VERSION}"-*.bin 2>/dev/null | grep -v merged | head -1)
+V4_MERGED=$(ls -t out/heltec_v4_repeater_tcp-"${VERSION}"-*-merged.bin out/heltec_v4_repeater_tcp-meshcomod-"${VERSION}"-*-merged.bin 2>/dev/null | head -1)
+V3_PLAIN=$(ls -t out/Heltec_v3_repeater_tcp-"${VERSION}"-*.bin out/Heltec_v3_repeater_tcp-meshcomod-"${VERSION}"-*.bin 2>/dev/null | grep -v merged | head -1)
+V3_MERGED=$(ls -t out/Heltec_v3_repeater_tcp-"${VERSION}"-*-merged.bin out/Heltec_v3_repeater_tcp-meshcomod-"${VERSION}"-*-merged.bin 2>/dev/null | head -1)
 
 copy_one "$V4_PLAIN" "heltec_v4_repeater_tcp.bin"
 copy_one_optional "$V4_MERGED" "heltec_v4_repeater_tcp-merged.bin"

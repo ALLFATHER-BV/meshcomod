@@ -3,7 +3,8 @@
 #include <stdint.h>
 
 /* Subset of meshcomod companion framing. */
-#define REPEATER_COMPANION_FIRMWARE_VER_CODE 26
+/** Device query layout: firmware string is 40 bytes at offset 60 (was 20); total payload 102 bytes. */
+#define REPEATER_COMPANION_FIRMWARE_VER_CODE 27
 
 #define CMD_APP_START                 1
 #define CMD_SEND_TXT_MSG              2

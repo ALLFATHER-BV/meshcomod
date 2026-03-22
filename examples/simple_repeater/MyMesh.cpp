@@ -1855,7 +1855,7 @@ size_t MyMesh::handleRepeaterTcpCompanionCommand(const uint8_t *cmd, size_t cmd_
 
   if (c[0] == CMD_DEVICE_QUERY && len >= 2) {
     size_t i = 0;
-    if (out_cap < 82) return 0;
+    if (out_cap < 102) return 0;
     (void)c[1];  // app protocol version (companion stores per client)
     out[i++] = RESP_CODE_DEVICE_INFO;
     out[i++] = REPEATER_COMPANION_FIRMWARE_VER_CODE;
@@ -1868,8 +1868,9 @@ size_t MyMesh::handleRepeaterTcpCompanionCommand(const uint8_t *cmd, size_t cmd_
     i += 12;
     StrHelper::strzcpy((char *)&out[i], board.getManufacturerName(), 40);
     i += 40;
-    StrHelper::strzcpy((char *)&out[i], FIRMWARE_VERSION, 20);
-    i += 20;
+    memset((void *)&out[i], 0, 40);
+    StrHelper::strncpy((char *)&out[i], FIRMWARE_VERSION, 40);
+    i += 40;
     out[i++] = 0;  // client_repeat (not persisted on repeater prefs)
     out[i++] = _prefs.path_hash_mode;
     return i;

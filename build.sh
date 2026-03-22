@@ -43,6 +43,7 @@ Environment Variables:
   REPEATER_FIRMWARE_VERSION: For env names ending in _repeater_tcp only, overrides FIRMWARE_VERSION
                    for the compile-time version string and out/ filenames — use a repeater-specific
                    label (e.g. repeater-1.0.0) so TCP repeater releases are not tied to companion v1.14.x.
+                   The built-in version macro is prefixed with meshcomod- (e.g. meshcomod-repeater-1.0.0-<sha>).
 
 Examples:
 Build without debug logging:
@@ -156,6 +157,10 @@ build_firmware() {
   # set firmware version string
   # e.g: v1.0.0-abcdef or repeater-1.0.0-abcdef
   FIRMWARE_VERSION_STRING="${EFFECTIVE_FW_VERSION}-${COMMIT_HASH}"
+  # TCP repeater: visible identity includes meshcomod (OLED, device query, out/ filenames).
+  if [[ "$1" == *_repeater_tcp ]]; then
+    FIRMWARE_VERSION_STRING="meshcomod-${FIRMWARE_VERSION_STRING}"
+  fi
 
   # craft filename
   # e.g: RAK_4631_Repeater-v1.0.0-SHA

@@ -1,5 +1,7 @@
 #include "UITask.h"
 #include <Arduino.h>
+#include <cctype>
+#include <cstring>
 #include <helpers/CommonCLI.h>
 
 #if defined(REPEATER_TCP_COMPANION) && defined(ESP32) && defined(DISPLAY_CLASS) && defined(PIN_USER_BTN)
@@ -21,6 +23,10 @@ extern MyMesh the_mesh;
 #define WS_PORT 8765
 #endif
 
+#ifndef REPEATER_TCP_SPLASH_MS
+#define REPEATER_TCP_SPLASH_MS 3000
+#endif
+
 namespace {
 
 enum { PAGE_RADIO = 0, PAGE_NETWORK = 1, PAGE_WS = 2, PAGE_ADVERT = 3, PAGE_COUNT = 4 };
@@ -32,6 +38,54 @@ unsigned long s_alert_expiry;
 static void set_alert(const char *text, unsigned ms) {
   StrHelper::strncpy(s_alert, text, sizeof(s_alert));
   s_alert_expiry = millis() + ms;
+}
+
+/** Drop trailing `-<githex>` for splash (same idea as companion ui-new SplashScreen). */
+static void repeater_tcp_boot_version_line(char *out, size_t cap, const char *ver) {
+  if (!out || cap < 2) return;
+  const char *last = strrchr(ver, '-');
+  if (last && last > ver + 4) {
+    size_t tail = strlen(last + 1);
+    bool hex = tail >= 6 && tail <= 9;
+    for (const char *p = last + 1; hex && *p; p++) {
+      if (!isxdigit((unsigned char)*p)) hex = false;
+    }
+    if (hex) {
+      size_t n = (size_t)(last - ver);
+      if (n >= cap) n = cap - 1;
+      memcpy(out, ver, n);
+      out[n] = '\0';
+      return;
+    }
+  }
+  StrHelper::strncpy(out, ver, cap);
+}
+
+static void render_repeater_tcp_boot_splash(DisplayDriver &display) {
+  char ver_line[44];
+  repeater_tcp_boot_version_line(ver_line, sizeof(ver_line), FIRMWARE_VERSION);
+
+  display.setColor(DisplayDriver::LIGHT);
+  display.setTextSize(2);
+  display.drawTextCentered(display.width() / 2, 4, "meshcomod");
+
+  display.setTextSize(1);
+  int vw = display.getTextWidth(ver_line);
+  if (vw <= display.width() - 4) {
+    display.drawTextCentered(display.width() / 2, 22, ver_line);
+  } else {
+    size_t n = strlen(ver_line);
+    size_t split = n > 18 ? 18 : n / 2;
+    char a[22], b[sizeof(ver_line)];
+    memcpy(a, ver_line, split);
+    a[split] = '\0';
+    snprintf(b, sizeof(b), "%s", ver_line + split);
+    display.drawTextCentered(display.width() / 2, 20, a);
+    display.drawTextCentered(display.width() / 2, 30, b);
+  }
+
+  display.drawTextCentered(display.width() / 2, 42, FIRMWARE_BUILD_DATE);
+  display.drawTextCentered(display.width() / 2, 54, "Repeater");
 }
 
 static void render_repeater_tcp_home(DisplayDriver &display, NodePrefs *prefs) {
@@ -262,18 +316,31 @@ void UITask::begin(NodePrefs* node_prefs, const char* build_date, const char* fi
   _node_prefs = node_prefs;
   _display->turnOn();
 
+#if defined(REPEATER_TCP_COMPANION) && defined(ESP32) && defined(DISPLAY_CLASS) && defined(PIN_USER_BTN)
+  (void)build_date;
+  StrHelper::strncpy(_version_info, firmware_version, sizeof(_version_info));
+#else
   char *version = strdup(firmware_version);
-  char *dash = strchr(version, '-');
-  if (dash) {
-    *dash = 0;
+  if (version) {
+    char *dash = strchr(version, '-');
+    if (dash) {
+      *dash = 0;
+    }
+    snprintf(_version_info, sizeof(_version_info), "%s (%s)", version, build_date);
+    free(version);
+  } else {
+    _version_info[0] = '\0';
   }
-
-  sprintf(_version_info, "%s (%s)", version, build_date);
+#endif
 }
 
 void UITask::renderCurrScreen() {
 #if defined(REPEATER_TCP_COMPANION) && defined(ESP32) && defined(DISPLAY_CLASS) && defined(PIN_USER_BTN)
-  if (millis() >= BOOT_SCREEN_MILLIS) {
+  if (millis() < REPEATER_TCP_SPLASH_MS) {
+    render_repeater_tcp_boot_splash(*_display);
+    return;
+  }
+  if (millis() >= REPEATER_TCP_SPLASH_MS) {
     if (g_meshcore_http_ota_display_active) {
       _display->setTextSize(1);
       render_http_ota_screen(*_display);
@@ -341,7 +408,7 @@ void UITask::loop() {
   if (millis() >= _next_read) {
     int ev = user_btn.check();
     char c = 0;
-    const bool boot_done = (millis() >= BOOT_SCREEN_MILLIS);
+    const bool boot_done = (millis() >= REPEATER_TCP_SPLASH_MS);
     if (ev == BUTTON_EVENT_CLICK) {
       if (!_display->isOn()) {
         _display->turnOn();

@@ -32,7 +32,7 @@ python3 -m platformio run -e heltec_v4_repeater_tcp
 
 To match **companion** release folders for your **flasher** or app bundles:
 
-1. Set **`REPEATER_FIRMWARE_VERSION=repeater-X.Y.Z`** (repeater’s **own** release train, not companion `v1.14.x`) and run **`sh build.sh build-repeater-firmwares`** so `out/` contains names like **`heltec_v4_repeater_tcp-repeater-1.0.0-<gitsha>.bin`**.
+1. Set **`REPEATER_FIRMWARE_VERSION=repeater-X.Y.Z`** (repeater’s **own** release train, not companion `v1.14.x`) and run **`sh build.sh build-repeater-firmwares`** so `out/` contains names like **`heltec_v4_repeater_tcp-meshcomod-repeater-1.0.0-<gitsha>.bin`** (the **`meshcomod-`** prefix is added by **`build.sh`** to the compile-time version string).
 2. Run **`sh scripts/copy-repeater-release-bins.sh repeater-X.Y.Z`** from **`MeshCore/`**.
 
 That copies into:

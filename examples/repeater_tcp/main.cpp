@@ -112,12 +112,7 @@ void setup() {
   lastActive = millis();
 
 #ifdef DISPLAY_CLASS
-  if (display.begin()) {
-    display.startFrame();
-    display.setCursor(0, 0);
-    display.print("Please wait...");
-    display.endFrame();
-  }
+  display.begin();
 #endif
 
   if (!radio_init()) {

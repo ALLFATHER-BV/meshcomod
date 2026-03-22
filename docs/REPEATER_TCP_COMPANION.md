@@ -46,16 +46,18 @@ python3 -m platformio run -e heltec_v4_repeater_tcp
 
    **Progress (MESHCM / repeater.meshcomod.com):** During the download, the firmware may push **additional** **`0x8C`** frames with the **same 4-byte tag** as the pending CLI reply. Bodies are UTF-8 lines, typically prefixed with **`OTA:`** (e.g. `OTA: connecting`, `OTA: HTTP OK, flashing`, `OTA: downloading 42%`, `OTA: verifying`, `OTA: rebooting`, or `OTA: ERR …` on failure). The web client should **`SyncNextMessage`** while OTA runs (as for Debug CLI) to drain these. **Heltec OLED (`SSD1306`):** While URL OTA is active, the display switches to a full-screen **WiFi OTA** view: status line, progress bar (percent when `Content-Length` is known, else an indeterminate animation), and **do not power off**.
 
-**Flasher / release bundles:** repeater uses **`repeater-X.Y.Z`** versioning (not companion `v1.14.x`). Build with **`REPEATER_FIRMWARE_VERSION`**, then **`scripts/copy-repeater-release-bins.sh`** — binaries land under **`prebuilt/`** and **`prebuilt/releases/repeater-X.Y.Z/`**. See [`REPEATER_RELEASE_PROCEDURE.md`](REPEATER_RELEASE_PROCEDURE.md), [`prebuilt/README.md`](../prebuilt/README.md), [`WHERE_IS_REPEATER_FIRMWARE.md`](../WHERE_IS_REPEATER_FIRMWARE.md).
+**Flasher / release bundles:** repeater uses **`repeater-X.Y.Z`** versioning (not companion `v1.14.x`). **`build.sh`** prefixes the compile-time **`FIRMWARE_VERSION`** macro with **`meshcomod-`** on **`*_repeater_tcp`** targets (e.g. `meshcomod-repeater-1.0.4-<gitsha>`) so OLED, serial, and device query show the meshcomod identity. Build with **`REPEATER_FIRMWARE_VERSION`**, then **`scripts/copy-repeater-release-bins.sh`** — binaries land under **`prebuilt/`** and **`prebuilt/releases/repeater-X.Y.Z/`**. See [`REPEATER_RELEASE_PROCEDURE.md`](REPEATER_RELEASE_PROCEDURE.md), [`prebuilt/README.md`](../prebuilt/README.md), [`WHERE_IS_REPEATER_FIRMWARE.md`](../WHERE_IS_REPEATER_FIRMWARE.md).
 
 ### OLED UI (Heltec V4 `heltec_v4_repeater_tcp`)
 
 Heltec V3 **`Heltec_v3_repeater_tcp`** uses the same OLED behaviour when **`DISPLAY_CLASS`** is set.
 
+**Boot splash** (~3 s, same spirit as companion **ui-new**): **`meshcomod`** (large), firmware version (trailing **`-<gitsha>`** hidden on screen if it looks like a short hex SHA), **`FIRMWARE_BUILD_DATE`**, then **Repeater**. After that, the multi-page UI runs as before.
+
 After the boot splash, the user button matches the **companion-style** flow where possible:
 
-- **Short press** — next page (four pages: radio summary, **network** status, **WebSocket** URL/status, advert). Page changes are ignored during the **boot splash** (~4 s) so presses don’t skip past the network screen unseen.
-- **Double-click** — previous page (also ignored during boot splash).
+- **Short press** — next page (four pages: radio summary, **network** status, **WebSocket** URL/status, advert). Page changes are ignored during the **boot splash** (~3 s) so presses don’t skip past the network screen unseen.
+- **Double-click** — previous page (also ignored during ~3 s boot splash).
 - **Long press (first ~8 s after boot)** — USB CLI banner (WiFi `set` commands hint), like companion “rescue” timing.
 - **Long press on network page** (after splash, after rescue window) — toggle **TCP + WebSocket** off/on together (`repeater_transport_enabled`).
 - **Long press on advert page** — send **flood** advert (short press only advances to the next page, same as companion-style paging).
@@ -64,7 +66,7 @@ After the boot splash, the user button matches the **companion-style** flow wher
 
 | Cmd | Name | Behaviour |
 |-----|------|-----------|
-| 22 | Device query | `RESP` 13 device info; repeater reports **0** contacts / **0** channels, **0** BLE PIN, **0** `client_repeat`; `path_hash_mode` from prefs. |
+| 22 | Device query | `RESP` 13 device info; repeater reports **0** contacts / **0** channels, **0** BLE PIN, **0** `client_repeat`; `path_hash_mode` from prefs. **Firmware string** is **40 bytes** at offset **60** (total payload **102** bytes); **`REPEATER_COMPANION_FIRMWARE_VER_CODE`** **27**+ (meshcomod clients: `parseDeviceInfoBinaryV10` when `payload.length >= 102`). Older repeaters used **20** bytes / **82** bytes total. |
 | 1 | App start | `RESP` 5 self info; advert type **repeater** (`ADV_TYPE_REPEATER`). |
 | 2 | Send text (Meshcomod) | To pubkey prefix **`MESHCM`**: **`TXT_TYPE_PLAIN`** → **wifi** / **help** / **status** only; replies `SENT`, `CONFIRMED`, `CONTACT_MSG_RECV_V3`, `MSG_WAITING`. **`TXT_TYPE_CLI_DATA`** → **same CLI as USB** (`get`/`set advert.interval`, `get`/`set flood.advert.interval`, etc.); replies `SENT` then **`PUSH_CODE_BINARY_RESPONSE` (0x8C)** = `[8C][0][tag 4 LE][UTF-8 output]` + `MSG_WAITING` (no code 16). Other destinations → `ERR` unsupported. |
 | 4 | Get contacts | `RESP` 2 with count **0** (meshcomod resolves immediately). |
