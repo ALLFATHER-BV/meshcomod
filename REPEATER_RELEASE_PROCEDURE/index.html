@@ -942,6 +942,7 @@ sh build.sh build-repeater-firmwares
 <hr />
 <h2 id="4-commit-and-push">4. Commit (and push)</h2>
 <p>Stage the new <strong><code>prebuilt/releases/repeater-X.Y.Z/</code></strong> tree, updated root <strong><code>prebuilt/*repeater_tcp.bin</code></strong>, and any doc/script changes. Do not reuse companion <strong><code>prebuilt/releases/v1.14.0.*/</code></strong> folders for repeater binaries.</p>
+<p><strong>Git tag (optional):</strong> You can still create and push <strong><code>repeater-X.Y.Z</code></strong> tags for bookkeeping; that does <strong>not</strong> trigger firmware CI. The canonical binaries for flasher / OTA are the ones in <strong><code>prebuilt/</code></strong> on <strong><code>main</code></strong>. To run a slow CI build anyway, use <strong>Actions → Build Repeater Firmwares → Run workflow</strong> and enter the same version string.</p>
 <hr />
 <h2 id="summary">Summary</h2>
 <table>
