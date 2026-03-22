@@ -6,6 +6,7 @@
 #include <cstring>
 #include <strings.h>
 #include <helpers/esp32/WifiRuntimeStore.h>
+#include <helpers/RepeaterTcpOtaEmit.h>
 extern void repeater_on_wifi_radio_toggled();
 #endif
 
@@ -1787,6 +1788,35 @@ static bool handleRepeaterMeshcomodLine(MyMesh *mesh, const char *text, int text
 
 }  // namespace
 
+#if defined(REPEATER_TCP_COMPANION) && defined(ESP32)
+namespace {
+
+struct TcpOtaEmitState {
+  void (*emit)(void *, const uint8_t *, size_t);
+  void *ctx;
+  uint32_t tag;
+  bool active;
+};
+
+TcpOtaEmitState s_tcp_ota_emit{};
+
+}  // namespace
+
+void meshcoreRepeaterTcpOtaEmitBegin(void (*emit)(void *, const uint8_t *, size_t), void *ctx, uint32_t tag) {
+  s_tcp_ota_emit.emit = emit;
+  s_tcp_ota_emit.ctx = ctx;
+  s_tcp_ota_emit.tag = tag;
+  s_tcp_ota_emit.active = emit != nullptr;
+}
+
+void meshcoreRepeaterTcpOtaEmitEnd() { s_tcp_ota_emit = {}; }
+
+void meshcoreRepeaterTcpOtaEmitLine(const char *line) {
+  if (!s_tcp_ota_emit.active || !line || !line[0]) return;
+  repeaterEmitBinaryCliResponse(s_tcp_ota_emit.emit, s_tcp_ota_emit.ctx, s_tcp_ota_emit.tag, line);
+}
+#endif
+
 void MyMesh::enterCLIRescue() {
   Serial.println();
   Serial.println("========= USB serial CLI =========");
@@ -2195,10 +2225,12 @@ size_t MyMesh::handleRepeaterTcpCompanionCommand(const uint8_t *cmd, size_t cmd_
       // Same CLI as USB serial; response only via push 0x8C (no CONTACT_MSG_RECV_V3, no send-confirmed ack).
       char tcp_cli_reply[320];
       tcp_cli_reply[0] = '\0';
+      meshcoreRepeaterTcpOtaEmitBegin(emit_extra, emit_ctx, expected_ack);
       if (tlen > 0) {
         text[tlen] = '\0';
         this->handleCommand(msg_timestamp, text, tcp_cli_reply);
       }
+      meshcoreRepeaterTcpOtaEmitEnd();
       repeaterEmitBinaryCliResponse(emit_extra, emit_ctx, expected_ack, tcp_cli_reply);
       return 0;
     }

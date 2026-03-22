@@ -4,6 +4,7 @@
 
 #if defined(REPEATER_TCP_COMPANION) && defined(ESP32) && defined(DISPLAY_CLASS) && defined(PIN_USER_BTN)
 #include <WiFi.h>
+#include <helpers/HttpOtaDisplayState.h>
 #include "MyMesh.h"
 #include <helpers/TxtDataHelpers.h>
 #include <helpers/esp32/WifiRuntimeStore.h>
@@ -192,6 +193,39 @@ static void draw_page_dots(DisplayDriver &display) {
   }
 }
 
+static void render_http_ota_screen(DisplayDriver &display) {
+  display.setTextSize(1);
+  display.setColor(DisplayDriver::GREEN);
+  display.drawTextCentered(display.width() / 2, 6, "WiFi OTA");
+  display.setColor(DisplayDriver::YELLOW);
+  display.drawTextCentered(display.width() / 2, 20, g_meshcore_http_ota_display_line);
+  int bw = display.width() - 8;
+  int bx = 4;
+  int by = 34;
+  display.setColor(DisplayDriver::DARK);
+  display.fillRect(bx, by, bw, 10);
+  display.setColor(DisplayDriver::LIGHT);
+  display.drawRect(bx, by, bw, 10);
+  int pct = (int)(unsigned)g_meshcore_http_ota_display_pct;
+  if (pct >= 0 && pct <= 100) {
+    int fill = (bw - 2) * pct / 100;
+    if (fill > 0) {
+      display.setColor(DisplayDriver::GREEN);
+      display.fillRect(bx + 1, by + 1, fill, 8);
+    }
+  } else {
+    display.setColor(DisplayDriver::GREEN);
+    int seg = (bw - 2) / 4;
+    if (seg > 2) {
+      uint32_t t = millis() / 400;
+      int phase = (int)(t % 4);
+      display.fillRect(bx + 1 + phase * seg, by + 2, seg - 2, 6);
+    }
+  }
+  display.setColor(DisplayDriver::LIGHT);
+  display.drawTextCentered(display.width() / 2, 50, "do not power off");
+}
+
 }  // namespace
 #endif
 
@@ -240,6 +274,11 @@ void UITask::begin(NodePrefs* node_prefs, const char* build_date, const char* fi
 void UITask::renderCurrScreen() {
 #if defined(REPEATER_TCP_COMPANION) && defined(ESP32) && defined(DISPLAY_CLASS) && defined(PIN_USER_BTN)
   if (millis() >= BOOT_SCREEN_MILLIS) {
+    if (g_meshcore_http_ota_display_active) {
+      _display->setTextSize(1);
+      render_http_ota_screen(*_display);
+      return;
+    }
     _display->setTextSize(1);
     draw_page_dots(*_display);
     if (s_page == PAGE_RADIO) {
@@ -373,7 +412,11 @@ void UITask::loop() {
       _display->startFrame();
       renderCurrScreen();
       _display->endFrame();
+#if defined(REPEATER_TCP_COMPANION) && defined(ESP32) && defined(DISPLAY_CLASS) && defined(PIN_USER_BTN)
+      _next_refresh = millis() + (g_meshcore_http_ota_display_active ? 250UL : 1000UL);
+#else
       _next_refresh = millis() + 1000;
+#endif
     }
     if (millis() > _auto_off) {
       _display->turnOff();

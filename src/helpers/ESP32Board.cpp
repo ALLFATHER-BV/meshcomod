@@ -1,6 +1,14 @@
 #ifdef ESP_PLATFORM
 
 #include "ESP32Board.h"
+#include <Arduino.h>
+#include <cstring>
+#include <helpers/HttpOtaDisplayState.h>
+#include <helpers/RepeaterTcpOtaEmit.h>
+
+volatile int g_meshcore_http_ota_display_active = 0;
+volatile uint8_t g_meshcore_http_ota_display_pct = 0xFF;
+char g_meshcore_http_ota_display_line[28] = {0};
 
 #if defined(ADMIN_PASSWORD) && !defined(DISABLE_WIFI_OTA)   // Repeater or Room Server only
 #include <WiFi.h>
@@ -15,6 +23,48 @@
 #include <Update.h>
 
 static volatile bool s_http_ota_reboot_pending = false;
+
+static void httpOtaDisplayReset() {
+  g_meshcore_http_ota_display_active = 0;
+  g_meshcore_http_ota_display_pct = 0xFF;
+  g_meshcore_http_ota_display_line[0] = '\0';
+}
+
+static void httpOtaDisplaySet(uint8_t pct, const char *line) {
+  g_meshcore_http_ota_display_active = 1;
+  g_meshcore_http_ota_display_pct = pct;
+  if (line) {
+    strncpy(g_meshcore_http_ota_display_line, line, sizeof(g_meshcore_http_ota_display_line) - 1);
+    g_meshcore_http_ota_display_line[sizeof(g_meshcore_http_ota_display_line) - 1] = '\0';
+  }
+}
+
+static unsigned long s_http_ota_last_emit_ms;
+static uint8_t s_http_ota_last_emit_pct = 0xFF;
+
+static void httpOtaEmitProgressThrottled(int clen, size_t total_written, const char *fallback_line) {
+  uint8_t pct = 0xFF;
+  if (clen > 0) {
+    pct = (uint8_t)((total_written * 100ULL) / (size_t)clen);
+    if (pct > 100) pct = 100;
+  }
+  httpOtaDisplaySet(pct, fallback_line);
+
+  unsigned long now = millis();
+  bool pct_jump = (clen > 0 && s_http_ota_last_emit_pct != 0xFF &&
+                   (pct >= s_http_ota_last_emit_pct + 5 || pct == 100));
+  if (now - s_http_ota_last_emit_ms < 450 && !pct_jump && s_http_ota_last_emit_ms != 0) return;
+  s_http_ota_last_emit_ms = now;
+  s_http_ota_last_emit_pct = pct;
+
+  char line[96];
+  if (clen > 0) {
+    snprintf(line, sizeof(line), "OTA: downloading %u%%", (unsigned)pct);
+  } else {
+    snprintf(line, sizeof(line), "OTA: downloading (%u KB)", (unsigned)(total_written / 1024));
+  }
+  meshcoreRepeaterTcpOtaEmitLine(line);
+}
 
 /** App-only OTA: allow GitHub raw URLs and meshcomod flasher/repeater firmware-download proxy paths. */
 static bool meshcoreHttpOtaUrlAllowed(const char* u) {
@@ -61,6 +111,8 @@ bool ESP32Board::startOTAUpdate(const char* id, char reply[]) {
 
 bool ESP32Board::startHttpOtaFromUrl(const char* url, char* reply) {
   if (!url || !reply) return false;
+  s_http_ota_last_emit_ms = 0;
+  s_http_ota_last_emit_pct = 0xFF;
   if (!meshcoreHttpOtaUrlAllowed(url)) {
     strcpy(reply, "ERR: URL not allowed");
     return true;
@@ -72,6 +124,9 @@ bool ESP32Board::startHttpOtaFromUrl(const char* url, char* reply) {
 
   inhibit_sleep = true;
 
+  httpOtaDisplaySet(0xFF, "OTA: connecting");
+  meshcoreRepeaterTcpOtaEmitLine("OTA: connecting");
+
   WiFiClientSecure client;
   client.setInsecure();
 
@@ -82,6 +137,7 @@ bool ESP32Board::startHttpOtaFromUrl(const char* url, char* reply) {
 #endif
 
   if (!https.begin(client, url)) {
+    httpOtaDisplayReset();
     strcpy(reply, "ERR: HTTP begin failed");
     return true;
   }
@@ -90,6 +146,7 @@ bool ESP32Board::startHttpOtaFromUrl(const char* url, char* reply) {
   if (code != HTTP_CODE_OK) {
     snprintf(reply, 128, "ERR: HTTP %d", code);
     https.end();
+    httpOtaDisplayReset();
     return true;
   }
 
@@ -98,24 +155,32 @@ bool ESP32Board::startHttpOtaFromUrl(const char* url, char* reply) {
   if (!stream) {
     strcpy(reply, "ERR: no stream");
     https.end();
+    httpOtaDisplayReset();
     return true;
   }
+
+  httpOtaDisplaySet(0, "OTA: install started");
+  meshcoreRepeaterTcpOtaEmitLine("OTA: HTTP OK, flashing");
 
   if (!Update.begin(clen > 0 ? (size_t)clen : UPDATE_SIZE_UNKNOWN)) {
     snprintf(reply, 128, "ERR: %s", Update.errorString());
     https.end();
+    httpOtaDisplayReset();
     return true;
   }
 
   uint8_t buf[512];
   int remaining = clen;
   unsigned long t0 = millis();
+  size_t total_written = 0;
 
   while (https.connected() && (remaining > 0 || remaining == -1)) {
     if (millis() - t0 > 180000UL) {
       Update.abort();
       https.end();
+      httpOtaDisplayReset();
       strcpy(reply, "ERR: timeout");
+      meshcoreRepeaterTcpOtaEmitLine("OTA: ERR timeout");
       return true;
     }
 
@@ -124,6 +189,7 @@ bool ESP32Board::startHttpOtaFromUrl(const char* url, char* reply) {
       if (remaining == 0) break;
       if (remaining < 0 && !stream->connected() && !av) break;
       delay(2);
+      yield();
       continue;
     }
 
@@ -135,20 +201,33 @@ bool ESP32Board::startHttpOtaFromUrl(const char* url, char* reply) {
       snprintf(reply, 128, "ERR: write %s", Update.errorString());
       Update.abort();
       https.end();
+      httpOtaDisplayReset();
+      meshcoreRepeaterTcpOtaEmitLine("OTA: ERR flash write");
       return true;
     }
 
+    total_written += (size_t)rd;
     if (remaining > 0) remaining -= rd;
+
+    httpOtaEmitProgressThrottled(clen, total_written, "OTA: downloading");
+    yield();
   }
 
   https.end();
 
+  httpOtaDisplaySet(100, "OTA: verifying");
+  meshcoreRepeaterTcpOtaEmitLine("OTA: verifying");
+
   if (!Update.end(true)) {
     snprintf(reply, 128, "ERR: %s", Update.errorString());
+    httpOtaDisplayReset();
+    meshcoreRepeaterTcpOtaEmitLine("OTA: ERR verify");
     return true;
   }
 
   strcpy(reply, "> OK rebooting");
+  httpOtaDisplaySet(100, "OTA: rebooting");
+  meshcoreRepeaterTcpOtaEmitLine("OTA: rebooting");
   s_http_ota_reboot_pending = true;
   return true;
 }
