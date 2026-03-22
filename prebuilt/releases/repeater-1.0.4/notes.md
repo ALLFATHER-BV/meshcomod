@@ -2,7 +2,7 @@
 
 **TCP repeater prebuilt** (Heltec WiFi LoRa 32 **V4** + **V3**). Train: **`repeater-X.Y.Z`**, independent of companion **`v1.14.0.x`**.
 
-**Compile-time version string:** `repeater-1.0.4-85fd8070` (git SHA at link).
+**Compile-time version string:** `repeater-1.0.4-cc27eca2` (git SHA at link).
 
 **Changes vs repeater-1.0.3**
 
