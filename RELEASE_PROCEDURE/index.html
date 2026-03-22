@@ -981,7 +981,7 @@
 
 <h1 id="release-procedure-companion-firmware">Release procedure (companion firmware)</h1>
 <p>Use this for every new fix or release. <strong>Rule: every release gets a new version number; never overwrite an existing version’s binaries.</strong></p>
-<p>Current latest version in the repo: <strong>v1.14.0.34</strong> (bump to next for the following release).</p>
+<p>Current latest version in the repo: <strong>v1.14.0.35</strong> (bump to next for the following release).</p>
 <hr />
 <h2 id="1-bump-version">1. Bump version</h2>
 <ul>
@@ -997,9 +997,10 @@
 
 sh build.sh build-firmware heltec_v4_companion_radio_usb_tcp
 sh build.sh build-firmware Heltec_v3_companion_radio_usb_tcp
+sh build.sh build-firmware heltec_v4_tft_companion_radio_usb_tcp_touch
 </code></pre>
 <ul>
-<li>Builds go to <code>out/</code>. For ESP32, <strong><code>firmware.bin</code> (app image) only</strong> is copied to <code>out/</code>; run <code>pio run -t mergebin -e &lt;env&gt;</code> if you need <code>firmware-merged.bin</code> under <code>.pio/build/</code>.</li>
+<li>Builds go to <code>out/</code>. For ESP32 meshcomod <strong><code>companion_radio_usb_tcp*</code></strong> envs, <strong><code>build.sh</code> also runs <code>mergebin</code></strong> and copies <strong><code>…-merged.bin</code></strong> next to the app-only bin (same flow for OLED V4, V3, and TFT+touch V4).</li>
 <li>Both runs add their bins to <code>out/</code> (script does not clear <code>out/</code> for <code>build-firmware</code>).</li>
 </ul>
 <hr />
@@ -1007,7 +1008,7 @@ sh build.sh build-firmware Heltec_v3_companion_radio_usb_tcp
 <pre><code class="language-bash">sh scripts/copy-release-bins.sh v1.14.0.20
 </code></pre>
 <ul>
-<li>Copies the four bins from <code>out/</code> into:</li>
+<li>Copies the companion binaries from <code>out/</code> into:</li>
 <li><strong><code>prebuilt/</code></strong> (latest)</li>
 <li><strong><code>prebuilt/releases/v1.14.0.20/</code></strong> (versioned)</li>
 <li>Script expects versioned filenames in <code>out/</code> (e.g. <code>heltec_v4_companion_radio_usb_tcp-v1.14.0.20-...bin</code>).</li>
@@ -1025,7 +1026,7 @@ sh build.sh build-firmware Heltec_v3_companion_radio_usb_tcp
 </li>
 <li>Version and date</li>
 <li>Highlights (bullet list)</li>
-<li>Table with links to the four binaries in <code>prebuilt/releases/v1.14.0.20/</code></li>
+<li>Table with links to the binaries in <code>prebuilt/releases/v1.14.0.20/</code> (V4 OLED, V4 TFT+touch, V3 — merged + non-merged where applicable)</li>
 </ul>
 <p>Use the existing v1.14.0.19 block in <code>RELEASES.md</code> as the template (heading, <strong>Firmware version</strong>, <strong>Highlights</strong>, <strong>Prebuilt binaries</strong> table).</p>
 <hr />
