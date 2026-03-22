@@ -1020,10 +1020,6 @@ sh build.sh build-firmware Heltec_v3_companion_radio_usb_tcp
   Add release notes (highlights, fixes, build date).</p>
 </li>
 <li>
-<p><strong>meshcomod-client (optional, local flasher)</strong><br />
-  If you use <strong>MeshCore</strong> and <strong>meshcomod-client</strong> side by side, run from meshcomod-client root: <strong><code>node scripts/sync-meshcore-prebuilt-for-flasher.mjs</code></strong> (or <strong><code>npm run dev</code></strong> in <strong><code>apps/web-flasher</code></strong>, which runs this in <strong><code>predev</code></strong>). That copies <strong><code>MeshCore/prebuilt</code></strong> into the flasher’s <strong><code>public/firmware-download/</code></strong> and merges version folders into the dropdown before <strong><code>ALLFATHER-BV/meshcomod</code></strong> on GitHub is updated. Production <strong>flasher.meshcomod.com</strong> still requires <strong><code>git push</code></strong> so GitHub serves the new <strong><code>prebuilt/releases/</code></strong> tree.</p>
-</li>
-<li>
 <p><strong><code>RELEASES.md</code></strong><br />
   Add a new section at the <strong>top</strong> (below “Release process”):</p>
 </li>
