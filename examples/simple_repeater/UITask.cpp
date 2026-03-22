@@ -40,52 +40,63 @@ static void set_alert(const char *text, unsigned ms) {
   s_alert_expiry = millis() + ms;
 }
 
-/** Drop trailing `-<githex>` for splash (same idea as companion ui-new SplashScreen). */
-static void repeater_tcp_boot_version_line(char *out, size_t cap, const char *ver) {
-  if (!out || cap < 2) return;
-  const char *last = strrchr(ver, '-');
-  if (last && last > ver + 4) {
+/**
+ * Match companion_radio ui-new SplashScreen on the same Heltec OLED: `_version_info[12]`, y=4/24/44,
+ * text sizes 2/2/1, drawTextCentered only.
+ * Strip trailing `-<githex>` then drop leading `meshcomod-` on the second line (title already says meshcomod).
+ */
+static void repeater_tcp_splash_version_buf(char out[12], const char *fw) {
+  char work[40];
+  if (!fw || !fw[0]) {
+    out[0] = '\0';
+    return;
+  }
+  const char *last = strrchr(fw, '-');
+  if (last && last > fw + 4) {
     size_t tail = strlen(last + 1);
     bool hex = tail >= 6 && tail <= 9;
     for (const char *p = last + 1; hex && *p; p++) {
       if (!isxdigit((unsigned char)*p)) hex = false;
     }
     if (hex) {
-      size_t n = (size_t)(last - ver);
-      if (n >= cap) n = cap - 1;
-      memcpy(out, ver, n);
-      out[n] = '\0';
-      return;
+      size_t n = (size_t)(last - fw);
+      if (n >= sizeof(work)) n = sizeof(work) - 1;
+      memcpy(work, fw, n);
+      work[n] = '\0';
+    } else {
+      StrHelper::strncpy(work, fw, sizeof(work));
     }
+  } else {
+    StrHelper::strncpy(work, fw, sizeof(work));
   }
-  StrHelper::strncpy(out, ver, cap);
+
+  const char *s = work;
+  if (!strncmp(s, "meshcomod-", 10)) {
+    s += 10;
+  }
+
+  int len = (int)strlen(s);
+  if (len >= (int)sizeof(out)) {
+    len = (int)sizeof(out) - 1;
+  }
+  memcpy(out, s, (size_t)len);
+  out[len] = '\0';
 }
 
+/** Pixel-for-pixel same layout as companion `ui-new/UITask.cpp` SplashScreen::render(). */
 static void render_repeater_tcp_boot_splash(DisplayDriver &display) {
-  char ver_line[44];
-  repeater_tcp_boot_version_line(ver_line, sizeof(ver_line), FIRMWARE_VERSION);
+  char ver_info[12];
+  repeater_tcp_splash_version_buf(ver_info, FIRMWARE_VERSION);
 
   display.setColor(DisplayDriver::LIGHT);
   display.setTextSize(2);
   display.drawTextCentered(display.width() / 2, 4, "meshcomod");
 
-  display.setTextSize(1);
-  int vw = display.getTextWidth(ver_line);
-  if (vw <= display.width() - 4) {
-    display.drawTextCentered(display.width() / 2, 22, ver_line);
-  } else {
-    size_t n = strlen(ver_line);
-    size_t split = n > 18 ? 18 : n / 2;
-    char a[22], b[sizeof(ver_line)];
-    memcpy(a, ver_line, split);
-    a[split] = '\0';
-    snprintf(b, sizeof(b), "%s", ver_line + split);
-    display.drawTextCentered(display.width() / 2, 20, a);
-    display.drawTextCentered(display.width() / 2, 30, b);
-  }
+  display.setTextSize(2);
+  display.drawTextCentered(display.width() / 2, 24, ver_info);
 
-  display.drawTextCentered(display.width() / 2, 42, FIRMWARE_BUILD_DATE);
-  display.drawTextCentered(display.width() / 2, 54, "Repeater");
+  display.setTextSize(1);
+  display.drawTextCentered(display.width() / 2, 44, FIRMWARE_BUILD_DATE);
 }
 
 static void render_repeater_tcp_home(DisplayDriver &display, NodePrefs *prefs) {
