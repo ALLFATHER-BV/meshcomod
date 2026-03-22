@@ -45,6 +45,8 @@ Add **`prebuilt/releases/repeater-1.0.0/notes.md`** for that drop.
 
 Stage the new **`prebuilt/releases/repeater-X.Y.Z/`** tree, updated root **`prebuilt/*repeater_tcp.bin`**, and any doc/script changes. Do not reuse companion **`prebuilt/releases/v1.14.0.*/`** folders for repeater binaries.
 
+**Git tag (optional):** You can still create and push **`repeater-X.Y.Z`** tags for bookkeeping; that does **not** trigger firmware CI. The canonical binaries for flasher / OTA are the ones in **`prebuilt/`** on **`main`**. To run a slow CI build anyway, use **Actions → Build Repeater Firmwares → Run workflow** and enter the same version string.
+
 ---
 
 ## Summary
