@@ -1,6 +1,6 @@
 # TCP repeater release procedure (prebuilt / flasher)
 
-**Repeater TCP** firmware uses its **own** release labels — **not** the companion `v1.14.0.x` line. Device query / OLED will show a string like **`repeater-1.0.0-<gitsha>`** when built for release.
+**Repeater TCP** firmware uses its **own** release labels — **not** the companion `v1.14.0.x` line. **`build.sh`** prefixes the compile-time macro with **`meshcomod-`**, so device query / OLED show a string like **`meshcomod-repeater-1.0.0-<gitsha>`**.
 
 ---
 
@@ -20,13 +20,13 @@ sh build.sh build-repeater-firmwares
 ```
 
 - You do **not** need `FIRMWARE_VERSION` for this path if `REPEATER_FIRMWARE_VERSION` is set.
-- `out/` will contain e.g. `heltec_v4_repeater_tcp-repeater-1.0.0-<sha>.bin` and the V3 analogue.
+- `out/` will contain e.g. `heltec_v4_repeater_tcp-meshcomod-repeater-1.0.0-<sha>.bin` and the V3 analogue.
 
 ---
 
 ## 3. Promote to `prebuilt/`
 
-The copy script’s `<version>` argument must equal **`REPEATER_FIRMWARE_VERSION`** exactly (the glob is `out/<env>-${VERSION}-*.bin`, e.g. **`repeater-1.0.0`**).
+The copy script’s `<version>` argument must equal **`REPEATER_FIRMWARE_VERSION`** exactly (e.g. **`repeater-1.0.0`**). It matches **`out/<env>-${VERSION}-*.bin`** and **`out/<env>-meshcomod-${VERSION}-*.bin`**.
 
 ```bash
 sh scripts/copy-repeater-release-bins.sh repeater-1.0.0
