@@ -315,6 +315,7 @@ void loop() {
   ui_task.loop();
 #endif
   rtc_clock.tick();
+  board.pollHttpOtaReboot();
 
   if (the_mesh.getNodePrefs()->powersaving_enabled && !the_mesh.hasPendingWork()) {
 #if defined(NRF52_PLATFORM)

@@ -140,6 +140,9 @@ void loop() {
   ui_task.loop();
 #endif
   rtc_clock.tick();
+#if defined(ESP32_PLATFORM)
+  board.pollHttpOtaReboot();
+#endif
 
   if (the_mesh.getNodePrefs()->powersaving_enabled && !the_mesh.hasPendingWork()) {
     #if defined(NRF52_PLATFORM)

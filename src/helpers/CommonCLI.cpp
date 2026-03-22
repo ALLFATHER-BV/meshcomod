@@ -227,6 +227,14 @@ void CommonCLI::handleCommand(uint32_t sender_timestamp, const char* command, ch
       if (!_board->startOTAUpdate(_prefs->node_name, reply)) {
         strcpy(reply, "Error");
       }
+    } else if (memcmp(command, "ota url ", 8) == 0) {
+      const char* u = command + 8;
+      while (*u == ' ' || *u == '\t') u++;
+      if (*u == 0) {
+        strcpy(reply, "ERR: missing URL");
+      } else if (!_board->startHttpOtaFromUrl(u, reply)) {
+        strcpy(reply, "ERR: OTA URL not supported");
+      }
     } else if (memcmp(command, "clock", 5) == 0) {
       uint32_t now = getRTCClock()->getCurrentTime();
       DateTime dt = DateTime(now);

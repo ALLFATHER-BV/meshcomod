@@ -348,4 +348,7 @@ void loop() {
   the_mesh.loop();
   sensors.loop();
   rtc_clock.tick();
+#if defined(ESP32_PLATFORM)
+  board.pollHttpOtaReboot();
+#endif
 }

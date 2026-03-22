@@ -38,6 +38,12 @@ python3 -m platformio run -e heltec_v4_repeater_tcp
 
 **Flash image:** use the **app-only** `firmware.bin` (PlatformIO: `.pio/build/heltec_v4_repeater_tcp/firmware.bin`, or `out/heltec_v4_repeater_tcp.bin` after a plain `pio run`). Flash at the **app partition offset** (typically **0x10000** on these ESP32-S3 images), not at 0x0, unless you also flash bootloader + partition table separately. A single **merged** file for 0x0 is optional: `python3 -m platformio run -e heltec_v4_repeater_tcp -t mergebin` → `.pio/build/heltec_v4_repeater_tcp/firmware-merged.bin` (not copied to `out/` by default).
 
+**OTA (over-the-air) updates:** the `*_repeater_tcp` envs already pull in **`esp32_ota`** (AsyncElegantOTA + ESPAsyncWebServer), same as the plain Heltec repeater.
+
+1. **`start ota`** (USB serial or MESHCM **`TXT_TYPE_CLI_DATA`**) — open AP **`MeshCore-OTA`**, HTTP **`/update`** upload (same as other ESP32 repeaters). Use a second device on that AP; not on your LAN STA at the same time.
+
+2. **`ota url <https://…>`** — while **Wi‑Fi STA is connected**, the device **GETs** an **app-only** `.bin` from an **allowlisted** HTTPS URL, writes the running app partition, then reboots. Allowed hosts/paths include **`https://raw.githubusercontent.com/…`**, **`https://github.com/…/raw/…`**, and meshcomod **`/firmware-download/`** on **`flasher.meshcomod.com`** or **`repeater.meshcomod.com`** (same nginx proxy as the web flasher). Example: `ota url https://github.com/ALLFATHER-BV/meshcomod/raw/main/prebuilt/heltec_v4_repeater_tcp.bin`. Replies with **`> OK rebooting`** (then reconnect after reboot). **Merged** full-flash images are not supported on this path—use USB + flasher if partitions/bootloader mismatch. TLS uses **insecure verify** today (`setInsecure()`); prefer pinned URLs you trust.
+
 **Flasher / release bundles:** repeater uses **`repeater-X.Y.Z`** versioning (not companion `v1.14.x`). Build with **`REPEATER_FIRMWARE_VERSION`**, then **`scripts/copy-repeater-release-bins.sh`** — binaries land under **`prebuilt/`** and **`prebuilt/releases/repeater-X.Y.Z/`**. See [`REPEATER_RELEASE_PROCEDURE.md`](REPEATER_RELEASE_PROCEDURE.md), [`prebuilt/README.md`](../prebuilt/README.md), [`WHERE_IS_REPEATER_FIRMWARE.md`](../WHERE_IS_REPEATER_FIRMWARE.md).
 
 ### OLED UI (Heltec V4 `heltec_v4_repeater_tcp`)
