@@ -914,7 +914,7 @@
 
 
 <h1 id="tcp-repeater-release-procedure-prebuilt-flasher">TCP repeater release procedure (prebuilt / flasher)</h1>
-<p><strong>Repeater TCP</strong> firmware uses its <strong>own</strong> release labels — <strong>not</strong> the companion <code>v1.14.0.x</code> line. Device query / OLED will show a string like <strong><code>repeater-1.0.0-&lt;gitsha&gt;</code></strong> when built for release.</p>
+<p><strong>Repeater TCP</strong> firmware uses its <strong>own</strong> release labels — <strong>not</strong> the companion <code>v1.14.0.x</code> line. <strong><code>build.sh</code></strong> prefixes the compile-time macro with <strong><code>meshcomod-</code></strong>, so device query / OLED show a string like <strong><code>meshcomod-repeater-1.0.0-&lt;gitsha&gt;</code></strong>.</p>
 <hr />
 <h2 id="1-choose-the-next-repeater-version">1. Choose the next repeater version</h2>
 <p>Use a <strong><code>repeater-X.Y.Z</code></strong> tag (semver after the prefix). Example first release: <strong><code>repeater-1.0.0</code></strong>.</p>
@@ -926,11 +926,11 @@ sh build.sh build-repeater-firmwares
 </code></pre>
 <ul>
 <li>You do <strong>not</strong> need <code>FIRMWARE_VERSION</code> for this path if <code>REPEATER_FIRMWARE_VERSION</code> is set.</li>
-<li><code>out/</code> will contain e.g. <code>heltec_v4_repeater_tcp-repeater-1.0.0-&lt;sha&gt;.bin</code> and the V3 analogue.</li>
+<li><code>out/</code> will contain e.g. <code>heltec_v4_repeater_tcp-meshcomod-repeater-1.0.0-&lt;sha&gt;.bin</code> and the V3 analogue.</li>
 </ul>
 <hr />
 <h2 id="3-promote-to-prebuilt">3. Promote to <code>prebuilt/</code></h2>
-<p>The copy script’s <code>&lt;version&gt;</code> argument must equal <strong><code>REPEATER_FIRMWARE_VERSION</code></strong> exactly (the glob is <code>out/&lt;env&gt;-${VERSION}-*.bin</code>, e.g. <strong><code>repeater-1.0.0</code></strong>).</p>
+<p>The copy script’s <code>&lt;version&gt;</code> argument must equal <strong><code>REPEATER_FIRMWARE_VERSION</code></strong> exactly (e.g. <strong><code>repeater-1.0.0</code></strong>). It matches <strong><code>out/&lt;env&gt;-${VERSION}-*.bin</code></strong> and <strong><code>out/&lt;env&gt;-meshcomod-${VERSION}-*.bin</code></strong>.</p>
 <pre><code class="language-bash">sh scripts/copy-repeater-release-bins.sh repeater-1.0.0
 </code></pre>
 <p>Produces:</p>
