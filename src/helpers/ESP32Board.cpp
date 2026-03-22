@@ -139,7 +139,30 @@ bool ESP32Board::startHttpOtaFromUrl(const char* url, char* reply) {
   if (!url || !reply) return false;
   s_http_ota_last_emit_ms = 0;
   s_http_ota_last_emit_pct = 0xFF;
-  if (!meshcoreHttpOtaUrlAllowed(url)) {
+
+  /* MESHCM / serial lines often end with '\n' or '\r\n'; HTTPClient treats that as part of the URL and
+     many servers respond with HTTP 400. */
+  static char url_trim[512];
+  size_t n = 0;
+  while (url[n] && n < sizeof(url_trim) - 1) {
+    url_trim[n] = url[n];
+    n++;
+  }
+  url_trim[n] = '\0';
+  if (url[n] != '\0') {
+    strcpy(reply, "ERR: URL too long");
+    return true;
+  }
+  while (n > 0 && (url_trim[n - 1] == '\n' || url_trim[n - 1] == '\r' || url_trim[n - 1] == ' ' ||
+                   url_trim[n - 1] == '\t')) {
+    url_trim[--n] = '\0';
+  }
+  if (n == 0) {
+    strcpy(reply, "ERR: missing URL");
+    return true;
+  }
+
+  if (!meshcoreHttpOtaUrlAllowed(url_trim)) {
     strcpy(reply, "ERR: URL not allowed");
     return true;
   }
@@ -163,8 +186,8 @@ bool ESP32Board::startHttpOtaFromUrl(const char* url, char* reply) {
   https.setUserAgent("MeshCore-OTA/1.0");
 
   static char ota_url_buf[512];
-  const char* fetch_url = url;
-  if (meshcoreGithubRawToRawUsercontent(url, ota_url_buf, sizeof(ota_url_buf))) {
+  const char* fetch_url = url_trim;
+  if (meshcoreGithubRawToRawUsercontent(url_trim, ota_url_buf, sizeof(ota_url_buf))) {
     fetch_url = ota_url_buf;
   }
 
