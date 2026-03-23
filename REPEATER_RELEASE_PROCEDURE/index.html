@@ -926,7 +926,7 @@ sh build.sh build-repeater-firmwares
 </code></pre>
 <ul>
 <li>You do <strong>not</strong> need <code>FIRMWARE_VERSION</code> for this path if <code>REPEATER_FIRMWARE_VERSION</code> is set.</li>
-<li><code>out/</code> will contain e.g. <code>heltec_v4_repeater_tcp-meshcomod-repeater-1.0.0-&lt;sha&gt;.bin</code> and the V3 analogue.</li>
+<li><code>out/</code> will contain e.g. <code>heltec_v4_repeater_tcp-meshcomod-repeater-1.0.0-&lt;sha&gt;.bin</code> and the V3 analogue, plus optional <strong><code>…-merged.bin</code></strong> (full image at <strong>0x0</strong>) after <code>build.sh</code> runs <code>mergebin</code> for each <code>*_repeater_tcp</code> env.</li>
 </ul>
 <hr />
 <h2 id="3-promote-to-prebuilt">3. Promote to <code>prebuilt/</code></h2>
