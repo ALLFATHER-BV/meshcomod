@@ -10,13 +10,13 @@
       
       
       
-        <link rel="canonical" href="https://meshcore-dev.github.io/meshcore/V3_BOOT_DEBUG/">
+        <link rel="canonical" href="https://meshcore-dev.github.io/meshcore/COMPANION_OTA_MEMORY_ROOT_CAUSE/">
       
       
-        <link rel="prev" href="../REPEATER_TCP_COMPANION/">
+        <link rel="prev" href="..">
       
       
-        <link rel="next" href="../cli_commands/">
+        <link rel="next" href="../DEVICE_WEBSOCKET_WIFI/">
       
       
         
@@ -27,7 +27,7 @@
     
     
       
-        <title>Heltec V3 boot-loop debug build - MeshCore Docs</title>
+        <title>Companion OTA HTTPS Memory Root Cause - MeshCore Docs</title>
       
     
     
@@ -70,7 +70,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#heltec-v3-boot-loop-debug-build" class="md-skip">
+        <a href="#companion-ota-https-memory-root-cause" class="md-skip">
           Skip to content
         </a>
       
@@ -105,7 +105,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Heltec V3 boot-loop debug build
+              Companion OTA HTTPS Memory Root Cause
             
           </span>
         </div>
@@ -250,10 +250,37 @@
       
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../COMPANION_OTA_MEMORY_ROOT_CAUSE/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Companion OTA HTTPS Memory Root Cause
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -269,6 +296,136 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Summary
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-the-logs-proved" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the logs proved
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#why-the-original-http-1-message-was-misleading" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why the original HTTP -1 message was misleading
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#key-evidence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key evidence
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#why-repeater-ota-seemed-better" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why repeater OTA seemed better
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-fixed-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What fixed it
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#important-implementation-detail" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Important implementation detail
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#recommended-rule-going-forward" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recommended rule going forward
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#future-debugging-checklist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Future debugging checklist
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#result" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Result
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -412,37 +569,10 @@
       
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Heltec V3 boot-loop debug build
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../V3_BOOT_DEBUG/" class="md-nav__link">
         
   
   
@@ -458,81 +588,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#1-flash-the-debug-build" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        1. Flash the debug build
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#2-open-usb-serial-before-powering-or-resetting" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        2. Open USB serial before powering or resetting
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#3-what-to-capture" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        3. What to capture
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#building-the-debug-image-yourself" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Building the debug image yourself
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#what-this-build-enables" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        What this build enables
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -861,10 +916,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#1-flash-the-debug-build" class="md-nav__link">
+  <a href="#summary" class="md-nav__link">
     <span class="md-ellipsis">
       
-        1. Flash the debug build
+        Summary
       
     </span>
   </a>
@@ -872,10 +927,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#2-open-usb-serial-before-powering-or-resetting" class="md-nav__link">
+  <a href="#what-the-logs-proved" class="md-nav__link">
     <span class="md-ellipsis">
       
-        2. Open USB serial before powering or resetting
+        What the logs proved
       
     </span>
   </a>
@@ -883,10 +938,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#3-what-to-capture" class="md-nav__link">
+  <a href="#why-the-original-http-1-message-was-misleading" class="md-nav__link">
     <span class="md-ellipsis">
       
-        3. What to capture
+        Why the original HTTP -1 message was misleading
       
     </span>
   </a>
@@ -894,10 +949,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#building-the-debug-image-yourself" class="md-nav__link">
+  <a href="#key-evidence" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Building the debug image yourself
+        Key evidence
       
     </span>
   </a>
@@ -905,10 +960,65 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#what-this-build-enables" class="md-nav__link">
+  <a href="#why-repeater-ota-seemed-better" class="md-nav__link">
     <span class="md-ellipsis">
       
-        What this build enables
+        Why repeater OTA seemed better
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-fixed-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What fixed it
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#important-implementation-detail" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Important implementation detail
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#recommended-rule-going-forward" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recommended rule going forward
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#future-debugging-checklist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Future debugging checklist
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#result" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Result
       
     </span>
   </a>
@@ -932,7 +1042,7 @@
 
 
   
-    <a href="https://github.com/meshcore-dev/meshcore/edit/main/docs/V3_BOOT_DEBUG.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+    <a href="https://github.com/meshcore-dev/meshcore/edit/main/docs/COMPANION_OTA_MEMORY_ROOT_CAUSE.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
       
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
     </a>
@@ -940,45 +1050,136 @@
   
 
 
-<h1 id="heltec-v3-boot-loop-debug-build">Heltec V3 boot-loop debug build</h1>
-<p>If your <strong>Heltec WiFi LoRa 32 V3</strong> gets stuck in a boot loop (e.g. shows the boot logo then hangs or resets), use this debug firmware to see where it stops. It prints verbose logs over <strong>USB serial</strong> so you can capture the last messages before the hang.</p>
-<h2 id="1-flash-the-debug-build">1. Flash the debug build</h2>
+<h1 id="companion-ota-https-memory-root-cause">Companion OTA HTTPS Memory Root Cause</h1>
+<h2 id="summary">Summary</h2>
+<p>Companion URL OTA on ESP32 was failing before any firmware bytes were downloaded.</p>
+<p>The visible error originally looked like:</p>
 <ul>
-<li><strong>Merged image (recommended):</strong> Use the file <strong><code>Heltec_v3_BOOT_DEBUG_FLASH_THIS-merged.bin</code></strong> in the MeshCore repo root (or build your own — see below).</li>
-<li>Flash it the same way as normal meshcomod firmware, e.g. <a href="https://flasher.meshcomod.com">flasher.meshcomod.com</a> → <strong>Custom firmware</strong> → upload this merged <code>.bin</code>. Use full erase if the device is unstable.</li>
+<li><code>ERR: HTTP -1 (connection refused)</code></li>
 </ul>
-<h2 id="2-open-usb-serial-before-powering-or-resetting">2. Open USB serial <strong>before</strong> powering or resetting</h2>
+<p>After adding lower-level TLS diagnostics, the real failure was:</p>
 <ul>
-<li>Connect the V3 over USB.</li>
-<li>Open a serial console at <strong>115200 baud</strong>:</li>
-<li><strong>Web:</strong> <a href="https://console.meshcomod.com">console.meshcomod.com</a> or the Console tab on the flasher — select the V3’s serial port, set 115200.</li>
-<li><strong>Desktop:</strong> PuTTY, screen, or PlatformIO Serial Monitor at 115200.</li>
-<li>Then power the device or press reset. The debug build prints mesh, WiFi, BLE, and core logs from early boot. <strong>Capture or note the last lines</strong> before it stops or reboots — that shows where the boot is failing.</li>
+<li><code>OTA: get fail http=-1 tls=-32512 SSL - Memory allocation failed</code></li>
 </ul>
-<h2 id="3-what-to-capture">3. What to capture</h2>
+<p>This was <strong>not</strong> a bad firmware URL, not a GitHub outage, and not a flasher proxy issue. The root cause was <strong>insufficient allocatable internal RAM for the HTTPS/TLS client</strong> on the companion while BLE and other companion transports were still alive.</p>
+<h2 id="what-the-logs-proved">What the logs proved</h2>
+<p>Two distinct failure classes happened during this investigation:</p>
+<ol>
+<li><strong>Mid-download flash failure</strong></li>
+<li>Example:<ul>
+<li><code>OTA: HTTP OK, flashing</code></li>
+<li><code>OTA: downloading 57%</code></li>
+<li><code>OTA: ERR flash write</code></li>
+</ul>
+</li>
+<li>
+<p>This proved OTA could sometimes reach the write path.</p>
+</li>
+<li>
+<p><strong>Pre-download TLS allocation failure</strong></p>
+</li>
+<li>Example:<ul>
+<li><code>OTA: fetch raw-github</code></li>
+<li><code>OTA: get fail http=-1 tls=-32512 SSL - Memory allocation failed</code></li>
+</ul>
+</li>
+<li>This proved some failing runs never reached HTTP 200 or any flash write at all.</li>
+</ol>
+<p>The second failure class turned out to be the blocker for companion OTA in current testing.</p>
+<h2 id="why-the-original-http-1-message-was-misleading">Why the original <code>HTTP -1</code> message was misleading</h2>
+<p>The OTA wrapper used <code>HTTPClient</code>, which collapses several connection/setup failures into <code>HTTPC_ERROR_CONNECTION_REFUSED</code> (<code>-1</code>). That made early logs look like generic network refusal even when the underlying failure was inside the TLS layer.</p>
+<p>Adding <code>WiFiClientSecure::lastError(...)</code> exposed the real mbedTLS error string and code.</p>
+<h2 id="key-evidence">Key evidence</h2>
+<p>The important runtime numbers were:</p>
 <ul>
-<li>Copy or screenshot the <strong>last 20–50 lines</strong> of serial output when the device gets stuck or just before it resets.</li>
-<li>Share that with the meshcomod maintainers (e.g. GitHub issue or your usual channel). The log will show which init step (display, WiFi, TCP, BLE, mesh, etc.) is hanging or crashing.</li>
+<li><code>heap=35520</code></li>
+<li><code>max=24564</code></li>
+<li><code>psram=2072147</code></li>
+<li><code>pmax=2064372</code></li>
 </ul>
-<h2 id="building-the-debug-image-yourself">Building the debug image yourself</h2>
-<p>From the MeshCore repo:</p>
-<pre><code class="language-bash">cd MeshCore
-export FIRMWARE_VERSION=v1.14.0.29-boot-debug
-export WIFI_SSID=&quot;YourSSID&quot;   # optional, for WiFi init logs
-export WIFI_PWD=&quot;YourPassword&quot;
-sh build.sh build-firmware Heltec_v3_companion_radio_usb_tcp_boot_debug
-</code></pre>
-<p>The merged image is written to:</p>
-<p><code>out/Heltec_v3_companion_radio_usb_tcp_boot_debug-&lt;version&gt;-&lt;sha&gt;-merged.bin</code></p>
-<p>Copy it to a convenient name (e.g. <code>Heltec_v3_BOOT_DEBUG_FLASH_THIS-merged.bin</code>) and flash that file.</p>
-<h2 id="what-this-build-enables">What this build enables</h2>
+<p>Interpretation:</p>
 <ul>
-<li><strong>MESH_DEBUG=1</strong> — mesh/routing debug messages</li>
-<li><strong>BLE_DEBUG_LOGGING=1</strong> — Bluetooth stack logs</li>
-<li><strong>WIFI_DEBUG_LOGGING=1</strong> — WiFi/connection logs  </li>
-<li><strong>CORE_DEBUG_LEVEL=5</strong> — ESP32 core verbose logs</li>
+<li>Total free heap was only around <strong>35 KB</strong>.</li>
+<li>Largest allocatable internal block was only around <strong>24-25 KB</strong>.</li>
+<li>PSRAM had plenty of free space, but the TLS stack needed <strong>internal RAM</strong>, not PSRAM.</li>
 </ul>
-<p>Serial remains at <strong>115200</strong> baud. After troubleshooting, re-flash a normal (non-debug) meshcomod build from <a href="RELEASES.md">RELEASES.md</a>.</p>
+<p>So although the device still reported "some free heap", the HTTPS client could not allocate the memory needed for the TLS session.</p>
+<h2 id="why-repeater-ota-seemed-better">Why repeater OTA seemed better</h2>
+<p>Repeater and companion both use the same ESP32 HTTP OTA function, but companion keeps more runtime services alive:</p>
+<ul>
+<li>BLE</li>
+<li>TCP companion server</li>
+<li>optional WebSocket/WSS stack</li>
+<li>companion-specific transport bookkeeping</li>
+</ul>
+<p>The biggest confirmed offender was BLE. The existing BLE "disable" path only stopped advertising and disconnected clients; it did <strong>not</strong> actually release the BLE stack memory.</p>
+<h2 id="what-fixed-it">What fixed it</h2>
+<p>The successful fix was:</p>
+<ol>
+<li>Keep OTA transport deterministic:</li>
+<li>companion resolves meshcomod <code>firmware-download</code> URLs back to raw GitHub</li>
+<li>tries raw GitHub first</li>
+<li>
+<p>falls back once to flasher HTTPS</p>
+</li>
+<li>
+<p>Add better diagnostics:</p>
+</li>
+<li>selected/effective URL</li>
+<li>content metadata and signature</li>
+<li>TLS client error text</li>
+<li>
+<p>heap shape: free heap, max alloc heap, PSRAM, max alloc PSRAM</p>
+</li>
+<li>
+<p>Lower TLS memory pressure:</p>
+</li>
+<li>
+<p>asymmetric mbedTLS buffer settings for companion envs</p>
+</li>
+<li>
+<p><strong>Release BLE memory before HTTPS OTA starts</strong></p>
+</li>
+<li>if the active reply target is not BLE, fully deinitialize BLE before <code>startHttpOtaFromUrl(...)</code></li>
+<li>this reclaimed enough internal RAM for HTTPS OTA to succeed</li>
+</ol>
+<h2 id="important-implementation-detail">Important implementation detail</h2>
+<p>A partial BLE shutdown was <strong>not enough</strong>.</p>
+<p>These actions did not solve the issue by themselves:</p>
+<ul>
+<li>stopping BLE advertising</li>
+<li>disconnecting the BLE client</li>
+<li>shrinking TLS output buffer alone</li>
+</ul>
+<p>The change that mattered was a <strong>real BLE stack teardown</strong> using the BLE library deinit path so internal memory was actually released before the OTA HTTPS session started.</p>
+<h2 id="recommended-rule-going-forward">Recommended rule going forward</h2>
+<p>For ESP32 companion OTA over HTTPS:</p>
+<ul>
+<li>treat OTA as a memory-sensitive mode</li>
+<li>shut down non-essential transports before starting HTTPS, especially BLE</li>
+<li>log <code>max alloc heap</code>, not just total free heap</li>
+<li>do not assume PSRAM helps TLS failures</li>
+</ul>
+<h2 id="future-debugging-checklist">Future debugging checklist</h2>
+<p>If companion OTA breaks again, check these in order:</p>
+<ol>
+<li>Does the log reach <code>OTA: HTTP OK, flashing</code>?</li>
+<li>If yes, it is no longer a TLS connect/setup problem.</li>
+<li>Is there a <code>tls=</code> diagnostic line?</li>
+<li>If yes, trust that over <code>HTTP -1</code>.</li>
+<li>What are <code>heap=</code> and <code>max=</code> before OTA starts?</li>
+<li>Low <code>max=</code> is the most useful signal for TLS allocation failures.</li>
+<li>Which transports are active?</li>
+<li>BLE is the first thing to suspect for internal RAM pressure.</li>
+<li>Is the OTA command coming from BLE?</li>
+<li>If yes, BLE cannot be torn down before the response path is preserved or switched.</li>
+</ol>
+<h2 id="result">Result</h2>
+<p>After the BLE memory release change, companion OTA successfully completed using the same general OTA path that had previously failed with:</p>
+<ul>
+<li><code>tls=-32512 SSL - Memory allocation failed</code></li>
+</ul>
+<p>That confirms the root cause was <strong>companion transport memory pressure</strong>, not the firmware artifact or the remote host.</p>
 
 
 
