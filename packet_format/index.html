@@ -709,6 +709,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#path-length-encoding" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Path Length Encoding
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#payload-types" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -923,6 +934,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#path-length-encoding" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Path Length Encoding
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#payload-types" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1030,10 +1052,21 @@
 <li><code>transport_code_2</code> - 2 bytes - <code>uint16_t</code> - reserved</li>
 </ul>
 </li>
-<li><code>path_length</code> - 1 byte - Length of the path field in bytes</li>
-<li><code>path</code> - size provided by <code>path_length</code> - Path to use for Direct Routing<ul>
+<li><code>path_length</code> - 1 byte - Encoded path metadata<ul>
+<li>Bits 0-5 store path hash count / hop count (<code>0-63</code>)</li>
+<li>Bits 6-7 store path hash size minus 1<ul>
+<li><code>0b00</code>: 1-byte path hashes</li>
+<li><code>0b01</code>: 2-byte path hashes</li>
+<li><code>0b10</code>: 3-byte path hashes</li>
+<li><code>0b11</code>: reserved / unsupported</li>
+</ul>
+</li>
+</ul>
+</li>
+<li><code>path</code> - <code>hop_count * hash_size</code> bytes - Path to use for Direct Routing or flood path tracking<ul>
 <li>Up to a maximum of 64 bytes, defined by <code>MAX_PATH_SIZE</code></li>
-<li>v1.12.0 firmware and older drops packets with <code>path_length</code> <a href="https://github.com/meshcore-dev/MeshCore/blob/e812632235274ffd2382adf5354168aec765d416/src/Dispatcher.cpp#L144">larger than 64</a></li>
+<li>Effective byte length is calculated from the encoded hop count and hash size, not taken directly from <code>path_length</code></li>
+<li>v1.12.0 firmware and older only handled legacy 1-byte path hashes and dropped packets whose path bytes exceeded <a href="https://github.com/meshcore-dev/MeshCore/blob/e812632235274ffd2382adf5354168aec765d416/src/Dispatcher.cpp#L144">64 bytes</a></li>
 </ul>
 </li>
 <li><code>payload</code> - variable length - Payload Data<ul>
@@ -1067,12 +1100,12 @@
 <tr>
 <td>path_length</td>
 <td>1</td>
-<td>Length of the path field in bytes</td>
+<td>Encodes path hash size in bits 6-7 and hop count in bits 0-5</td>
 </tr>
 <tr>
 <td>path</td>
 <td>up to 64 (<code>MAX_PATH_SIZE</code>)</td>
-<td>Stores the routing path if applicable</td>
+<td>Stores <code>hop_count * hash_size</code> bytes of path data if applicable</td>
 </tr>
 <tr>
 <td>payload</td>
@@ -1148,6 +1181,68 @@
 </tr>
 </tbody>
 </table>
+<h3 id="path-length-encoding">Path Length Encoding</h3>
+<p><code>path_length</code> is not a raw byte count. It packs both hash size and hop count:</p>
+<table>
+<thead>
+<tr>
+<th>Bits</th>
+<th>Field</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0-5</td>
+<td>Hop Count</td>
+<td>Number of path hashes (<code>0-63</code>)</td>
+</tr>
+<tr>
+<td>6-7</td>
+<td>Hash Size Code</td>
+<td>Stored as <code>hash_size - 1</code></td>
+</tr>
+</tbody>
+</table>
+<p>Hash size codes:</p>
+<table>
+<thead>
+<tr>
+<th>Bits 6-7</th>
+<th>Hash Size</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>0b00</code></td>
+<td>1 byte</td>
+<td>Legacy / default mode</td>
+</tr>
+<tr>
+<td><code>0b01</code></td>
+<td>2 bytes</td>
+<td>Supported in current firmware</td>
+</tr>
+<tr>
+<td><code>0b10</code></td>
+<td>3 bytes</td>
+<td>Supported in current firmware</td>
+</tr>
+<tr>
+<td><code>0b11</code></td>
+<td>4 bytes</td>
+<td>Reserved / invalid</td>
+</tr>
+</tbody>
+</table>
+<p>Examples:</p>
+<ul>
+<li><code>0x00</code>: zero-hop packet, no path bytes</li>
+<li><code>0x05</code>: 5 hops using 1-byte hashes, so path is 5 bytes</li>
+<li><code>0x45</code>: 5 hops using 2-byte hashes, so path is 10 bytes</li>
+<li><code>0x8A</code>: 10 hops using 3-byte hashes, so path is 30 bytes</li>
+</ul>
 <h3 id="payload-types">Payload Types</h3>
 <table>
 <thead>
