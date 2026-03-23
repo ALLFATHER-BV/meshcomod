@@ -942,7 +942,7 @@
 
 <h1 id="tcp-repeater-release-procedure-prebuilt-flasher">TCP repeater release procedure (prebuilt / flasher)</h1>
 <p><strong>Repeater TCP</strong> uses the <strong>same base version</strong> as the meshcomod companion (<strong><code>v1.14.1.x</code></strong>) plus a fixed suffix <strong><code>‑repeater-tcp</code></strong> so users see one family of versions. <strong><code>build.sh</code></strong> prefixes the compile-time macro with <strong><code>meshcomod-</code></strong>, e.g. <strong><code>meshcomod-v1.14.1.0-repeater-tcp-&lt;gitsha&gt;</code></strong> on the device / in <code>out/</code> filenames.</p>
-<p><strong>Legacy:</strong> older drops used <strong><code>repeater-1.0.x</code></strong> only — <code>scripts/copy-repeater-release-bins.sh</code> still accepts that; release folder stays <strong><code>prebuilt/releases/repeater-1.0.x/</code></strong>.</p>
+<p><strong>Legacy:</strong> older drops used <strong><code>repeater-1.0.x</code></strong> directories; those are no longer in this repo (see <strong>git history</strong>). The copy script still accepts <strong><code>repeater-X.Y.Z</code></strong> if you recreate that layout in a fork.</p>
 <hr />
 <h2 id="1-choose-the-version-aligned-with-companion">1. Choose the version (aligned with companion)</h2>
 <p>When you ship companion <strong><code>v1.14.1.0</code></strong>, build repeater TCP with:</p>
