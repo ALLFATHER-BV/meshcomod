@@ -421,10 +421,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#1-choose-the-next-repeater-version" class="md-nav__link">
+  <a href="#1-choose-the-version-aligned-with-companion" class="md-nav__link">
     <span class="md-ellipsis">
       
-        1. Choose the next repeater version
+        1. Choose the version (aligned with companion)
       
     </span>
   </a>
@@ -861,10 +861,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#1-choose-the-next-repeater-version" class="md-nav__link">
+  <a href="#1-choose-the-version-aligned-with-companion" class="md-nav__link">
     <span class="md-ellipsis">
       
-        1. Choose the next repeater version
+        1. Choose the version (aligned with companion)
       
     </span>
   </a>
@@ -941,35 +941,47 @@
 
 
 <h1 id="tcp-repeater-release-procedure-prebuilt-flasher">TCP repeater release procedure (prebuilt / flasher)</h1>
-<p><strong>Repeater TCP</strong> firmware uses its <strong>own</strong> release labels — <strong>not</strong> the companion <code>v1.14.0.x</code> line. <strong><code>build.sh</code></strong> prefixes the compile-time macro with <strong><code>meshcomod-</code></strong>, so device query / OLED show a string like <strong><code>meshcomod-repeater-1.0.0-&lt;gitsha&gt;</code></strong>.</p>
+<p><strong>Repeater TCP</strong> uses the <strong>same base version</strong> as the meshcomod companion (<strong><code>v1.14.1.x</code></strong>) plus a fixed suffix <strong><code>‑repeater-tcp</code></strong> so users see one family of versions. <strong><code>build.sh</code></strong> prefixes the compile-time macro with <strong><code>meshcomod-</code></strong>, e.g. <strong><code>meshcomod-v1.14.1.0-repeater-tcp-&lt;gitsha&gt;</code></strong> on the device / in <code>out/</code> filenames.</p>
+<p><strong>Legacy:</strong> older drops used <strong><code>repeater-1.0.x</code></strong> only — <code>scripts/copy-repeater-release-bins.sh</code> still accepts that; release folder stays <strong><code>prebuilt/releases/repeater-1.0.x/</code></strong>.</p>
 <hr />
-<h2 id="1-choose-the-next-repeater-version">1. Choose the next repeater version</h2>
-<p>Use a <strong><code>repeater-X.Y.Z</code></strong> tag (semver after the prefix). Example first release: <strong><code>repeater-1.0.0</code></strong>.</p>
-<p>Bump only this label when you cut a new <strong>repeater</strong> prebuilt; companion releases do not need to change.</p>
+<h2 id="1-choose-the-version-aligned-with-companion">1. Choose the version (aligned with companion)</h2>
+<p>When you ship companion <strong><code>v1.14.1.0</code></strong>, build repeater TCP with:</p>
+<ul>
+<li><strong><code>REPEATER_FIRMWARE_VERSION=v1.14.1.0-repeater-tcp</code></strong></li>
+</ul>
+<p>Bump the <strong><code>v1.14.1.x</code></strong> part whenever you bump the companion for that release train. If you ever need a <strong>repeater-only</strong> fix without a companion bump, increment the patch segment (e.g. <strong><code>v1.14.1.1-repeater-tcp</code></strong>) and document it in <strong><code>RELEASES.md</code></strong>.</p>
 <hr />
 <h2 id="2-build-from-meshcore">2. Build from <code>MeshCore/</code></h2>
-<pre><code class="language-bash">export REPEATER_FIRMWARE_VERSION=repeater-1.0.0
+<pre><code class="language-bash">export REPEATER_FIRMWARE_VERSION=v1.14.1.0-repeater-tcp
+export DISABLE_DEBUG=1   # recommended for release
 sh build.sh build-repeater-firmwares
 </code></pre>
 <ul>
-<li>You do <strong>not</strong> need <code>FIRMWARE_VERSION</code> for this path if <code>REPEATER_FIRMWARE_VERSION</code> is set.</li>
-<li><code>out/</code> will contain e.g. <code>heltec_v4_repeater_tcp-meshcomod-repeater-1.0.0-&lt;sha&gt;.bin</code> and the V3 analogue, plus optional <strong><code>…-merged.bin</code></strong> (full image at <strong>0x0</strong>) after <code>build.sh</code> runs <code>mergebin</code> for each <code>*_repeater_tcp</code> env.</li>
+<li>You do <strong>not</strong> need <strong><code>FIRMWARE_VERSION</code></strong> if <strong><code>REPEATER_FIRMWARE_VERSION</code></strong> is set.</li>
+<li><code>out/</code> will contain e.g. <strong><code>heltec_v4_repeater_tcp-meshcomod-v1.14.1.0-repeater-tcp-&lt;sha&gt;.bin</code></strong> and the V3 / V4 TFT analogues, plus optional <strong><code>…-merged.bin</code></strong> (full image at <strong>0x0</strong>) after <strong><code>mergebin</code></strong>.</li>
 </ul>
 <hr />
 <h2 id="3-promote-to-prebuilt">3. Promote to <code>prebuilt/</code></h2>
-<p>The copy script’s <code>&lt;version&gt;</code> argument must equal <strong><code>REPEATER_FIRMWARE_VERSION</code></strong> exactly (e.g. <strong><code>repeater-1.0.0</code></strong>). It matches <strong><code>out/&lt;env&gt;-${VERSION}-*.bin</code></strong> and <strong><code>out/&lt;env&gt;-meshcomod-${VERSION}-*.bin</code></strong>.</p>
-<pre><code class="language-bash">sh scripts/copy-repeater-release-bins.sh repeater-1.0.0
+<p>Pass the <strong>companion base</strong> (four-part <strong><code>vX.Y.Z.W</code></strong>) so TCP repeater bins land in the <strong>same</strong> folder as that companion release:</p>
+<pre><code class="language-bash">sh scripts/copy-repeater-release-bins.sh v1.14.1.0
 </code></pre>
-<p>Produces:</p>
+<p>You can also pass <strong><code>v1.14.1.0-repeater-tcp</code></strong> explicitly — same result.</p>
+<p>Produces / updates:</p>
 <ul>
-<li><code>prebuilt/heltec_v4_repeater_tcp.bin</code>, <code>prebuilt/Heltec_v3_repeater_tcp.bin</code>, and (when built) <strong><code>prebuilt/heltec_v4_tft_repeater_tcp.bin</code></strong> plus optional <strong><code>*-merged.bin</code></strong></li>
-<li><code>prebuilt/releases/repeater-1.0.0/</code> with the same files</li>
+<li><strong><code>prebuilt/heltec_v4_repeater_tcp.bin</code></strong>, <strong><code>prebuilt/Heltec_v3_repeater_tcp.bin</code></strong>, optional <strong><code>prebuilt/heltec_v4_tft_repeater_tcp*.bin</code></strong></li>
+<li>The same stable names under <strong><code>prebuilt/releases/v1.14.1.0/</code></strong> (alongside companion binaries)</li>
 </ul>
-<p>Add <strong><code>prebuilt/releases/repeater-1.0.0/notes.md</code></strong> for that drop.</p>
+<p>Document TCP repeater rows in <strong><code>prebuilt/releases/v1.14.1.0/notes.md</code></strong> and the top section of <strong><code>RELEASES.md</code></strong>.</p>
+<p><strong>Legacy copy</strong> (unchanged behavior):</p>
+<pre><code class="language-bash">export REPEATER_FIRMWARE_VERSION=repeater-1.0.0
+sh build.sh build-repeater-firmwares
+sh scripts/copy-repeater-release-bins.sh repeater-1.0.0
+</code></pre>
+<p>→ <strong><code>prebuilt/releases/repeater-1.0.0/</code></strong></p>
 <hr />
 <h2 id="4-commit-and-push">4. Commit (and push)</h2>
-<p>Stage the new <strong><code>prebuilt/releases/repeater-X.Y.Z/</code></strong> tree, updated root <strong><code>prebuilt/*repeater_tcp.bin</code></strong>, and any doc/script changes. Do not reuse companion <strong><code>prebuilt/releases/v1.14.0.*/</code></strong> folders for repeater binaries.</p>
-<p><strong>Git tag (optional):</strong> You can still create and push <strong><code>repeater-X.Y.Z</code></strong> tags for bookkeeping; that does <strong>not</strong> trigger firmware CI. The canonical binaries for flasher / OTA are the ones in <strong><code>prebuilt/</code></strong> on <strong><code>main</code></strong>. To run a slow CI build anyway, use <strong>Actions → Build Repeater Firmwares → Run workflow</strong> and enter the same version string.</p>
+<p>Stage <strong><code>prebuilt/</code></strong>, <strong><code>prebuilt/releases/&lt;version&gt;/</code></strong>, <strong><code>RELEASES.md</code></strong>, and notes. Push to your meshcomod remote (e.g. <strong><code>allfather</code></strong>).</p>
+<p><strong>Git tag (optional):</strong> bookkeeping tags are fine; canonical binaries for flasher / OTA live under <strong><code>prebuilt/</code></strong> on <strong><code>main</code></strong>. CI: <strong>Actions → Build Repeater Firmwares</strong> — use the same <strong><code>REPEATER_FIRMWARE_VERSION</code></strong> string you built with.</p>
 <hr />
 <h2 id="summary">Summary</h2>
 <table>
@@ -982,19 +994,19 @@ sh build.sh build-repeater-firmwares
 <tbody>
 <tr>
 <td>1</td>
-<td>Pick <strong><code>repeater-X.Y.Z</code></strong></td>
+<td>Set <strong><code>REPEATER_FIRMWARE_VERSION=vX.Y.Z.W-repeater-tcp</code></strong> (same base as companion)</td>
 </tr>
 <tr>
 <td>2</td>
-<td><code>export REPEATER_FIRMWARE_VERSION=repeater-X.Y.Z</code> → <code>sh build.sh build-repeater-firmwares</code></td>
+<td><strong><code>sh build.sh build-repeater-firmwares</code></strong></td>
 </tr>
 <tr>
 <td>3</td>
-<td><code>sh scripts/copy-repeater-release-bins.sh repeater-X.Y.Z</code></td>
+<td><strong><code>sh scripts/copy-repeater-release-bins.sh vX.Y.Z.W</code></strong></td>
 </tr>
 <tr>
 <td>4</td>
-<td><code>notes.md</code> + commit</td>
+<td>Update <strong><code>notes.md</code></strong> / <strong><code>RELEASES.md</code></strong>, commit, push</td>
 </tr>
 </tbody>
 </table>
