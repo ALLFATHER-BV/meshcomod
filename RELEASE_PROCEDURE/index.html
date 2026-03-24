@@ -1079,15 +1079,15 @@ sh build.sh build-firmware heltec_v4_tft_companion_radio_usb_tcp_touch
 <ul>
 <li>Copies the companion binaries from <code>out/</code> into:</li>
 <li><strong><code>prebuilt/</code></strong> (latest <strong>companion</strong> stable names only)</li>
-<li><strong><code>prebuilt/releases/v1.14.0.20/</code></strong> (versioned)</li>
+<li><strong><code>prebuilt/releases/companion/v1.14.0.20/</code></strong> (versioned)</li>
 <li>Script expects versioned filenames in <code>out/</code> (e.g. <code>heltec_v4_companion_radio_usb_tcp-v1.14.0.20-...bin</code>).</li>
 </ul>
-<p><strong>TCP repeater</strong> (optional, same or different <strong><code>v*</code></strong> folder): see <a href="../REPEATER_RELEASE_PROCEDURE/"><code>REPEATER_RELEASE_PROCEDURE.md</code></a> — <strong><code>REPEATER_FIRMWARE_VERSION=…-repeater-tcp</code></strong>, <strong><code>copy-repeater-release-bins.sh</code></strong>. Repeater and companion <strong>latest</strong> roots under <strong><code>prebuilt/</code></strong> are updated by <strong>different</strong> scripts.</p>
+<p><strong>TCP repeater</strong> (optional <strong><code>repeater/r*…/</code></strong> folder, parallel train to companion <strong><code>v*</code></strong>): see <a href="../REPEATER_RELEASE_PROCEDURE/"><code>REPEATER_RELEASE_PROCEDURE.md</code></a> — <strong><code>REPEATER_FIRMWARE_VERSION=…-repeater-tcp</code></strong>, <strong><code>copy-repeater-release-bins.sh</code></strong>. Repeater and companion <strong>latest</strong> roots under <strong><code>prebuilt/</code></strong> are updated by <strong>different</strong> scripts.</p>
 <hr />
 <h2 id="4-update-docs">4. Update docs</h2>
 <ul>
 <li>
-<p><strong><code>prebuilt/releases/v1.14.0.20/notes.md</code></strong><br />
+<p><strong><code>prebuilt/releases/companion/v1.14.0.20/notes.md</code></strong><br />
   Add release notes (highlights, fixes, build date).</p>
 </li>
 <li>
@@ -1096,11 +1096,11 @@ sh build.sh build-firmware heltec_v4_tft_companion_radio_usb_tcp_touch
 </li>
 <li>Version and date</li>
 <li>Highlights (bullet list)</li>
-<li>Table with links to the binaries in <code>prebuilt/releases/v1.14.0.20/</code> (V4 OLED, V4 TFT+touch, V3 — merged + non-merged where applicable)</li>
+<li>Table with links to the binaries in <code>prebuilt/releases/companion/v1.14.0.20/</code> (V4 OLED, V4 TFT+touch, V3 — merged + non-merged where applicable)</li>
 </ul>
 <p>Use the existing v1.14.0.19 block in <code>RELEASES.md</code> as the template (heading, <strong>Firmware version</strong>, <strong>Highlights</strong>, <strong>Prebuilt binaries</strong> table).</p>
 <p>Optional sanity check (after <strong><code>notes.md</code></strong> mentions binaries):</p>
-<pre><code class="language-bash">sh scripts/validate-prebuilt-release-folder.sh v1.14.0.20
+<pre><code class="language-bash">sh scripts/validate-prebuilt-release-folder.sh companion v1.14.0.20
 </code></pre>
 <hr />
 <h2 id="5-commit-and-push">5. Commit and push</h2>
