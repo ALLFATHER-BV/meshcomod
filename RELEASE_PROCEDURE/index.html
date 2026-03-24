@@ -378,13 +378,30 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#2-build-both-targets" class="md-nav__link">
+  <a href="#2-build-companion-targets" class="md-nav__link">
     <span class="md-ellipsis">
       
-        2. Build both targets
+        2. Build companion targets
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="2. Build companion targets">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#companion-only-release" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Companion-only release
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -905,13 +922,30 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#2-build-both-targets" class="md-nav__link">
+  <a href="#2-build-companion-targets" class="md-nav__link">
     <span class="md-ellipsis">
       
-        2. Build both targets
+        2. Build companion targets
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="2. Build companion targets">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#companion-only-release" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Companion-only release
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -1008,7 +1042,7 @@
 
 <h1 id="release-procedure-companion-firmware">Release procedure (companion firmware)</h1>
 <p>Use this for every new fix or release. <strong>Rule: every release gets a new version number; never overwrite an existing version’s binaries.</strong></p>
-<p>Current latest version in the repo: <strong>v1.14.1.0</strong> (bump to next for the following release).</p>
+<p>Current latest version in the repo: <strong>v1.14.1.1</strong> (bump to next for the following release).</p>
 <hr />
 <h2 id="1-bump-version">1. Bump version</h2>
 <ul>
@@ -1018,7 +1052,7 @@
   #define FIRMWARE_VERSION "v1.14.0.20"</code></li>
 </ul>
 <hr />
-<h2 id="2-build-both-targets">2. Build both targets</h2>
+<h2 id="2-build-companion-targets">2. Build companion targets</h2>
 <p>From <strong><code>MeshCore/</code></strong>:</p>
 <pre><code class="language-bash">export FIRMWARE_VERSION=v1.14.0.20
 
@@ -1028,19 +1062,27 @@ sh build.sh build-firmware heltec_v4_tft_companion_radio_usb_tcp_touch
 </code></pre>
 <ul>
 <li>Builds go to <code>out/</code>. For ESP32 meshcomod <strong><code>companion_radio_usb_tcp*</code></strong> envs, <strong><code>build.sh</code> also runs <code>mergebin</code></strong> and copies <strong><code>…-merged.bin</code></strong> next to the app-only bin (same flow for OLED V4, V3, and TFT+touch V4).</li>
-<li>Both runs add their bins to <code>out/</code> (script does not clear <code>out/</code> for <code>build-firmware</code>).</li>
+<li>Each <code>build-firmware</code> run adds its bins to <code>out/</code> (the script does not clear <code>out/</code> for <code>build-firmware</code>).</li>
 </ul>
+<h3 id="companion-only-release">Companion-only release</h3>
+<p>You <strong>do not</strong> have to build or copy TCP repeater firmware for every companion release.</p>
+<ul>
+<li><strong>Skip</strong> repeater <strong><code>build.sh build-repeater-firmwares</code></strong> and <strong><code>scripts/copy-repeater-release-bins.sh</code></strong>.</li>
+<li><strong><code>prebuilt/heltec_v4_repeater_tcp.bin</code></strong> (and friends) stay as they were until the next repeater promotion.</li>
+<li><strong><code>prebuilt/releases/vX.Y.Z.W/</code></strong> may contain <strong>only</strong> companion binaries until a later repeater copy adds repeater files to that folder (or you ship repeater under a <strong>different</strong> <code>v*</code> — see <a href="../REPEATER_RELEASE_PROCEDURE/"><code>REPEATER_RELEASE_PROCEDURE.md</code></a>).</li>
+</ul>
+<p>Agent-oriented checklist: <strong><a href="../AGENTS.md"><code>AGENTS.md</code></a></strong>.</p>
 <hr />
 <h2 id="3-copy-release-binaries">3. Copy release binaries</h2>
 <pre><code class="language-bash">sh scripts/copy-release-bins.sh v1.14.0.20
 </code></pre>
 <ul>
 <li>Copies the companion binaries from <code>out/</code> into:</li>
-<li><strong><code>prebuilt/</code></strong> (latest)</li>
+<li><strong><code>prebuilt/</code></strong> (latest <strong>companion</strong> stable names only)</li>
 <li><strong><code>prebuilt/releases/v1.14.0.20/</code></strong> (versioned)</li>
 <li>Script expects versioned filenames in <code>out/</code> (e.g. <code>heltec_v4_companion_radio_usb_tcp-v1.14.0.20-...bin</code>).</li>
 </ul>
-<p><strong>TCP repeater</strong> (same <strong><code>v1.14.0.20</code></strong> release folder): build with <strong><code>REPEATER_FIRMWARE_VERSION=v1.14.0.20-repeater-tcp</code></strong>, then <strong><code>sh scripts/copy-repeater-release-bins.sh v1.14.0.20</code></strong> — see <a href="../REPEATER_RELEASE_PROCEDURE/"><code>REPEATER_RELEASE_PROCEDURE.md</code></a>.</p>
+<p><strong>TCP repeater</strong> (optional, same or different <strong><code>v*</code></strong> folder): see <a href="../REPEATER_RELEASE_PROCEDURE/"><code>REPEATER_RELEASE_PROCEDURE.md</code></a> — <strong><code>REPEATER_FIRMWARE_VERSION=…-repeater-tcp</code></strong>, <strong><code>copy-repeater-release-bins.sh</code></strong>. Repeater and companion <strong>latest</strong> roots under <strong><code>prebuilt/</code></strong> are updated by <strong>different</strong> scripts.</p>
 <hr />
 <h2 id="4-update-docs">4. Update docs</h2>
 <ul>
@@ -1057,6 +1099,9 @@ sh build.sh build-firmware heltec_v4_tft_companion_radio_usb_tcp_touch
 <li>Table with links to the binaries in <code>prebuilt/releases/v1.14.0.20/</code> (V4 OLED, V4 TFT+touch, V3 — merged + non-merged where applicable)</li>
 </ul>
 <p>Use the existing v1.14.0.19 block in <code>RELEASES.md</code> as the template (heading, <strong>Firmware version</strong>, <strong>Highlights</strong>, <strong>Prebuilt binaries</strong> table).</p>
+<p>Optional sanity check (after <strong><code>notes.md</code></strong> mentions binaries):</p>
+<pre><code class="language-bash">sh scripts/validate-prebuilt-release-folder.sh v1.14.0.20
+</code></pre>
 <hr />
 <h2 id="5-commit-and-push">5. Commit and push</h2>
 <ul>
@@ -1098,8 +1143,8 @@ sh build.sh build-firmware heltec_v4_tft_companion_radio_usb_tcp_touch
 </tbody>
 </table>
 <ul>
-<li><strong><code>prebuilt/</code></strong> = latest only (overwritten each release).</li>
-<li><strong><code>prebuilt/releases/&lt;version&gt;/</code></strong> = one folder per version (bins + <code>notes.md</code>); keep all for rollback.</li>
+<li><strong><code>prebuilt/</code></strong> = rolling “latest” per <strong>product</strong> (companion copy overwrites companion stable names; repeater copy overwrites repeater stable names — independent).</li>
+<li><strong><code>prebuilt/releases/&lt;version&gt;/</code></strong> = one folder per version (bins + <code>notes.md</code>); keep all for rollback. A folder may start <strong>companion-only</strong> and gain repeater bins later, or repeater may ship under a <strong>different</strong> <code>v*</code> than the newest companion.</li>
 </ul>
 <hr />
 <h2 id="repeater-tcp-prebuilts">Repeater TCP prebuilts</h2>

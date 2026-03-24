@@ -421,10 +421,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#1-choose-the-version-aligned-with-companion" class="md-nav__link">
+  <a href="#1-choose-the-release-folder-vxyzw" class="md-nav__link">
     <span class="md-ellipsis">
       
-        1. Choose the version (aligned with companion)
+        1. Choose the release folder (vX.Y.Z.W)
       
     </span>
   </a>
@@ -861,10 +861,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#1-choose-the-version-aligned-with-companion" class="md-nav__link">
+  <a href="#1-choose-the-release-folder-vxyzw" class="md-nav__link">
     <span class="md-ellipsis">
       
-        1. Choose the version (aligned with companion)
+        1. Choose the release folder (vX.Y.Z.W)
       
     </span>
   </a>
@@ -941,15 +941,22 @@
 
 
 <h1 id="tcp-repeater-release-procedure-prebuilt-flasher">TCP repeater release procedure (prebuilt / flasher)</h1>
-<p><strong>Repeater TCP</strong> uses the <strong>same base version</strong> as the meshcomod companion (<strong><code>v1.14.1.x</code></strong>) plus a fixed suffix <strong><code>‑repeater-tcp</code></strong> so users see one family of versions. <strong><code>build.sh</code></strong> prefixes the compile-time macro with <strong><code>meshcomod-</code></strong>, e.g. <strong><code>meshcomod-v1.14.1.0-repeater-tcp-&lt;gitsha&gt;</code></strong> on the device / in <code>out/</code> filenames.</p>
+<p><strong>Repeater TCP</strong> uses a four-part <strong><code>vX.Y.Z.W</code></strong> folder under <strong><code>prebuilt/releases/</code></strong> plus a fixed suffix <strong><code>‑repeater-tcp</code></strong> in <strong><code>REPEATER_FIRMWARE_VERSION</code></strong> so <code>out/</code> filenames and on-device strings stay distinct from companion builds. <strong><code>build.sh</code></strong> prefixes the compile-time macro with <strong><code>meshcomod-</code></strong>, e.g. <strong><code>meshcomod-v1.14.1.0-repeater-tcp-&lt;gitsha&gt;</code></strong> on the device / in <code>out/</code> filenames.</p>
 <p><strong>Legacy:</strong> older drops used <strong><code>repeater-1.0.x</code></strong> directories; those are no longer in this repo (see <strong>git history</strong>). The copy script still accepts <strong><code>repeater-X.Y.Z</code></strong> if you recreate that layout in a fork.</p>
+<p><strong>Independence from companion:</strong> Repeater does <strong>not</strong> need to ship on every companion version. The <strong>folder name</strong> <strong><code>vX.Y.Z.W</code></strong> is the pin the flasher uses; it <strong>may</strong> match the current companion <strong><code>FIRMWARE_VERSION</code></strong> or a <strong>different</strong> four-part version (e.g. repeater-only fix train). See <strong><a href="../AGENTS.md"><code>AGENTS.md</code></a></strong>.</p>
 <hr />
-<h2 id="1-choose-the-version-aligned-with-companion">1. Choose the version (aligned with companion)</h2>
-<p>When you ship companion <strong><code>v1.14.1.0</code></strong>, build repeater TCP with:</p>
+<h2 id="1-choose-the-release-folder-vxyzw">1. Choose the release folder (<code>vX.Y.Z.W</code>)</h2>
+<p>Pick the four-part directory name under <strong><code>prebuilt/releases/</code></strong> where these binaries should land (and what the meshcomod client will offer for pinned TCP repeater downloads when that folder contains repeater bins).</p>
+<p>Set:</p>
 <ul>
-<li><strong><code>REPEATER_FIRMWARE_VERSION=v1.14.1.0-repeater-tcp</code></strong></li>
+<li><strong><code>REPEATER_FIRMWARE_VERSION=vX.Y.Z.W-repeater-tcp</code></strong></li>
 </ul>
-<p>Bump the <strong><code>v1.14.1.x</code></strong> part whenever you bump the companion for that release train. If you ever need a <strong>repeater-only</strong> fix without a companion bump, increment the patch segment (e.g. <strong><code>v1.14.1.1-repeater-tcp</code></strong>) and document it in <strong><code>RELEASES.md</code></strong>.</p>
+<p>Examples:</p>
+<ul>
+<li>Same train as companion <strong><code>v1.14.1.0</code></strong>: <strong><code>REPEATER_FIRMWARE_VERSION=v1.14.1.0-repeater-tcp</code></strong></li>
+<li>Repeater-only bump while companion is newer: <strong><code>v1.14.1.1-repeater-tcp</code></strong> → folder <strong><code>v1.14.1.1/</code></strong> (companion may already be at <strong><code>v1.14.1.5</code></strong> or higher)</li>
+</ul>
+<p>Document the choice in <strong><code>RELEASES.md</code></strong> and the relevant <strong><code>prebuilt/releases/vX.Y.Z.W/notes.md</code></strong>.</p>
 <hr />
 <h2 id="2-build-from-meshcore">2. Build from <code>MeshCore/</code></h2>
 <pre><code class="language-bash">export REPEATER_FIRMWARE_VERSION=v1.14.1.0-repeater-tcp
@@ -962,14 +969,14 @@ sh build.sh build-repeater-firmwares
 </ul>
 <hr />
 <h2 id="3-promote-to-prebuilt">3. Promote to <code>prebuilt/</code></h2>
-<p>Pass the <strong>companion base</strong> (four-part <strong><code>vX.Y.Z.W</code></strong>) so TCP repeater bins land in the <strong>same</strong> folder as that companion release:</p>
+<p>Pass the <strong>four-part base</strong> <strong><code>vX.Y.Z.W</code></strong> so TCP repeater bins land in <strong><code>prebuilt/releases/vX.Y.Z.W/</code></strong> (alongside any companion or other files already in that folder):</p>
 <pre><code class="language-bash">sh scripts/copy-repeater-release-bins.sh v1.14.1.0
 </code></pre>
 <p>You can also pass <strong><code>v1.14.1.0-repeater-tcp</code></strong> explicitly — same result.</p>
 <p>Produces / updates:</p>
 <ul>
 <li><strong><code>prebuilt/heltec_v4_repeater_tcp.bin</code></strong>, <strong><code>prebuilt/Heltec_v3_repeater_tcp.bin</code></strong>, optional <strong><code>prebuilt/heltec_v4_tft_repeater_tcp*.bin</code></strong></li>
-<li>The same stable names under <strong><code>prebuilt/releases/v1.14.1.0/</code></strong> (alongside companion binaries)</li>
+<li>The same stable names under <strong><code>prebuilt/releases/v1.14.1.0/</code></strong></li>
 </ul>
 <p>Document TCP repeater rows in <strong><code>prebuilt/releases/v1.14.1.0/notes.md</code></strong> and the top section of <strong><code>RELEASES.md</code></strong>.</p>
 <p><strong>Legacy copy</strong> (unchanged behavior):</p>
@@ -994,7 +1001,7 @@ sh scripts/copy-repeater-release-bins.sh repeater-1.0.0
 <tbody>
 <tr>
 <td>1</td>
-<td>Set <strong><code>REPEATER_FIRMWARE_VERSION=vX.Y.Z.W-repeater-tcp</code></strong> (same base as companion)</td>
+<td>Set <strong><code>REPEATER_FIRMWARE_VERSION=vX.Y.Z.W-repeater-tcp</code></strong> (folder = <strong><code>vX.Y.Z.W</code></strong>)</td>
 </tr>
 <tr>
 <td>2</td>
@@ -1010,7 +1017,7 @@ sh scripts/copy-repeater-release-bins.sh repeater-1.0.0
 </tr>
 </tbody>
 </table>
-<p>See also: <a href="../prebuilt/README.md"><code>prebuilt/README.md</code></a>, <a href="../REPEATER_TCP_COMPANION/"><code>REPEATER_TCP_COMPANION.md</code></a>.</p>
+<p>See also: <a href="../prebuilt/README.md"><code>prebuilt/README.md</code></a>, <a href="../REPEATER_TCP_COMPANION/"><code>REPEATER_TCP_COMPANION.md</code></a>, <a href="../AGENTS.md"><code>AGENTS.md</code></a>.</p>
 
 
 
