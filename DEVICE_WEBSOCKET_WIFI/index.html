@@ -27,7 +27,7 @@
     
     
       
-        <title>Device WebSocket over WiFi (WSS) - MeshCore Docs</title>
+        <title>Device WebSocket over Wi‑Fi (plain WS) - MeshCore Docs</title>
       
     
     
@@ -70,7 +70,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#device-websocket-over-wifi-wss" class="md-skip">
+        <a href="#device-websocket-over-wifi-plain-ws" class="md-skip">
           Skip to content
         </a>
       
@@ -105,7 +105,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Device WebSocket over WiFi (WSS)
+              Device WebSocket over Wi‑Fi (plain WS)
             
           </span>
         </div>
@@ -296,7 +296,7 @@
   <span class="md-ellipsis">
     
   
-    Device WebSocket over WiFi (WSS)
+    Device WebSocket over Wi‑Fi (plain WS)
   
 
     
@@ -314,7 +314,7 @@
   <span class="md-ellipsis">
     
   
-    Device WebSocket over WiFi (WSS)
+    Device WebSocket over Wi‑Fi (plain WS)
   
 
     
@@ -340,10 +340,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#default-wss-wss" class="md-nav__link">
+  <a href="#default-ws" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Default: WSS (wss://)
+        Default: ws://
       
     </span>
   </a>
@@ -351,51 +351,39 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#optional-plain-ws-ws-build" class="md-nav__link">
+  <a href="#browsers-and-https-meshcomodcom" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Optional: plain WS (ws://) build
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Optional: plain WS (ws://) build">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#client-behaviour" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Client behaviour
+        Browsers and HTTPS (meshcomod.com)
       
     </span>
   </a>
   
 </li>
-        
-          <li class="md-nav__item">
-  <a href="#first-connection-certificate-warning" class="md-nav__link">
+      
+        <li class="md-nav__item">
+  <a href="#optional-wss-in-the-client" class="md-nav__link">
     <span class="md-ellipsis">
       
-        First connection: certificate warning
+        Optional: wss:// in the client
       
     </span>
   </a>
   
 </li>
-        
-          <li class="md-nav__item">
-  <a href="#checklist-firmware" class="md-nav__link">
+      
+        <li class="md-nav__item">
+  <a href="#firmware-implementation" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Checklist (firmware)
+        Firmware implementation
       
     </span>
   </a>
   
 </li>
-        
-          <li class="md-nav__item">
+      
+        <li class="md-nav__item">
   <a href="#references" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -403,11 +391,6 @@
       
     </span>
   </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
@@ -878,10 +861,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#default-wss-wss" class="md-nav__link">
+  <a href="#default-ws" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Default: WSS (wss://)
+        Default: ws://
       
     </span>
   </a>
@@ -889,51 +872,39 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#optional-plain-ws-ws-build" class="md-nav__link">
+  <a href="#browsers-and-https-meshcomodcom" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Optional: plain WS (ws://) build
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Optional: plain WS (ws://) build">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#client-behaviour" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Client behaviour
+        Browsers and HTTPS (meshcomod.com)
       
     </span>
   </a>
   
 </li>
-        
-          <li class="md-nav__item">
-  <a href="#first-connection-certificate-warning" class="md-nav__link">
+      
+        <li class="md-nav__item">
+  <a href="#optional-wss-in-the-client" class="md-nav__link">
     <span class="md-ellipsis">
       
-        First connection: certificate warning
+        Optional: wss:// in the client
       
     </span>
   </a>
   
 </li>
-        
-          <li class="md-nav__item">
-  <a href="#checklist-firmware" class="md-nav__link">
+      
+        <li class="md-nav__item">
+  <a href="#firmware-implementation" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Checklist (firmware)
+        Firmware implementation
       
     </span>
   </a>
   
 </li>
-        
-          <li class="md-nav__item">
+      
+        <li class="md-nav__item">
   <a href="#references" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -941,11 +912,6 @@
       
     </span>
   </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
@@ -974,41 +940,29 @@
   
 
 
-<h1 id="device-websocket-over-wifi-wss">Device WebSocket over WiFi (WSS)</h1>
-<p>When TCP is enabled and WiFi is up, the device serves the companion protocol over <strong>WebSocket over TLS (wss://)</strong> so a browser on <strong>HTTPS</strong> (e.g. https://meshcomod.com) can connect with <strong>no extra software</strong> (no bridge, no ngrok, no Tailscale).</p>
-<h2 id="default-wss-wss">Default: WSS (wss://)</h2>
+<h1 id="device-websocket-over-wifi-plain-ws">Device WebSocket over Wi‑Fi (plain WS)</h1>
+<p>When TCP is enabled and Wi‑Fi has an address, the device serves the companion protocol over <strong>plain WebSocket</strong> (<strong><code>ws://</code></strong>) on the configured port (default <strong>8765</strong>).</p>
+<p>Meshcomod <strong>does not</strong> implement <strong>WSS</strong> (<code>wss://</code>) on the device. That keeps the firmware smaller and leaves more <strong>internal RAM</strong> for <strong>HTTPS URL OTA</strong> (especially on boards without PSRAM).</p>
+<h2 id="default-ws">Default: <code>ws://</code></h2>
 <ul>
-<li><strong>Companion USB+TCP</strong> firmware is built with <strong>WSS</strong> by default (<code>WS_USE_TLS=1</code> in the variant <code>platformio.ini</code>).</li>
-<li><strong>Port:</strong> 8765 (or <code>WS_PORT</code> from build).</li>
-<li><strong>URL:</strong> <code>wss://&lt;device-ip&gt;:8765</code></li>
-<li>Use from <strong>HTTPS</strong> pages; the first connection shows a certificate warning (self-signed) — click <strong>Advanced</strong> → <strong>Proceed</strong> once.</li>
-<li><strong>Certificate:</strong> The firmware uses a <strong>self-signed</strong> certificate (and key) built in; see <code>src/helpers/esp32/wss_cert.h</code>. CN is <code>meshcomod.local</code>.</li>
+<li><strong>Companion USB+TCP</strong> builds: WebSocket is <strong><code>ws://&lt;device-ip&gt;:8765</code></strong> (or <code>WS_PORT</code> from the build).</li>
+<li><strong>Repeater TCP</strong> builds: same — plain <strong><code>ws://</code></strong> only.</li>
 </ul>
-<h2 id="optional-plain-ws-ws-build">Optional: plain WS (ws://) build</h2>
+<h2 id="browsers-and-https-meshcomodcom">Browsers and HTTPS (meshcomod.com)</h2>
 <ul>
-<li>To build <strong>without</strong> TLS (plain <code>ws://</code> only), remove or comment out <code>-D WS_USE_TLS=1</code> in the companion env in <code>variants/heltec_v4/platformio.ini</code> and <code>variants/heltec_v3/platformio.ini</code>. Then use from <strong>HTTP</strong> or localhost only (browsers block <code>ws://</code> from HTTPS).</li>
+<li><strong>HTTPS</strong> pages (e.g. <code>https://meshcomod.com</code>) normally <strong>block</strong> <code>ws://</code> to a LAN IP (<strong>mixed content</strong>).</li>
+<li>Use the <strong>HTTP</strong>-hosted app when offered (e.g. <strong><code>http://app.meshcomod.com</code></strong>) so the browser may open <strong><code>ws://</code></strong> to your radio, or follow the in-app prompt for the HTTP mirror.</li>
+<li>You can still paste a full <strong><code>ws://192.168.x.x:8765</code></strong> URL when the page allows it.</li>
 </ul>
-<h3 id="client-behaviour">Client behaviour</h3>
+<h2 id="optional-wss-in-the-client">Optional: <code>wss://</code> in the client</h2>
+<p>The web client may still accept a manually entered <strong><code>wss://</code></strong> URL for <strong>custom or third-party</strong> firmware. <strong>Stock meshcomod firmware will not answer</strong> on TLS; use <strong><code>ws://</code></strong> to the device.</p>
+<h2 id="firmware-implementation">Firmware implementation</h2>
 <ul>
-<li>On <strong>HTTPS</strong>, when the user enters <strong>IP:port</strong> (e.g. <code>192.168.20.230:8765</code>), the client connects to <strong><code>wss://&lt;ip&gt;:8765</code></strong>. Default firmware is WSS-only on that port.</li>
-<li>On HTTP or localhost, the client could use <strong><code>ws://</code></strong> — but the default build has <strong>WSS only</strong> (<code>WS_USE_TLS=1</code>), so the device accepts <strong>only</strong> <code>wss://</code> on port 8765.</li>
+<li>Server: <a href="../src/helpers/esp32/WebSocketCompanionServer.cpp"><code>src/helpers/esp32/WebSocketCompanionServer.cpp</code></a> — RFC 6455 upgrade and binary frames, <code>WiFiServer</code> only.</li>
 </ul>
-<h3 id="first-connection-certificate-warning">First connection: certificate warning</h3>
+<h2 id="references">References</h2>
 <ul>
-<li>The first time you connect to <code>wss://&lt;device-ip&gt;:8765</code>, the browser will show a <strong>certificate warning</strong> (self-signed / untrusted).</li>
-<li>The user must click <strong>Advanced</strong> → <strong>Proceed to &lt;address&gt;</strong> (or equivalent) <strong>once</strong>. After that, the connection works from HTTPS with no extra tools.</li>
-</ul>
-<h3 id="checklist-firmware">Checklist (firmware)</h3>
-<ul>
-<li>[x] TLS server listen on the WebSocket port (e.g. 8765) when <code>WS_USE_TLS=1</code>.</li>
-<li>[x] Load self-signed certificate and private key (embedded in <code>wss_cert.h</code>).</li>
-<li>[x] After TLS handshake, perform WebSocket HTTP Upgrade and binary framing as today.</li>
-<li>[x] Document for users: “First connection to the device from HTTPS may show a certificate warning; accept it once.”</li>
-</ul>
-<h3 id="references">References</h3>
-<ul>
-<li><strong>Client:</strong> When on HTTPS, connect to <code>wss://${host}:${port}</code> for IP:port input.</li>
-<li><strong>Firmware:</strong> <a href="https://github.com/ALLFATHER-BV/meshcomod">meshcomod</a> — WSS behind <code>WS_USE_TLS=1</code> in <code>WebSocketCompanionServer</code> and <code>wss_cert.h</code>.</li>
+<li><strong>Client:</strong> Wi‑Fi connect flow in the meshcomod web app; IP:port handling prefers <strong><code>ws://</code></strong> for meshcomod devices when allowed by the page origin.</li>
 </ul>
 
 

@@ -287,7 +287,7 @@
   <span class="md-ellipsis">
     
   
-    Device WebSocket over WiFi (WSS)
+    Device WebSocket over Wi‑Fi (plain WS)
   
 
     
@@ -975,7 +975,7 @@
 
 
 <h1 id="repeater-tcp-companion-protocol">Repeater TCP companion protocol</h1>
-<p>Repeater firmware can expose the <strong>same binary framing</strong> as the USB/BLE/TCP companion: client sends frames prefixed with <code>&lt;</code> (0x3C), length as two little-endian bytes, then payload; the device responds with <code>&gt;</code> (0x3E), same length header, then payload. This matches <a href="../src/helpers/esp32/TCPCompanionServer.h"><code>TCPCompanionServer</code></a>, optional <strong><a href="../src/helpers/esp32/WebSocketCompanionServer.h"><code>WebSocketCompanionServer</code></a></strong> (<strong>plain WS</strong> on port <strong>8765</strong> by default; optional <strong>WSS</strong> if you add <code>WS_USE_TLS=1</code>), and the meshcomod / MeshCore companion wire format (see project docs such as <code>COMPANION_SERIAL_PROTOCOL</code> / meshcomod <code>companion_serial.ts</code>).</p>
+<p>Repeater firmware can expose the <strong>same binary framing</strong> as the USB/BLE/TCP companion: client sends frames prefixed with <code>&lt;</code> (0x3C), length as two little-endian bytes, then payload; the device responds with <code>&gt;</code> (0x3E), same length header, then payload. This matches <a href="../src/helpers/esp32/TCPCompanionServer.h"><code>TCPCompanionServer</code></a> and <strong><a href="../src/helpers/esp32/WebSocketCompanionServer.h"><code>WebSocketCompanionServer</code></a></strong> (<strong>plain <code>ws://</code></strong> on port <strong>8765</strong> by default; meshcomod does not ship WSS on the device), and the meshcomod / MeshCore companion wire format (see project docs such as <code>COMPANION_SERIAL_PROTOCOL</code> / meshcomod <code>companion_serial.ts</code>).</p>
 <p><strong>Custom client / meshcomod UI:</strong> see <strong><a href="../REPEATER_MESHCOMOD_CLIENT_INTEGRATION/"><code>REPEATER_MESHCOMOD_CLIENT_INTEGRATION.md</code></a></strong> for TCP+WS parity, MESHCM Wi‑Fi CLI, <code>CMD_GET_STATS</code> byte layouts, and a suggested repeater settings screen checklist.</p>
 <p>Firmware environments:</p>
 <ul>
@@ -986,15 +986,15 @@
 <h2 id="configuration">Configuration</h2>
 <ul>
 <li><strong><code>TCP_PORT</code></strong> — defaults to <code>5000</code> in the PlatformIO env (raw TCP companion protocol).</li>
-<li><strong><code>WS_PORT</code></strong> — defaults to <code>8765</code>. Repeater envs use <strong>plain <code>ws://</code></strong> (no <code>WS_USE_TLS</code> in <code>platformio.ini</code>). Add <strong><code>-D WS_USE_TLS=1</code></strong> for <strong>WSS</strong> if you need HTTPS pages to connect (browsers often block <code>ws://</code> from HTTPS sites; see <a href="../DEVICE_WEBSOCKET_WIFI/"><code>DEVICE_WEBSOCKET_WIFI.md</code></a>).</li>
+<li><strong><code>WS_PORT</code></strong> — defaults to <code>8765</code>. Repeater and companion builds use <strong>plain <code>ws://</code> only</strong> (see <a href="../DEVICE_WEBSOCKET_WIFI/"><code>DEVICE_WEBSOCKET_WIFI.md</code></a> for HTTPS vs mixed content).</li>
 </ul>
-<p>WebSocket listening starts only after <strong>TCP companion is enabled</strong> and <strong>WiFi is connected</strong> (socket is stopped whenever TCP companion transport is off, or before WiFi has an IP). With <strong><code>WS_USE_TLS=1</code></strong>, <code>tickHandshake()</code> runs every loop while WSS is up so browser TLS handshakes complete reliably.</p>
+<p>WebSocket listening starts only after <strong>TCP companion is enabled</strong> and <strong>WiFi is connected</strong> (socket is stopped whenever TCP companion transport is off, or before WiFi has an IP). <strong><code>tickHandshake()</code></strong> runs every loop while the WebSocket server is up so accepts and upgrades are processed promptly.</p>
 <h3 id="wi-fi-same-nvs-model-as-companion">Wi-Fi (same NVS model as companion)</h3>
 <p>Credentials are stored in ESP32 <strong>Preferences</strong> namespace <code>meshcomod</code> (keys <code>wifi_ssid</code> / <code>wifi_pwd</code>) via <a href="../src/helpers/esp32/WifiRuntimeStore.cpp"><code>WifiRuntimeStore</code></a> — the <strong>same storage</strong> as companion firmware, so you can move a board between images without re-entering SSID if NVS is kept.</p>
 <p><strong>Primary (runtime):</strong></p>
 <ol>
 <li><strong>USB serial</strong> (repeater text CLI): <code>set wifi.ssid MyNet</code>, <code>set wifi.pwd secret</code>, <strong><code>set wifi.apply</code></strong> (meshcomod uses this form), or <code>wifi.apply</code> / <code>set wifi.clear</code> / <code>wifi.clear</code>, plus <code>get wifi.ssid</code>, <code>get wifi.status</code> / <code>wifi.status</code> (includes <code>radio_enabled=0|1</code>), <strong><code>set wifi.radio 1</code></strong> / <strong><code>set wifi.radio 0</code></strong> to turn the Wi‑Fi interface on or off (saved in NVS; off powers down STA and drops LAN until turned back on) — same idea as companion debug <code>set</code> / <code>get</code> lines.</li>
-<li><strong>meshcomod over TCP or WebSocket</strong>: same binary protocol on <strong>TCP</strong> (<code>5000</code>) or <strong>WS</strong> (<code>8765</code>); use <strong><code>ws://&lt;device-ip&gt;:8765/</code></strong> with the default repeater build, or <strong><code>wss://...</code></strong> if you built with <strong><code>WS_USE_TLS=1</code></strong>.</li>
+<li><strong>meshcomod over TCP or WebSocket</strong>: same binary protocol on <strong>TCP</strong> (<code>5000</code>) or <strong>WS</strong> (<code>8765</code>); use <strong><code>ws://&lt;device-ip&gt;:8765/</code></strong>.</li>
 </ol>
 <p><strong>Optional compile-time defaults:</strong> uncomment <code>WIFI_SSID</code> / <code>WIFI_PWD</code> in the <code>*_repeater_tcp</code> env in <code>platformio.ini</code> if you want a factory fallback when NVS is empty.</p>
 <p>Example build:</p>

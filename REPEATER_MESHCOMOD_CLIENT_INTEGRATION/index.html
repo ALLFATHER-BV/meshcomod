@@ -287,7 +287,7 @@
   <span class="md-ellipsis">
     
   
-    Device WebSocket over WiFi (WSS)
+    Device WebSocket over Wi‑Fi (plain WS)
   
 
     
@@ -1214,7 +1214,7 @@
 <p><strong>Yes.</strong> The repeater speaks one <strong>binary companion protocol</strong> on:</p>
 <ul>
 <li><strong>TCP</strong> port <code>5000</code> (default)</li>
-<li><strong>WebSocket</strong> port <code>8765</code> (default; <code>ws://</code> unless you build with <code>WS_USE_TLS=1</code>)</li>
+<li><strong>WebSocket</strong> port <code>8765</code> (default; plain <strong><code>ws://</code></strong> in meshcomod builds)</li>
 </ul>
 <p>Framing is identical: frame prefix <strong><code>&lt;</code></strong> (0x3C), <strong>2-byte little-endian</strong> payload length, then payload; responses use <strong><code>&gt;</code></strong> (0x3E) with the same length header. Your existing <code>NodeConnection</code> + <code>buildOutgoingFrame()</code> path works unchanged—only the transport (TCP vs WS) differs.</p>
 <p><strong>Prerequisite:</strong> The device must have <strong>Wi‑Fi associated</strong> and <strong>TCP+WS companion transport</strong> enabled on the device (default on; see limitations below).</p>
