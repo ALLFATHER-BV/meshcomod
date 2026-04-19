@@ -993,7 +993,7 @@ sh build.sh build-repeater-firmwares
 </code></pre>
 <ul>
 <li>You do <strong>not</strong> need <strong><code>FIRMWARE_VERSION</code></strong> if <strong><code>REPEATER_FIRMWARE_VERSION</code></strong> is set.</li>
-<li><code>out/</code> will contain e.g. <strong><code>heltec_v4_repeater_tcp-meshcomod-r1.14.1.0-repeater-tcp-&lt;sha&gt;.bin</code></strong> and the V3 / V4 TFT analogues, plus optional <strong><code>…-merged.bin</code></strong> (full image at <strong>0x0</strong>) after <strong><code>mergebin</code></strong>.</li>
+<li><code>out/</code> will contain e.g. <strong><code>heltec_v4_repeater_tcp-meshcomod-r1.15.0.2-repeater-tcp-&lt;sha&gt;.bin</code></strong>, plus <strong>V3</strong>, <strong>V4 TFT</strong>, and <strong>Wireless Paper</strong> <code>*_repeater_tcp</code> names with the same version suffix, plus optional <strong><code>…-merged.bin</code></strong> (full image at <strong>0x0</strong>) after <strong><code>mergebin</code></strong>. <strong><code>sh build.sh build-repeater-firmwares</code></strong> builds <strong>every</strong> PlatformIO env whose name ends in <strong><code>_repeater_tcp</code></strong> (currently the four Heltec envs above).</li>
 </ul>
 <hr />
 <h2 id="3-promote-to-prebuilt">3. Promote to <code>prebuilt/</code></h2>
@@ -1003,7 +1003,7 @@ sh build.sh build-repeater-firmwares
 <p>You can also pass <strong><code>r1.14.1.0-repeater-tcp</code></strong> explicitly — same result.</p>
 <p>Produces / updates:</p>
 <ul>
-<li><strong><code>prebuilt/heltec_v4_repeater_tcp.bin</code></strong>, <strong><code>prebuilt/Heltec_v3_repeater_tcp.bin</code></strong>, optional <strong><code>prebuilt/heltec_v4_tft_repeater_tcp*.bin</code></strong></li>
+<li><strong><code>prebuilt/heltec_v4_repeater_tcp.bin</code></strong>, <strong><code>prebuilt/Heltec_v3_repeater_tcp.bin</code></strong>, optional <strong><code>prebuilt/heltec_v4_tft_repeater_tcp*.bin</code></strong>, optional <strong><code>prebuilt/Heltec_Wireless_Paper_repeater_tcp*.bin</code></strong></li>
 <li>The same stable names under <strong><code>prebuilt/releases/repeater/r1.14.1.0/</code></strong></li>
 </ul>
 <p>Document TCP repeater rows in <strong><code>prebuilt/releases/repeater/r1.14.1.0/notes.md</code></strong> and the top section of <strong><code>RELEASES.md</code></strong>.</p>

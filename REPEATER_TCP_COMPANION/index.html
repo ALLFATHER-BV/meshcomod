@@ -1007,7 +1007,9 @@
 <p>Firmware environments:</p>
 <ul>
 <li><code>heltec_v4_repeater_tcp</code> — Heltec WiFi LoRa 32 V4 (OLED repeater + TCP).</li>
+<li><code>heltec_v4_tft_repeater_tcp</code> — Heltec V4 TFT + touch (same TCP stack, TFT UI).</li>
 <li><code>Heltec_v3_repeater_tcp</code> — Heltec V3 variant (parity).</li>
+<li><code>Heltec_Wireless_Paper_repeater_tcp</code> — Heltec Wireless Paper (E213 e‑ink + TCP).</li>
 </ul>
 <p>They <strong>do not</strong> compile <code>examples/companion_radio/</code>; command handling is a <strong>subset</strong> implemented on <code>simple_repeater</code> <a href="../examples/simple_repeater/MyMesh.cpp"><code>MyMesh</code></a> when <code>REPEATER_TCP_COMPANION</code> is set, plus <a href="../examples/repeater_tcp/main.cpp"><code>examples/repeater_tcp/main.cpp</code></a> for WiFi, <strong>TCP + WebSocket</strong> accept/poll, and USB serial.</p>
 <h2 id="configuration">Configuration</h2>
