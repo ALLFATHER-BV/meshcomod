@@ -1111,6 +1111,7 @@ sh build.sh build-firmware Heltec_Wireless_Paper_companion_radio_usb_tcp
 <li>Script expects versioned filenames in <code>out/</code> (e.g. <code>heltec_v4_companion_radio_usb_tcp-v1.14.0.20-...bin</code>).</li>
 </ul>
 <p><strong>TCP repeater</strong> (optional <strong><code>repeater/r*…/</code></strong> folder, parallel train to companion <strong><code>v*</code></strong>): see <a href="../REPEATER_RELEASE_PROCEDURE/"><code>REPEATER_RELEASE_PROCEDURE.md</code></a> — <strong><code>REPEATER_FIRMWARE_VERSION=…-repeater-tcp</code></strong>, <strong><code>copy-repeater-release-bins.sh</code></strong>. Repeater and companion <strong>latest</strong> roots under <strong><code>prebuilt/</code></strong> are updated by <strong>different</strong> scripts.</p>
+<p><strong>Room multitransport</strong> (optional <strong><code>prebuilt/releases/rooms/r*…/</code></strong>): meshcomod-only <strong><code>_room_server_multitransport</code></strong> envs (USB+BLE+TCP+WS; stock <strong><code>_room_server</code></strong> unchanged). Set <strong><code>ROOM_FIRMWARE_VERSION=rX.Y.Z.W-room-mt</code></strong>, run <strong><code>sh build.sh build-room-multitransport-firmwares</code></strong>, then <strong><code>sh scripts/copy-room-release-bins.sh rX.Y.Z.W</code></strong>. Template checklist: <a href="../prebuilt/releases/rooms/r1.15.0.0/notes.md"><code>prebuilt/releases/rooms/r1.15.0.0/notes.md</code></a>.</p>
 <hr />
 <h2 id="4-update-docs">4. Update docs</h2>
 <ul>
