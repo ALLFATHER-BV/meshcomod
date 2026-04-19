@@ -20,6 +20,7 @@ Commands:
   build-companion-firmwares: Build all companion firmwares for all build targets.
   build-repeater-firmwares: Build all TCP repeater firmwares (env names ending in _repeater_tcp).
   build-room-server-firmwares: Build all chat room server firmwares for all build targets.
+  build-room-multitransport-firmwares: Build meshcomod room multitransport firmwares (env names ending in _room_server_multitransport).
 
 Examples:
 Build firmware for the "RAK_4631_repeater" device target
@@ -46,6 +47,10 @@ Environment Variables:
                    Legacy v1.14.1.0-repeater-tcp in out/ still works with copy-repeater-release-bins.sh v1.14.1.0.
                    Legacy labels like repeater-1.0.x still work. The macro is prefixed with meshcomod-
                    (e.g. meshcomod-r1.14.1.0-repeater-tcp-<sha>).
+  ROOM_FIRMWARE_VERSION: For env names ending in _room_server_multitransport only, overrides FIRMWARE_VERSION
+                   for the compile-time version string and out/ filenames. **Recommended:** e.g.
+                   r1.15.0.0-room-mt (then copy-room-release-bins.sh r1.15.0.0). On-device string is
+                   meshcomod-<ROOM_FIRMWARE_VERSION>-<sha>.
 
 Examples:
 Build without debug logging:
@@ -61,6 +66,11 @@ TCP repeater (r* release id parallel to companion v*, distinct -repeater-tcp suf
 $ export REPEATER_FIRMWARE_VERSION=r1.14.1.0-repeater-tcp
 $ sh build.sh build-repeater-firmwares
 $ sh scripts/copy-repeater-release-bins.sh r1.14.1.0
+
+Room multitransport (prebuilt/releases/rooms/r*…):
+$ export ROOM_FIRMWARE_VERSION=r1.15.0.0-room-mt
+$ sh build.sh build-room-multitransport-firmwares
+$ sh scripts/copy-room-release-bins.sh r1.15.0.0
 EOF
 }
 
@@ -147,10 +157,14 @@ build_firmware() {
   # set firmware build date
   FIRMWARE_BUILD_DATE=$(date '+%d-%b-%Y')
 
-  # Version string: companion / generic builds use FIRMWARE_VERSION; *_repeater_tcp can use REPEATER_FIRMWARE_VERSION instead.
+  # Version string: companion / generic builds use FIRMWARE_VERSION; *_repeater_tcp can use REPEATER_FIRMWARE_VERSION instead;
+  # *_room_server_multitransport can use ROOM_FIRMWARE_VERSION instead.
   EFFECTIVE_FW_VERSION="$FIRMWARE_VERSION"
   if [[ "$1" == *_repeater_tcp ]] && [ -n "$REPEATER_FIRMWARE_VERSION" ]; then
     EFFECTIVE_FW_VERSION="$REPEATER_FIRMWARE_VERSION"
+  fi
+  if [[ "$1" == *_room_server_multitransport ]] && [ -n "$ROOM_FIRMWARE_VERSION" ]; then
+    EFFECTIVE_FW_VERSION="$ROOM_FIRMWARE_VERSION"
   fi
   if [ -z "$EFFECTIVE_FW_VERSION" ]; then
     echo "FIRMWARE_VERSION must be set in environment (or REPEATER_FIRMWARE_VERSION for *_repeater_tcp)"
@@ -160,8 +174,8 @@ build_firmware() {
   # set firmware version string
   # e.g: v1.0.0-abcdef or v1.14.1.0-repeater-tcp-abcdef or repeater-1.0.0-abcdef
   FIRMWARE_VERSION_STRING="${EFFECTIVE_FW_VERSION}-${COMMIT_HASH}"
-  # TCP repeater: visible identity includes meshcomod (OLED, device query, out/ filenames).
-  if [[ "$1" == *_repeater_tcp ]]; then
+  # TCP repeater + meshcomod room multitransport: visible identity includes meshcomod (out/ filenames).
+  if [[ "$1" == *_repeater_tcp ]] || [[ "$1" == *_room_server_multitransport ]]; then
     FIRMWARE_VERSION_STRING="meshcomod-${FIRMWARE_VERSION_STRING}"
   fi
 
@@ -182,7 +196,7 @@ build_firmware() {
   if [ "$ENV_PLATFORM" == "ESP32_PLATFORM" ]; then
     cp .pio/build/$1/firmware.bin out/${FIRMWARE_FILENAME}.bin 2>/dev/null || true
     # Companions (USB+TCP) + Heltec TCP repeaters: merged image at 0x0 for flasher / full-chip flash
-    if [[ "$1" == *companion_radio_usb_tcp* ]] || [[ "$1" == *_repeater_tcp ]]; then
+    if [[ "$1" == *companion_radio_usb_tcp* ]] || [[ "$1" == *_repeater_tcp ]] || [[ "$1" == *_room_server_multitransport ]]; then
       if $PIO_CMD run -t mergebin -e "$1"; then
         if [ -f ".pio/build/$1/firmware-merged.bin" ]; then
           cp ".pio/build/$1/firmware-merged.bin" "out/${FIRMWARE_FILENAME}-merged.bin" 2>/dev/null || true
@@ -266,6 +280,10 @@ build_room_server_firmwares() {
 
 }
 
+build_room_multitransport_firmwares() {
+  build_all_firmwares_by_suffix "_room_server_multitransport"
+}
+
 build_firmwares() {
   build_companion_firmwares
   build_repeater_firmwares
@@ -309,4 +327,8 @@ elif [[ $1 == "build-room-server-firmwares" ]]; then
   rm -rf out
   mkdir -p out
   build_room_server_firmwares
+elif [[ $1 == "build-room-multitransport-firmwares" ]]; then
+  rm -rf out
+  mkdir -p out
+  build_room_multitransport_firmwares
 fi

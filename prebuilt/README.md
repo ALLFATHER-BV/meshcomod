@@ -9,6 +9,7 @@ Binaries are **not** always committed; this folder defines **where promoted buil
 | **`prebuilt/<short-name>.bin`** | Latest **promoted** build **for that product** (companion copy vs repeater copy touch **different** stable names). |
 | **`prebuilt/releases/companion/v*…/`** | **Immutable** companion drop (USB+TCP row, TFT touch, V3, companion extras). |
 | **`prebuilt/releases/repeater/r*…/`** | **Immutable** repeater drop (plain mesh + TCP repeater). Release id **`r*`** parallels companion **`v*`** (same numbers, **`r`** prefix). Read **[`releases/README.md`](releases/README.md)**. |
+| **`prebuilt/releases/rooms/r*…/`** | **Immutable** meshcomod **room multitransport** (`*_room_server_multitransport`). Built with **`ROOM_FIRMWARE_VERSION=rX.Y.Z.W-room-mt`**; copy via **`scripts/copy-room-release-bins.sh`**. |
 
 **Partial folders:** A companion folder may ship **without** a matching repeater folder (and vice versa). Copy scripts **add/overwrite their own files** and do not delete other artifacts.
 
@@ -44,7 +45,7 @@ Produces / updates:
 - `prebuilt/Heltec_v3_repeater_tcp.bin`
 - Same stable names under **`prebuilt/releases/repeater/r1.14.1.1/`** (older pins remain under **`r1.14.1.0/`**, etc.)
 
-**Merged** images (`*-merged.bin`, flash from **0x0**): `build.sh build-firmware` / `build-repeater-firmwares` runs `mergebin` for `companion_radio_usb_tcp*` and `*_repeater_tcp` envs and copies `*-merged.bin` into `out/` before you run the copy script.
+**Merged** images (`*-merged.bin`, flash from **0x0**): `build.sh build-firmware` / `build-repeater-firmwares` / `build-room-multitransport-firmwares` runs `mergebin` for `companion_radio_usb_tcp*`, `*_repeater_tcp`, and `*_room_server_multitransport` envs and copies `*-merged.bin` into `out/` before you run the copy script.
 
 ## Build inputs (versioned `out/` names)
 
@@ -61,5 +62,13 @@ sh scripts/copy-repeater-release-bins.sh r1.14.1.1
 ```
 
 Ad-hoc **`pio run`** (without `build.sh`) still drops **`out/<env>.bin`** and stamped copies via `merge-bin.py`; those names **do not** match the copy scripts — use **`build.sh`** (or manual rename) before promoting to `prebuilt/`.
+
+**Room multitransport** (Heltec V4 OLED/TFT, V3, Wireless Paper):
+
+```bash
+export ROOM_FIRMWARE_VERSION=r1.15.0.0-room-mt
+sh build.sh build-room-multitransport-firmwares
+sh scripts/copy-room-release-bins.sh r1.15.0.0
+```
 
 See also: [`docs/RELEASE_PROCEDURE.md`](../docs/RELEASE_PROCEDURE.md) (companion), [`docs/REPEATER_RELEASE_PROCEDURE.md`](../docs/REPEATER_RELEASE_PROCEDURE.md) (repeater), [`WHERE_IS_REPEATER_FIRMWARE.md`](../WHERE_IS_REPEATER_FIRMWARE.md), [`docs/REPEATER_TCP_COMPANION.md`](../docs/REPEATER_TCP_COMPANION.md).

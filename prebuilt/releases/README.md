@@ -4,6 +4,7 @@
 
 - **`companion/`** — pinned **companion** drops: **`v1.14.x.x`** (USB+TCP, TFT touch, V3) plus Heltec V4 **companion** extras (USB / BLE / Wi‑Fi only). No `*repeater*` binaries here.
 - **`repeater/`** — pinned **repeater** drops: **`r1.14.x.x`** (same numeric train as companion **`v1.14.x.x`**, with an **`r`** prefix), plus optional legacy **`repeater-X.Y.Z`** folders. Plain mesh repeaters and TCP repeater (`*_repeater_tcp`) bins live here.
+- **`rooms/`** — pinned **meshcomod room multitransport** drops: **`r*…`** (same style as repeater **`r*`**). Built with **`ROOM_FIRMWARE_VERSION=…-room-mt`** and **`scripts/copy-room-release-bins.sh`**. Stock **`_room_server`** images are **not** stored here (they follow the normal **`_room_server`** / `build-room-server-firmwares` flow if promoted elsewhere).
 
 **Rolling “latest”** still lives at **`prebuilt/*.bin`** (updated by the copy scripts). Promoting **companion** vs **repeater** can happen on different schedules.
 

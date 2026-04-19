@@ -24,6 +24,10 @@
 #include <RTClib.h>
 #include <target.h>
 
+#if defined(ESP32) && defined(MESHCOMOD_ROOM_MULTITRANSPORT)
+#include <helpers/BaseSerialInterface.h>
+#endif
+
 /* ------------------------------ Config -------------------------------- */
 
 #ifndef FIRMWARE_BUILD_DATE
@@ -117,6 +121,17 @@ class MyMesh : public mesh::Mesh, public CommonCLICallbacks {
   uint8_t pending_sf;
   uint8_t pending_cr;
   int  matching_peer_indexes[MAX_CLIENTS];
+
+#if defined(ESP32) && defined(MESHCOMOD_ROOM_MULTITRANSPORT)
+  BaseSerialInterface* _serial;
+  uint8_t cmd_frame[MAX_FRAME_SIZE + 1];
+  uint8_t out_frame[MAX_FRAME_SIZE + 1];
+  uint8_t _room_transport_app_ver;
+
+  void checkSerialInterface();
+  void checkRoomUsbTextCli();
+  void handleRoomTransportCmdFrame(size_t len);
+#endif
 
   void addPost(ClientInfo* client, const char* postData);
   void pushPostToClient(ClientInfo* client, PostInfo& post);
@@ -222,4 +237,9 @@ public:
   void clearStats() override;
   void handleCommand(uint32_t sender_timestamp, char* command, char* reply);
   void loop();
+
+#if defined(ESP32) && defined(MESHCOMOD_ROOM_MULTITRANSPORT)
+  void startInterface(BaseSerialInterface& serial);
+  void pushRoomOtaProgressLine(const char* line);
+#endif
 };

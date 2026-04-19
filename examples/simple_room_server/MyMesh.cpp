@@ -615,6 +615,11 @@ MyMesh::MyMesh(mesh::MainBoard &board, mesh::Radio &radio, mesh::MillisecondCloc
       region_map(key_store), temp_map(key_store),
       _cli(board, rtc, sensors, region_map, acl, &_prefs, this),
       telemetry(MAX_PACKET_PAYLOAD - 4)
+#if defined(ESP32) && defined(MESHCOMOD_ROOM_MULTITRANSPORT)
+          ,
+      _serial(nullptr),
+      _room_transport_app_ver(0)
+#endif
 {
   last_millis = 0;
   uptime_millis = 0;
@@ -1021,4 +1026,68 @@ void MyMesh::loop() {
   uint32_t now = millis();
   uptime_millis += now - last_millis;
   last_millis = now;
+
+#if defined(ESP32) && defined(MESHCOMOD_ROOM_MULTITRANSPORT)
+  if (_serial) {
+#if defined(ESP32)
+    if (Serial.available() > 0) {
+      int first = Serial.peek();
+      if (first == '\r' || first == '\n') {
+        Serial.read();
+        if (Serial.available() > 0) {
+          first = Serial.peek();
+        }
+      }
+      if (first != '<' && ((first >= 'a' && first <= 'z') || (first >= 'A' && first <= 'Z'))) {
+        checkRoomUsbTextCli();
+      }
+    }
+#endif
+    checkSerialInterface();
+  }
+#endif
 }
+
+#if defined(ESP32) && defined(MESHCOMOD_ROOM_MULTITRANSPORT)
+
+void MyMesh::startInterface(BaseSerialInterface& serial) {
+  _serial = &serial;
+  serial.enable();
+}
+
+void MyMesh::checkSerialInterface() {
+  if (!_serial) return;
+  for (int n = 0; n < 4; n++) {
+    size_t len = _serial->checkRecvFrame(cmd_frame);
+    if (len == 0) break;
+    handleRoomTransportCmdFrame(len);
+  }
+}
+
+void MyMesh::checkRoomUsbTextCli() {
+  static char line_buf[MAX_POST_TEXT_LEN + 1];
+  int len = (int)strlen(line_buf);
+  while (Serial.available() && len < (int)sizeof(line_buf) - 1) {
+    char c = (char)Serial.read();
+    if (c != '\n') {
+      line_buf[len++] = c;
+      line_buf[len] = 0;
+    }
+    Serial.print(c);
+  }
+  if (len == (int)sizeof(line_buf) - 1) {
+    line_buf[sizeof(line_buf) - 1] = '\r';
+  }
+  if (len > 0 && line_buf[len - 1] == '\r') {
+    line_buf[len - 1] = 0;
+    char reply[160];
+    handleCommand(0, line_buf, reply);
+    if (reply[0]) {
+      Serial.print("  -> ");
+      Serial.println(reply);
+    }
+    line_buf[0] = 0;
+  }
+}
+
+#endif

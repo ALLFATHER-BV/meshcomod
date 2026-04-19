@@ -57,6 +57,8 @@ sh scripts/copy-release-bins.sh v1.14.0.20
 
 **TCP repeater** (optional **`repeater/r*…/`** folder, parallel train to companion **`v*`**): see [`REPEATER_RELEASE_PROCEDURE.md`](REPEATER_RELEASE_PROCEDURE.md) — **`REPEATER_FIRMWARE_VERSION=…-repeater-tcp`**, **`copy-repeater-release-bins.sh`**. Repeater and companion **latest** roots under **`prebuilt/`** are updated by **different** scripts.
 
+**Room multitransport** (optional **`prebuilt/releases/rooms/r*…/`**): meshcomod-only **`_room_server_multitransport`** envs (USB+BLE+TCP+WS; stock **`_room_server`** unchanged). Set **`ROOM_FIRMWARE_VERSION=rX.Y.Z.W-room-mt`**, run **`sh build.sh build-room-multitransport-firmwares`**, then **`sh scripts/copy-room-release-bins.sh rX.Y.Z.W`**. Template checklist: [`prebuilt/releases/rooms/r1.15.0.0/notes.md`](../prebuilt/releases/rooms/r1.15.0.0/notes.md).
+
 ---
 
 ## 4. Update docs

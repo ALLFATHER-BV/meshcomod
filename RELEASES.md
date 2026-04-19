@@ -8,11 +8,11 @@ Versioned prebuilts are listed here so you can **roll back** if a newer release 
 
 1. **Bump version** — Choose the next version (e.g. `v1.14.0.1`). Do not reuse the current version.
 2. **Build** — `export FIRMWARE_VERSION=v1.14.0.1` then build **Heltec V4 OLED**, **V4 TFT+touch** (expansion kit), **V3**, and **Heltec Wireless Paper** (`Heltec_Wireless_Paper_companion_radio_usb_tcp`) meshcomod companions per [`docs/RELEASE_PROCEDURE.md`](docs/RELEASE_PROCEDURE.md) §2.
-3. **Create versioned folder** — Run `sh scripts/copy-release-bins.sh v1.14.0.1` to populate `prebuilt/releases/companion/<version>/` and `prebuilt/`. Add `notes.md` in that folder (often done in step 4). Repeater drops use **`prebuilt/releases/repeater/r*`** and `copy-repeater-release-bins.sh` (see [`prebuilt/README.md`](prebuilt/README.md)).
+3. **Create versioned folder** — Run `sh scripts/copy-release-bins.sh v1.14.0.1` to populate `prebuilt/releases/companion/<version>/` and `prebuilt/`. Add `notes.md` in that folder (often done in step 4). Repeater drops use **`prebuilt/releases/repeater/r*`** and `copy-repeater-release-bins.sh`. **Room multitransport** drops use **`prebuilt/releases/rooms/r*`** and `copy-room-release-bins.sh` (see [`prebuilt/README.md`](prebuilt/README.md)).
 4. **Update this file** — Add a new section above with the new version number, date, highlights, and table linking to the new release paths.
 5. **Commit and push** — Always commit and push: stage version bump, prebuilts, `prebuilt/releases/companion/<version>/` (and repeater folder if applicable), and RELEASES.md; commit with a short message (e.g. `v1.14.0.N: <highlights>`); push to the release remote (e.g. `git push allfather main`). Do not skip this step.
 
-**Summary:** `prebuilt/` = latest only. `prebuilt/releases/companion/v*…/` and `prebuilt/releases/repeater/r*…/` hold pinned drops (bins + `notes.md`); keep all of them so users can roll back.
+**Summary:** `prebuilt/` = latest only. `prebuilt/releases/companion/v*…/`, `prebuilt/releases/repeater/r*…/`, and `prebuilt/releases/rooms/r*…/` hold pinned drops (bins + `notes.md`); keep all of them so users can roll back.
 
 **WebSocket:** meshcomod **companion** and **repeater TCP** firmware serves **plain `ws://` only** on the WebSocket port (default 8765). **WSS** (`wss://`) was **removed from the device** to reduce flash use and free internal RAM for **HTTPS URL OTA**. Use `ws://` to the radio, or the **HTTP**-hosted web app when HTTPS blocks mixed content — see [`docs/DEVICE_WEBSOCKET_WIFI.md`](docs/DEVICE_WEBSOCKET_WIFI.md).
 
@@ -25,6 +25,7 @@ Versioned prebuilts are listed here so you can **roll back** if a newer release 
 **Highlights:**
 - **Heltec Wireless Paper:** First meshcomod **USB + BLE + TCP + WebSocket** companion prebuilts (`Heltec_Wireless_Paper_companion_radio_usb_tcp`). E‑ink-friendly **`AUTO_OFF_MILLIS=0`** on the Paper variant; **`set_boot_phase`** declared in **`target.h`** for companion boot trace.
 - **Repeater TCP:** New **`r1.15.0.1`** drop adds **Wireless Paper** repeater TCP bins alongside refreshed V4/V3 — see [`prebuilt/releases/repeater/r1.15.0.1/notes.md`](prebuilt/releases/repeater/r1.15.0.1/notes.md).
+- **Room multitransport:** First pinned **`r1.15.0.1`** meshcomod **chat room** images with USB+BLE+TCP+WS — [`prebuilt/releases/rooms/r1.15.0.1/notes.md`](prebuilt/releases/rooms/r1.15.0.1/notes.md).
 
 **Prebuilt binaries (use [flasher.meshcomod.com](https://flasher.meshcomod.com) — Easy mode auto-downloads versions; for manual upload, use Custom firmware):**
 
@@ -59,6 +60,27 @@ Versioned prebuilts are listed here so you can **roll back** if a newer release 
 | Heltec Wireless Paper (E213) | [Heltec_Wireless_Paper_repeater_tcp-merged.bin](prebuilt/releases/repeater/r1.15.0.2/Heltec_Wireless_Paper_repeater_tcp-merged.bin) | [Heltec_Wireless_Paper_repeater_tcp.bin](prebuilt/releases/repeater/r1.15.0.2/Heltec_Wireless_Paper_repeater_tcp.bin) |
 
 **More details:** [`prebuilt/releases/repeater/r1.15.0.2/notes.md`](prebuilt/releases/repeater/r1.15.0.2/notes.md).
+
+---
+
+## Room multitransport r1.15.0.1 — 2026-04-19
+
+**Release id:** **`r1.15.0.1`** — meshcomod **chat room server** with **USB + BLE + TCP + WebSocket** (`*_room_server_multitransport`). Stock **`*_room_server`** firmware is a separate build track.
+
+**Highlights:**
+- **Heltec V4 OLED / V4 TFT / V3 / Wireless Paper** in one matrix; merged + app-only bins under [`prebuilt/releases/rooms/r1.15.0.1/`](prebuilt/releases/rooms/r1.15.0.1/).
+- **Rolling `prebuilt/`** stable names updated by **`scripts/copy-room-release-bins.sh`** (same pattern as repeater companion copy).
+
+**Prebuilt binaries:**
+
+| Device | Merged (recommended) | Non-merged |
+|--------|----------------------|------------|
+| Heltec V4 (OLED) | [heltec_v4_room_server_multitransport-merged.bin](prebuilt/releases/rooms/r1.15.0.1/heltec_v4_room_server_multitransport-merged.bin) | [heltec_v4_room_server_multitransport.bin](prebuilt/releases/rooms/r1.15.0.1/heltec_v4_room_server_multitransport.bin) |
+| Heltec V4 TFT | [heltec_v4_tft_room_server_multitransport-merged.bin](prebuilt/releases/rooms/r1.15.0.1/heltec_v4_tft_room_server_multitransport-merged.bin) | [heltec_v4_tft_room_server_multitransport.bin](prebuilt/releases/rooms/r1.15.0.1/heltec_v4_tft_room_server_multitransport.bin) |
+| Heltec V3 | [Heltec_v3_room_server_multitransport-merged.bin](prebuilt/releases/rooms/r1.15.0.1/Heltec_v3_room_server_multitransport-merged.bin) | [Heltec_v3_room_server_multitransport.bin](prebuilt/releases/rooms/r1.15.0.1/Heltec_v3_room_server_multitransport.bin) |
+| Heltec Wireless Paper (E213) | [Heltec_Wireless_Paper_room_server_multitransport-merged.bin](prebuilt/releases/rooms/r1.15.0.1/Heltec_Wireless_Paper_room_server_multitransport-merged.bin) | [Heltec_Wireless_Paper_room_server_multitransport.bin](prebuilt/releases/rooms/r1.15.0.1/Heltec_Wireless_Paper_room_server_multitransport.bin) |
+
+**More details:** [`prebuilt/releases/rooms/r1.15.0.1/notes.md`](prebuilt/releases/rooms/r1.15.0.1/notes.md).
 
 ---
 
