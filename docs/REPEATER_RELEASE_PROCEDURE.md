@@ -36,7 +36,7 @@ sh build.sh build-repeater-firmwares
 ```
 
 - You do **not** need **`FIRMWARE_VERSION`** if **`REPEATER_FIRMWARE_VERSION`** is set.
-- `out/` will contain e.g. **`heltec_v4_repeater_tcp-meshcomod-r1.14.1.0-repeater-tcp-<sha>.bin`** and the V3 / V4 TFT analogues, plus optional **`…-merged.bin`** (full image at **0x0**) after **`mergebin`**.
+- `out/` will contain e.g. **`heltec_v4_repeater_tcp-meshcomod-r1.15.0.2-repeater-tcp-<sha>.bin`**, plus **V3**, **V4 TFT**, and **Wireless Paper** `*_repeater_tcp` names with the same version suffix, plus optional **`…-merged.bin`** (full image at **0x0**) after **`mergebin`**. **`sh build.sh build-repeater-firmwares`** builds **every** PlatformIO env whose name ends in **`_repeater_tcp`** (currently the four Heltec envs above).
 
 ---
 
@@ -52,7 +52,7 @@ You can also pass **`r1.14.1.0-repeater-tcp`** explicitly — same result.
 
 Produces / updates:
 
-- **`prebuilt/heltec_v4_repeater_tcp.bin`**, **`prebuilt/Heltec_v3_repeater_tcp.bin`**, optional **`prebuilt/heltec_v4_tft_repeater_tcp*.bin`**
+- **`prebuilt/heltec_v4_repeater_tcp.bin`**, **`prebuilt/Heltec_v3_repeater_tcp.bin`**, optional **`prebuilt/heltec_v4_tft_repeater_tcp*.bin`**, optional **`prebuilt/Heltec_Wireless_Paper_repeater_tcp*.bin`**
 - The same stable names under **`prebuilt/releases/repeater/r1.14.1.0/`**
 
 Document TCP repeater rows in **`prebuilt/releases/repeater/r1.14.1.0/notes.md`** and the top section of **`RELEASES.md`**.

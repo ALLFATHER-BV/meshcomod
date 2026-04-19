@@ -1,11 +1,13 @@
 # Repeater TCP firmware `.bin` location
 
-After you build **`heltec_v4_repeater_tcp`** (or **`Heltec_v3_repeater_tcp`**), the **app-only** image is copied to **two** places:
+After you build **`heltec_v4_repeater_tcp`**, **`Heltec_v3_repeater_tcp`**, **`heltec_v4_tft_repeater_tcp`**, or **`Heltec_Wireless_Paper_repeater_tcp`**, the **app-only** image is copied to **two** places:
 
 | Board | Filename |
 |-------|----------|
-| **Heltec V4** | `heltec_v4_repeater_tcp.bin` |
+| **Heltec V4 (OLED)** | `heltec_v4_repeater_tcp.bin` |
+| **Heltec V4 TFT** | `heltec_v4_tft_repeater_tcp.bin` |
 | **Heltec V3** | `Heltec_v3_repeater_tcp.bin` |
+| **Heltec Wireless Paper** | `Heltec_Wireless_Paper_repeater_tcp.bin` |
 
 **Paths (HeltecV4 workspace: repo inside `MeshCore/`):**
 
@@ -37,7 +39,7 @@ To match **companion** release folders for your **flasher** or app bundles:
 
 That copies into:
 
-- **`prebuilt/heltec_v4_repeater_tcp.bin`** and **`prebuilt/Heltec_v3_repeater_tcp.bin`** (latest promoted)
+- **`prebuilt/heltec_v4_repeater_tcp.bin`**, **`prebuilt/Heltec_v3_repeater_tcp.bin`**, optional **`prebuilt/heltec_v4_tft_repeater_tcp*.bin`**, optional **`prebuilt/Heltec_Wireless_Paper_repeater_tcp*.bin`** (latest promoted)
 - **`prebuilt/releases/repeater/r1.14.1.0/`**
 
 **Legacy layout:** **`repeater-1.0.x`** folders were removed from this repo; **`copy-repeater-release-bins.sh repeater-1.0.x`** still works in forks under **`prebuilt/releases/repeater/`**. **`copy-repeater-release-bins.sh v1.14.1.0`** maps to **`repeater/r1.14.1.0/`** and globs legacy **`v1.14.1.0-repeater-tcp`** in **`out/`**.

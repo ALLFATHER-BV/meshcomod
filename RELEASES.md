@@ -35,9 +35,30 @@ Versioned prebuilts are listed here so you can **roll back** if a newer release 
 | Heltec V3 | [Heltec_v3_companion_radio_usb_tcp-merged.bin](prebuilt/releases/companion/v1.15.0.1/Heltec_v3_companion_radio_usb_tcp-merged.bin) | [Heltec_v3_companion_radio_usb_tcp.bin](prebuilt/releases/companion/v1.15.0.1/Heltec_v3_companion_radio_usb_tcp.bin) |
 | Heltec Wireless Paper (E213) | [Heltec_Wireless_Paper_companion_radio_usb_tcp-merged.bin](prebuilt/releases/companion/v1.15.0.1/Heltec_Wireless_Paper_companion_radio_usb_tcp-merged.bin) | [Heltec_Wireless_Paper_companion_radio_usb_tcp.bin](prebuilt/releases/companion/v1.15.0.1/Heltec_Wireless_Paper_companion_radio_usb_tcp.bin) |
 
-**TCP repeater** (folder **[`r1.15.0.1`](prebuilt/releases/repeater/r1.15.0.1/)**): V4, V3, and **Wireless Paper** — [notes](prebuilt/releases/repeater/r1.15.0.1/notes.md).
+**TCP repeater (superseded for “latest” rolling `prebuilt/`):** folder **[`r1.15.0.1`](prebuilt/releases/repeater/r1.15.0.1/)** — [notes](prebuilt/releases/repeater/r1.15.0.1/notes.md). **Current repeater TCP pin:** **[`r1.15.0.2`](prebuilt/releases/repeater/r1.15.0.2/)** below.
 
 **More details:** [`prebuilt/releases/companion/v1.15.0.1/notes.md`](prebuilt/releases/companion/v1.15.0.1/notes.md).
+
+---
+
+## Repeater TCP r1.15.0.2 — 2026-04-19
+
+**Release id:** **`r1.15.0.2`** — Heltec **Wi‑Fi / TCP+WebSocket** repeater images (`*_repeater_tcp`) on the **1.15** version line, including **V4 TFT** and **Wireless Paper** in the promoted set. Rolling [`prebuilt/`](prebuilt/) repeater stable names match this copy.
+
+**Highlights:**
+- **Version defaults:** PlatformIO fallbacks use **`v1.15.0.2-repeater-tcp`** (and **`v1.15.0.0-repeater`** / **`v1.15.0.0-repeater-tft`** for plain mesh V4 repeaters).
+- **Paper in the matrix:** **`Heltec_Wireless_Paper_repeater_tcp`** is built with **`build-repeater-firmwares`** and copied by **`copy-repeater-release-bins.sh`**.
+
+**Prebuilt binaries:**
+
+| Device | Merged (recommended) | Non-merged |
+|--------|----------------------|------------|
+| Heltec V4 (OLED) | [heltec_v4_repeater_tcp-merged.bin](prebuilt/releases/repeater/r1.15.0.2/heltec_v4_repeater_tcp-merged.bin) | [heltec_v4_repeater_tcp.bin](prebuilt/releases/repeater/r1.15.0.2/heltec_v4_repeater_tcp.bin) |
+| Heltec V4 TFT + touch | [heltec_v4_tft_repeater_tcp-merged.bin](prebuilt/releases/repeater/r1.15.0.2/heltec_v4_tft_repeater_tcp-merged.bin) | [heltec_v4_tft_repeater_tcp.bin](prebuilt/releases/repeater/r1.15.0.2/heltec_v4_tft_repeater_tcp.bin) |
+| Heltec V3 | [Heltec_v3_repeater_tcp-merged.bin](prebuilt/releases/repeater/r1.15.0.2/Heltec_v3_repeater_tcp-merged.bin) | [Heltec_v3_repeater_tcp.bin](prebuilt/releases/repeater/r1.15.0.2/Heltec_v3_repeater_tcp.bin) |
+| Heltec Wireless Paper (E213) | [Heltec_Wireless_Paper_repeater_tcp-merged.bin](prebuilt/releases/repeater/r1.15.0.2/Heltec_Wireless_Paper_repeater_tcp-merged.bin) | [Heltec_Wireless_Paper_repeater_tcp.bin](prebuilt/releases/repeater/r1.15.0.2/Heltec_Wireless_Paper_repeater_tcp.bin) |
+
+**More details:** [`prebuilt/releases/repeater/r1.15.0.2/notes.md`](prebuilt/releases/repeater/r1.15.0.2/notes.md).
 
 ---
 

@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # Copy TCP repeater build outputs from out/ to prebuilt/ and prebuilt/releases/repeater/<dir>.
 #
+# **`build-repeater-firmwares`** builds every env ending in **`_repeater_tcp`** (Heltec V4 OLED, V4 TFT, V3, Wireless Paper).
+#
 # **Recommended (meshcomod `main`):** repeater release dirs use **`r*`** parallel to companion **`v*`**:
-#   export REPEATER_FIRMWARE_VERSION=r1.14.1.0-repeater-tcp
+#   export REPEATER_FIRMWARE_VERSION=r1.15.0.2-repeater-tcp
 #   sh build.sh build-repeater-firmwares
-#   sh scripts/copy-repeater-release-bins.sh r1.14.1.0
-# → matches `out/*-meshcomod-r1.14.1.0-repeater-tcp-<sha>.bin` → **prebuilt/releases/repeater/r1.14.1.0/**.
+#   sh scripts/copy-repeater-release-bins.sh r1.15.0.2
+# → matches `out/*-meshcomod-r1.15.0.2-repeater-tcp-<sha>.bin` → **prebuilt/releases/repeater/r1.15.0.2/**.
 #
 # You can pass **r1.14.1.0-repeater-tcp** explicitly (same result).
 #

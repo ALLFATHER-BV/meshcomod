@@ -7,7 +7,9 @@ Repeater firmware can expose the **same binary framing** as the USB/BLE/TCP comp
 Firmware environments:
 
 - `heltec_v4_repeater_tcp` — Heltec WiFi LoRa 32 V4 (OLED repeater + TCP).
+- `heltec_v4_tft_repeater_tcp` — Heltec V4 TFT + touch (same TCP stack, TFT UI).
 - `Heltec_v3_repeater_tcp` — Heltec V3 variant (parity).
+- `Heltec_Wireless_Paper_repeater_tcp` — Heltec Wireless Paper (E213 e‑ink + TCP).
 
 They **do not** compile `examples/companion_radio/`; command handling is a **subset** implemented on `simple_repeater` [`MyMesh`](../examples/simple_repeater/MyMesh.cpp) when `REPEATER_TCP_COMPANION` is set, plus [`examples/repeater_tcp/main.cpp`](../examples/repeater_tcp/main.cpp) for WiFi, **TCP + WebSocket** accept/poll, and USB serial.
 
