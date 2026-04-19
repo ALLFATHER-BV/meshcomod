@@ -13,7 +13,7 @@
         <link rel="canonical" href="https://meshcore-dev.github.io/meshcore/cli_commands/">
       
       
-        <link rel="prev" href="../V3_BOOT_DEBUG/">
+        <link rel="prev" href="..">
       
       
         <link rel="next" href="../companion_protocol/">
@@ -88,7 +88,7 @@
   <nav class="md-header__inner md-grid" aria-label="Header">
     <a href=".." title="MeshCore Docs" class="md-header__button md-logo" aria-label="MeshCore Docs" data-md-component="logo">
       
-  <img src="../_assets/meshcore_tm.svg" alt="logo">
+  <img src="../_assets/meshcore.svg" alt="logo">
 
     </a>
     <label class="md-header__button md-icon" for="__drawer">
@@ -199,7 +199,7 @@
   <label class="md-nav__title" for="__drawer">
     <a href=".." title="MeshCore Docs" class="md-nav__button md-logo" aria-label="MeshCore Docs" data-md-component="logo">
       
-  <img src="../_assets/meshcore_tm.svg" alt="logo">
+  <img src="../_assets/meshcore.svg" alt="logo">
 
     </a>
     MeshCore Docs
@@ -234,195 +234,6 @@
     
   
     Introduction
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../COMPANION_OTA_MEMORY_ROOT_CAUSE/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Companion OTA HTTPS Memory Root Cause
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../DEVICE_WEBSOCKET_WIFI/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Device WebSocket over Wi‑Fi (plain WS)
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../RELEASE_PROCEDURE/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Release procedure (companion firmware)
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../REPEATER_MESHCOMOD_CLIENT_INTEGRATION/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Meshcomod / custom client ↔ Wi‑Fi repeater (TCP &amp; WebSocket)
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../REPEATER_RELEASE_PROCEDURE/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    TCP repeater release procedure (prebuilt / flasher)
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../REPEATER_TCP_COMPANION/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Repeater TCP companion protocol
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../V3_BOOT_DEBUG/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Heltec V3 boot-loop debug build
   
 
     
@@ -662,6 +473,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#discover-zero-hop-neighbors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Discover zero hop neighbors
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -875,6 +697,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#view-or-change-the-boosted-receive-gain-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        View or change the boosted receive gain mode
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#change-the-radio-parameters-for-a-set-duration" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -890,6 +723,17 @@
     <span class="md-ellipsis">
       
         View or change this node's frequency
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#view-or-change-this-nodes-rx-boosted-gain-mode-sx12xx-only-v1141" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        View or change this node's rx boosted gain mode (SX12xx only, v1.14.1+)
       
     </span>
   </a>
@@ -1118,6 +962,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#view-or-change-the-duty-cycle-limit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        View or change the duty cycle limit
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#view-or-change-the-airtime-factor-duty-cycle-limit" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1321,6 +1176,17 @@
     <span class="md-ellipsis">
       
         View or change the home region for this node
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#view-or-change-the-default-scope-region-for-this-node" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        View or change the default scope region for this node
       
     </span>
   </a>
@@ -1791,6 +1657,33 @@
   
   
     <li class="md-nav__item">
+      <a href="../number_allocations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Number Allocations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../packet_format/" class="md-nav__link">
         
   
@@ -2106,6 +1999,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#discover-zero-hop-neighbors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Discover zero hop neighbors
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2319,6 +2223,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#view-or-change-the-boosted-receive-gain-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        View or change the boosted receive gain mode
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#change-the-radio-parameters-for-a-set-duration" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2334,6 +2249,17 @@
     <span class="md-ellipsis">
       
         View or change this node's frequency
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#view-or-change-this-nodes-rx-boosted-gain-mode-sx12xx-only-v1141" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        View or change this node's rx boosted gain mode (SX12xx only, v1.14.1+)
       
     </span>
   </a>
@@ -2562,6 +2488,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#view-or-change-the-duty-cycle-limit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        View or change the duty cycle limit
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#view-or-change-the-airtime-factor-duty-cycle-limit" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2765,6 +2702,17 @@
     <span class="md-ellipsis">
       
         View or change the home region for this node
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#view-or-change-the-default-scope-region-for-this-node" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        View or change the default scope region for this node
       
     </span>
   </a>
@@ -3185,7 +3133,12 @@
 <p><strong>Usage:</strong> 
 - <code>neighbor.remove &lt;pubkey_prefix&gt;</code></p>
 <p><strong>Parameters:</strong> 
-- <code>pubkey_prefix</code>: The public key of the node to remove from the neighbors list</p>
+- <code>pubkey_prefix</code>: The public key of the node to remove from the neighbors list. This can be a short prefix or the full key. All neighbors matching the provided prefix will be removed.</p>
+<p><strong>Note:</strong> You can remove all neighbors by sending a space character as the prefix. The space indicates an empty prefix, which matches all existing neighbors.</p>
+<hr />
+<h3 id="discover-zero-hop-neighbors">Discover zero hop neighbors</h3>
+<p><strong>Usage:</strong> 
+- <code>discover.neighbors</code></p>
 <hr />
 <h2 id="statistics">Statistics</h2>
 <h3 id="clear-stats">Clear Stats</h3>
@@ -3250,6 +3203,15 @@
 <p><strong>Default:</strong> Varies by board</p>
 <p><strong>Notes:</strong> This setting only controls the power level of the LoRa chip. Some nodes have an additional power amplifier stage which increases the total output. Refer to the node's manual for the correct setting to use. <strong>Setting a value too high may violate the laws in your country.</strong></p>
 <hr />
+<h4 id="view-or-change-the-boosted-receive-gain-mode">View or change the boosted receive gain mode</h4>
+<p><strong>Usage:</strong>
+- <code>get radio.rxgain</code>
+- <code>set radio.rxgain &lt;state&gt;</code></p>
+<p><strong>Parameters:</strong>
+- <code>state</code>: <code>on</code>|<code>off</code></p>
+<p><strong>Default:</strong> <code>off</code></p>
+<p><strong>Note:</strong> Only available on SX1262 and SX1268 based boards.</p>
+<hr />
 <h4 id="change-the-radio-parameters-for-a-set-duration">Change the radio parameters for a set duration</h4>
 <p><strong>Usage:</strong> 
 - <code>tempradio &lt;freq&gt;,&lt;bw&gt;,&lt;sf&gt;,&lt;cr&gt;,&lt;timeout_mins&gt;</code></p>
@@ -3270,6 +3232,16 @@
 <p><strong>Default:</strong> <code>869.525</code></p>
 <p><strong>Note:</strong> Requires reboot to apply
 <strong>Serial Only:</strong> <code>set freq &lt;frequency&gt;</code></p>
+<hr />
+<h4 id="view-or-change-this-nodes-rx-boosted-gain-mode-sx12xx-only-v1141">View or change this node's rx boosted gain mode (SX12xx only, v1.14.1+)</h4>
+<p><strong>Usage:</strong>
+- <code>get radio.rxgain</code>
+- <code>set radio.rxgain &lt;state&gt;</code></p>
+<p><strong>Parameters:</strong>
+  - <code>state</code>: <code>on</code>|<code>off</code></p>
+<p><strong>Default:</strong> <code>on</code></p>
+<p><strong>Temporary Note:</strong> If you upgraded from an older version to 1.14.1 without erasing flash, this setting is <code>off</code> because of <a href="https://github.com/meshcore-dev/MeshCore/issues/2118">#2118</a></p>
+<hr />
 <h3 id="system">System</h3>
 <h4 id="view-or-change-this-nodes-name">View or change this node's name</h4>
 <p><strong>Usage:</strong>
@@ -3426,7 +3398,26 @@
 - <code>value</code>: Receive delay base (0-20)</p>
 <p><strong>Default:</strong> <code>0.0</code></p>
 <hr />
+<h4 id="view-or-change-the-duty-cycle-limit">View or change the duty cycle limit</h4>
+<p><strong>Usage:</strong>
+- <code>get dutycycle</code>
+- <code>set dutycycle &lt;value&gt;</code></p>
+<p><strong>Parameters:</strong>
+- <code>value</code>: Duty cycle percentage (1-100)</p>
+<p><strong>Default:</strong> <code>50%</code> (equivalent to airtime factor 1.0)</p>
+<p><strong>Examples:</strong>
+- <code>set dutycycle 100</code> — no duty cycle limit
+- <code>set dutycycle 50</code> — 50% duty cycle (default)
+- <code>set dutycycle 10</code> — 10% duty cycle
+- <code>set dutycycle 1</code> — 1% duty cycle (strictest EU requirement)</p>
+<blockquote>
+<p><strong>Note:</strong> Added in firmware v1.15.0</p>
+</blockquote>
+<hr />
 <h4 id="view-or-change-the-airtime-factor-duty-cycle-limit">View or change the airtime factor (duty cycle limit)</h4>
+<blockquote>
+<p><strong>Deprecated</strong> as of firmware v1.15.0. Use <a href="#view-or-change-the-duty-cycle-limit"><code>get/set dutycycle</code></a> instead.</p>
+</blockquote>
 <p><strong>Usage:</strong>
 - <code>get af</code>
 - <code>set af &lt;value&gt;</code></p>
@@ -3435,8 +3426,8 @@
   - <code>af = 1</code> → ~50% duty
   - <code>af = 2</code> → ~33% duty
   - <code>af = 3</code> → ~25% duty
-  - <code>af = 9</code> → ~10% duty<br />
-  Yyou are responsible for choosing a value that is appropriate for your jurisdiction and channel plan (for example EU 868 Mhz 10% duty cycle regulation).</p>
+  - <code>af = 9</code> → ~10% duty
+  You are responsible for choosing a value that is appropriate for your jurisdiction and channel plan (for example EU 868 Mhz 10% duty cycle regulation).</p>
 <p><strong>Default:</strong> <code>1.0</code></p>
 <hr />
 <h4 id="view-or-change-the-local-interference-threshold">View or change the local interference threshold</h4>
@@ -3452,7 +3443,7 @@
 - <code>get agc.reset.interval</code>
 - <code>set agc.reset.interval &lt;value&gt;</code></p>
 <p><strong>Parameters:</strong>
-- <code>value</code>: Interval in seconds rounded down to a multiple of 4 (17 becomes 16)</p>
+- <code>value</code>: Interval in seconds rounded down to a multiple of 4 (17 becomes 16). 0 to disable.</p>
 <p><strong>Default:</strong> <code>0.0</code></p>
 <hr />
 <h4 id="enable-or-disable-multi-acks-support">Enable or disable Multi-Acks support</h4>
@@ -3554,6 +3545,13 @@
 - <code>region home &lt;name&gt;</code></p>
 <p><strong>Parameters:</strong>
 - <code>name</code>: Region name</p>
+<hr />
+<h4 id="view-or-change-the-default-scope-region-for-this-node">View or change the default scope region for this node</h4>
+<p><strong>Usage:</strong> 
+- <code>region default</code>
+- <code>region default {name|&lt;null&gt;}</code></p>
+<p><strong>Parameters:</strong>
+- <code>name</code>: Region name,  or <null> to reset/clear</p>
 <hr />
 <h4 id="create-a-new-region">Create a new region</h4>
 <p><strong>Usage:</strong> 
@@ -3659,7 +3657,9 @@ region save
 <p><strong>Parameters:</strong>
 - <code>state</code>: <code>on</code>|<code>off</code></p>
 <p><strong>Default:</strong> <code>off</code></p>
-<p><strong>Note:</strong> Output format: <code>{status}, {fix}, {sat count}</code> (when enabled)</p>
+<p><strong>Note:</strong> Output format:
+- <code>off</code> when the GPS hardware is disabled
+- <code>on, {active|deactivated}, {fix|no fix}, {sat count} sats</code> when the GPS hardware is enabled</p>
 <hr />
 <h4 id="sync-this-nodes-clock-with-gps-time">Sync this node's clock with GPS time</h4>
 <p><strong>Usage:</strong> 

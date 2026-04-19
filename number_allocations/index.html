@@ -10,13 +10,13 @@
       
       
       
-        <link rel="canonical" href="https://meshcore-dev.github.io/meshcore/V3_BOOT_DEBUG/">
+        <link rel="canonical" href="https://meshcore-dev.github.io/meshcore/number_allocations/">
       
       
-        <link rel="prev" href="../REPEATER_TCP_COMPANION/">
+        <link rel="prev" href="../nrf52_power_management/">
       
       
-        <link rel="next" href="../cli_commands/">
+        <link rel="next" href="../packet_format/">
       
       
         
@@ -27,7 +27,7 @@
     
     
       
-        <title>Heltec V3 boot-loop debug build - MeshCore Docs</title>
+        <title>Number Allocations - MeshCore Docs</title>
       
     
     
@@ -70,7 +70,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#heltec-v3-boot-loop-debug-build" class="md-skip">
+        <a href="#number-allocations" class="md-skip">
           Skip to content
         </a>
       
@@ -88,7 +88,7 @@
   <nav class="md-header__inner md-grid" aria-label="Header">
     <a href=".." title="MeshCore Docs" class="md-header__button md-logo" aria-label="MeshCore Docs" data-md-component="logo">
       
-  <img src="../_assets/meshcore_tm.svg" alt="logo">
+  <img src="../_assets/meshcore.svg" alt="logo">
 
     </a>
     <label class="md-header__button md-icon" for="__drawer">
@@ -105,7 +105,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Heltec V3 boot-loop debug build
+              Number Allocations
             
           </span>
         </div>
@@ -199,7 +199,7 @@
   <label class="md-nav__title" for="__drawer">
     <a href=".." title="MeshCore Docs" class="md-nav__button md-logo" aria-label="MeshCore Docs" data-md-component="logo">
       
-  <img src="../_assets/meshcore_tm.svg" alt="logo">
+  <img src="../_assets/meshcore.svg" alt="logo">
 
     </a>
     MeshCore Docs
@@ -242,297 +242,6 @@
   
 
       </a>
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../COMPANION_OTA_MEMORY_ROOT_CAUSE/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Companion OTA HTTPS Memory Root Cause
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../DEVICE_WEBSOCKET_WIFI/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Device WebSocket over Wi‑Fi (plain WS)
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../RELEASE_PROCEDURE/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Release procedure (companion firmware)
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../REPEATER_MESHCOMOD_CLIENT_INTEGRATION/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Meshcomod / custom client ↔ Wi‑Fi repeater (TCP &amp; WebSocket)
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../REPEATER_RELEASE_PROCEDURE/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    TCP repeater release procedure (prebuilt / flasher)
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../REPEATER_TCP_COMPANION/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Repeater TCP companion protocol
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-    
-      
-      
-  
-  
-    
-  
-  
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Heltec V3 boot-loop debug build
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Heltec V3 boot-loop debug build
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#1-flash-the-debug-build" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        1. Flash the debug build
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#2-open-usb-serial-before-powering-or-resetting" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        2. Open USB serial before powering or resetting
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#3-what-to-capture" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        3. What to capture
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#building-the-debug-image-yourself" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Building the debug image yourself
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#what-this-build-enables" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        What this build enables
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -703,6 +412,43 @@
       
   
   
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Number Allocations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
   
   
     <li class="md-nav__item">
@@ -854,69 +600,6 @@
     
   
   
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#1-flash-the-debug-build" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        1. Flash the debug build
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#2-open-usb-serial-before-powering-or-resetting" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        2. Open USB serial before powering or resetting
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#3-what-to-capture" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        3. What to capture
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#building-the-debug-image-yourself" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Building the debug image yourself
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#what-this-build-enables" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        What this build enables
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
 </nav>
                   </div>
                 </div>
@@ -932,7 +615,7 @@
 
 
   
-    <a href="https://github.com/meshcore-dev/meshcore/edit/main/docs/V3_BOOT_DEBUG.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+    <a href="https://github.com/meshcore-dev/meshcore/edit/main/docs/number_allocations.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
       
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
     </a>
@@ -940,45 +623,35 @@
   
 
 
-<h1 id="heltec-v3-boot-loop-debug-build">Heltec V3 boot-loop debug build</h1>
-<p>If your <strong>Heltec WiFi LoRa 32 V3</strong> gets stuck in a boot loop (e.g. shows the boot logo then hangs or resets), use this debug firmware to see where it stops. It prints verbose logs over <strong>USB serial</strong> so you can capture the last messages before the hang.</p>
-<h2 id="1-flash-the-debug-build">1. Flash the debug build</h2>
-<ul>
-<li><strong>Merged image (recommended):</strong> Use the file <strong><code>Heltec_v3_BOOT_DEBUG_FLASH_THIS-merged.bin</code></strong> in the MeshCore repo root (or build your own — see below).</li>
-<li>Flash it the same way as normal meshcomod firmware, e.g. <a href="https://flasher.meshcomod.com">flasher.meshcomod.com</a> → <strong>Custom firmware</strong> → upload this merged <code>.bin</code>. Use full erase if the device is unstable.</li>
-</ul>
-<h2 id="2-open-usb-serial-before-powering-or-resetting">2. Open USB serial <strong>before</strong> powering or resetting</h2>
-<ul>
-<li>Connect the V3 over USB.</li>
-<li>Open a serial console at <strong>115200 baud</strong>:</li>
-<li><strong>Web:</strong> <a href="https://console.meshcomod.com">console.meshcomod.com</a> or the Console tab on the flasher — select the V3’s serial port, set 115200.</li>
-<li><strong>Desktop:</strong> PuTTY, screen, or PlatformIO Serial Monitor at 115200.</li>
-<li>Then power the device or press reset. The debug build prints mesh, WiFi, BLE, and core logs from early boot. <strong>Capture or note the last lines</strong> before it stops or reboots — that shows where the boot is failing.</li>
-</ul>
-<h2 id="3-what-to-capture">3. What to capture</h2>
-<ul>
-<li>Copy or screenshot the <strong>last 20–50 lines</strong> of serial output when the device gets stuck or just before it resets.</li>
-<li>Share that with the meshcomod maintainers (e.g. GitHub issue or your usual channel). The log will show which init step (display, WiFi, TCP, BLE, mesh, etc.) is hanging or crashing.</li>
-</ul>
-<h2 id="building-the-debug-image-yourself">Building the debug image yourself</h2>
-<p>From the MeshCore repo:</p>
-<pre><code class="language-bash">cd MeshCore
-export FIRMWARE_VERSION=v1.14.0.29-boot-debug
-export WIFI_SSID=&quot;YourSSID&quot;   # optional, for WiFi init logs
-export WIFI_PWD=&quot;YourPassword&quot;
-sh build.sh build-firmware Heltec_v3_companion_radio_usb_tcp_boot_debug
-</code></pre>
-<p>The merged image is written to:</p>
-<p><code>out/Heltec_v3_companion_radio_usb_tcp_boot_debug-&lt;version&gt;-&lt;sha&gt;-merged.bin</code></p>
-<p>Copy it to a convenient name (e.g. <code>Heltec_v3_BOOT_DEBUG_FLASH_THIS-merged.bin</code>) and flash that file.</p>
-<h2 id="what-this-build-enables">What this build enables</h2>
-<ul>
-<li><strong>MESH_DEBUG=1</strong> — mesh/routing debug messages</li>
-<li><strong>BLE_DEBUG_LOGGING=1</strong> — Bluetooth stack logs</li>
-<li><strong>WIFI_DEBUG_LOGGING=1</strong> — WiFi/connection logs  </li>
-<li><strong>CORE_DEBUG_LEVEL=5</strong> — ESP32 core verbose logs</li>
-</ul>
-<p>Serial remains at <strong>115200</strong> baud. After troubleshooting, re-flash a normal (non-debug) meshcomod build from <a href="RELEASES.md">RELEASES.md</a>.</p>
+<h1 id="number-allocations">Number Allocations</h1>
+<p>This document lists unique numbers/identifiers used in various MeshCore protcol payloads.</p>
+<h1 id="group-data-types">Group Data Types</h1>
+<p>The <code>PAYLOAD_TYPE_GRP_DATA</code> payloads have a 16-bit data-type field, which identifies which application the packet is for.</p>
+<p>To make sure multiple applications can function without interfering with each other, the table below is for reserving various ranges of data-type values. Just modify this table, adding a row, then submit a PR to have it authorised/merged.</p>
+<p>NOTE: the range FF00 - FFFF is for use while you're developing, doing POC, and for these you don't need to request to use/allocate.</p>
+<p>Once you have a working app/project, you need to be able to demonstrate it exists/works, and THEN request type IDs. So, just use the testing/dev range while developing, then request IDs before you transition to publishing your project.</p>
+<table>
+<thead>
+<tr>
+<th>Data-Type range</th>
+<th>App name</th>
+<th>Contact</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0000 - 00FF</td>
+<td>-reserved for internal use-</td>
+<td></td>
+</tr>
+<tr>
+<td>FF00 - FFFF</td>
+<td>-reserved for testing/dev-</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>(add rows, inside the range 0100 - FEFF for custom apps)</p>
 
 
 
