@@ -1069,7 +1069,7 @@
 
 <h1 id="release-procedure-companion-firmware">Release procedure (companion firmware)</h1>
 <p>Use this for every new fix or release. <strong>Rule: every release gets a new version number; never overwrite an existing version’s binaries.</strong></p>
-<p>Current latest version in the repo: <strong>v1.15.0.0</strong> (bump to next for the following release).</p>
+<p>Current latest version in the repo: <strong>v1.15.0.1</strong> (bump to next for the following release).</p>
 <hr />
 <h2 id="1-bump-version">1. Bump version</h2>
 <ul>
@@ -1086,6 +1086,7 @@
 sh build.sh build-firmware heltec_v4_companion_radio_usb_tcp
 sh build.sh build-firmware Heltec_v3_companion_radio_usb_tcp
 sh build.sh build-firmware heltec_v4_tft_companion_radio_usb_tcp_touch
+sh build.sh build-firmware Heltec_Wireless_Paper_companion_radio_usb_tcp
 </code></pre>
 <ul>
 <li>Builds go to <code>out/</code>. For ESP32 meshcomod <strong><code>companion_radio_usb_tcp*</code></strong> envs, <strong><code>build.sh</code> also runs <code>mergebin</code></strong> and copies <strong><code>…-merged.bin</code></strong> next to the app-only bin (same flow for OLED V4, V3, and TFT+touch V4).</li>
@@ -1123,7 +1124,7 @@ sh build.sh build-firmware heltec_v4_tft_companion_radio_usb_tcp_touch
 </li>
 <li>Version and date</li>
 <li>Highlights (bullet list)</li>
-<li>Table with links to the binaries in <code>prebuilt/releases/companion/v1.14.0.20/</code> (V4 OLED, V4 TFT+touch, V3 — merged + non-merged where applicable)</li>
+<li>Table with links to the binaries in <code>prebuilt/releases/companion/v1.14.0.20/</code> (V4 OLED, V4 TFT+touch, V3, Wireless Paper — merged + non-merged where applicable)</li>
 </ul>
 <p>Use the existing v1.14.0.19 block in <code>RELEASES.md</code> as the template (heading, <strong>Firmware version</strong>, <strong>Highlights</strong>, <strong>Prebuilt binaries</strong> table).</p>
 <p>Optional sanity check (after <strong><code>notes.md</code></strong> mentions binaries):</p>
@@ -1153,7 +1154,7 @@ sh build.sh build-firmware heltec_v4_tft_companion_radio_usb_tcp_touch
 </tr>
 <tr>
 <td>2</td>
-<td><code>export FIRMWARE_VERSION=vX.Y.Z.W</code> then build V4 and V3 with <code>build.sh</code></td>
+<td><code>export FIRMWARE_VERSION=vX.Y.Z.W</code> then build V4, V3, V4 TFT+touch, and Wireless Paper companions with <code>build.sh</code></td>
 </tr>
 <tr>
 <td>3</td>
