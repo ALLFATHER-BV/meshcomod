@@ -1,5 +1,12 @@
 #include "MyMesh.h"
 
+#if defined(ESP32) && defined(MESHCOMOD_ROOM_MULTITRANSPORT)
+#include <WiFi.h>
+#include <helpers/esp32/WifiRuntimeStore.h>
+
+void room_mt_on_wifi_radio_toggled(void);
+#endif
+
 #define REPLY_DELAY_MILLIS          1500
 #define PUSH_NOTIFY_DELAY_MILLIS    2000
 #define SYNC_PUSH_INTERVAL          1200
@@ -933,7 +940,58 @@ void MyMesh::handleCommand(uint32_t sender_timestamp, char *command, char *reply
       Serial.printf("\n");
     }
     reply[0] = 0;
-  } else{
+  } else
+#if defined(ESP32) && defined(MESHCOMOD_ROOM_MULTITRANSPORT)
+  if (strncmp(command, "set wifi.ssid ", 14) == 0) {
+    if (wifiConfigSetSsid(&command[14])) {
+      strcpy(reply, "OK - set wifi.pwd then wifi.apply");
+    } else {
+      strcpy(reply, "Err - invalid SSID");
+    }
+  } else if (strncmp(command, "set wifi.pwd ", 13) == 0) {
+    if (wifiConfigSetPwd(&command[13])) {
+      strcpy(reply, "OK - run wifi.apply");
+    } else {
+      strcpy(reply, "Err - password too long");
+    }
+  } else if (strcmp(command, "wifi.apply") == 0 || strcmp(command, "set wifi.apply") == 0) {
+    if (!wifiConfigGetRadioEnabled()) {
+      strcpy(reply, "Err - wifi radio off; set wifi.radio 1 first");
+    } else if (!wifiConfigHasRuntime()) {
+      strcpy(reply, "Err - no runtime credentials");
+    } else {
+      wifiConfigApply();
+      strcpy(reply, "OK - reconnecting");
+    }
+  } else if (strcmp(command, "wifi.clear") == 0 || strcmp(command, "set wifi.clear") == 0) {
+    wifiConfigClear();
+    strcpy(reply, "OK - cleared");
+  } else if (strcmp(command, "get wifi.ssid") == 0) {
+    char ssid[WIFI_CONFIG_SSID_MAX];
+    wifiConfigGetSsid(ssid, sizeof(ssid));
+    snprintf(reply, 160, "%s", ssid[0] ? ssid : "(none)");
+  } else if (strncmp(command, "set wifi.radio ", 17) == 0) {
+    int v = atoi(&command[17]);
+    wifiConfigSetRadioEnabled(v != 0);
+    if (v != 0) {
+      room_mt_on_wifi_radio_toggled();
+    }
+    strcpy(reply, v ? "OK - wifi radio on" : "OK - wifi radio off");
+  } else if (strcmp(command, "get wifi.status") == 0 || strcmp(command, "wifi.status") == 0) {
+    char ssid[WIFI_CONFIG_SSID_MAX];
+    wifiConfigGetSsid(ssid, sizeof(ssid));
+    int re = wifiConfigGetRadioEnabled() ? 1 : 0;
+    if (WiFi.status() == WL_CONNECTED) {
+      IPAddress ip = WiFi.localIP();
+      snprintf(reply, 160, "runtime=%d radio_enabled=%d ssid=%s ip=%d.%d.%d.%d", wifiConfigHasRuntime() ? 1 : 0,
+               re, ssid[0] ? ssid : "(none)", ip[0], ip[1], ip[2], ip[3]);
+    } else {
+      snprintf(reply, 160, "runtime=%d radio_enabled=%d ssid=%s disconnected", wifiConfigHasRuntime() ? 1 : 0,
+               re, ssid[0] ? ssid : "(none)");
+    }
+  } else
+#endif
+  {
     _cli.handleCommand(sender_timestamp, command, reply);  // common CLI commands
   }
 }

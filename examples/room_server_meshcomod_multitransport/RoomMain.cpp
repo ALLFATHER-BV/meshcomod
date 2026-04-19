@@ -45,6 +45,37 @@ StdRNG fast_rng;
 SimpleMeshTables tables;
 MyMesh the_mesh(board, radio_driver, *new ArduinoMillis(), fast_rng, rtc_clock, tables);
 
+static void room_mt_wifi_station_begin() {
+  wifiConfigBegin();
+  if (!wifiConfigGetRadioEnabled()) {
+    WiFi.disconnect(true);
+    delay(50);
+    WiFi.mode(WIFI_OFF);
+    return;
+  }
+  WiFi.mode(WIFI_STA);
+  if (wifiConfigHasRuntime()) {
+    char ssid[WIFI_CONFIG_SSID_MAX];
+    char pwd[WIFI_CONFIG_PWD_MAX];
+    wifiConfigGetSsid(ssid, sizeof(ssid));
+    wifiConfigGetPwd(pwd, sizeof(pwd));
+    WiFi.begin(ssid, pwd[0] ? pwd : nullptr);
+  } else {
+#if defined(WIFI_SSID)
+    if (strlen(WIFI_SSID) > 0) {
+      WiFi.begin(WIFI_SSID, WIFI_PWD);
+    } else
+#endif
+    {
+      WiFi.begin("", "");
+    }
+  }
+}
+
+void room_mt_on_wifi_radio_toggled(void) {
+  room_mt_wifi_station_begin();
+}
+
 void halt() {
   while (1)
     ;
@@ -102,6 +133,7 @@ void setup() {
 #endif
 
   wifiConfigBegin();
+  Serial.println("WiFi: NVS credentials (meshcomod / USB) or optional compile-time WIFI_SSID");
 
   board.setInhibitSleep(true);
   serial_interface.begin(Serial, TCP_PORT, WS_PORT);
