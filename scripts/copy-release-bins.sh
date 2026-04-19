@@ -4,6 +4,7 @@
 #   export FIRMWARE_VERSION=v1.14.0.1
 #   sh build.sh build-firmware heltec_v4_companion_radio_usb_tcp
 #   sh build.sh build-firmware Heltec_v3_companion_radio_usb_tcp
+#   sh build.sh build-firmware Heltec_Wireless_Paper_companion_radio_usb_tcp
 # Usage: sh scripts/copy-release-bins.sh <version>
 # Example: sh scripts/copy-release-bins.sh v1.14.0.1
 # Versioned drops live under prebuilt/releases/companion/<version>/.
@@ -44,6 +45,8 @@ V4TFT_TOUCH_PLAIN=$(ls -t out/heltec_v4_tft_companion_radio_usb_tcp_touch-${VERS
 V4TFT_TOUCH_MERGED=$(ls -t out/heltec_v4_tft_companion_radio_usb_tcp_touch-${VERSION}-*-merged.bin 2>/dev/null | head -1)
 V3_PLAIN=$(ls -t out/Heltec_v3_companion_radio_usb_tcp-${VERSION}-*.bin 2>/dev/null | grep -v merged | head -1)
 V3_MERGED=$(ls -t out/Heltec_v3_companion_radio_usb_tcp-${VERSION}-*-merged.bin 2>/dev/null | head -1)
+PAPER_PLAIN=$(ls -t out/Heltec_Wireless_Paper_companion_radio_usb_tcp-${VERSION}-*.bin 2>/dev/null | grep -v merged | head -1)
+PAPER_MERGED=$(ls -t out/Heltec_Wireless_Paper_companion_radio_usb_tcp-${VERSION}-*-merged.bin 2>/dev/null | head -1)
 
 copy_one "$V4_PLAIN"   "heltec_v4_companion_radio_usb_tcp.bin"
 copy_one_optional "$V4_MERGED"  "heltec_v4_companion_radio_usb_tcp-merged.bin"
@@ -51,5 +54,7 @@ copy_one_optional "$V4TFT_TOUCH_PLAIN" "heltec_v4_tft_companion_radio_usb_tcp_to
 copy_one_optional "$V4TFT_TOUCH_MERGED" "heltec_v4_tft_companion_radio_usb_tcp_touch-merged.bin"
 copy_one "$V3_PLAIN"   "Heltec_v3_companion_radio_usb_tcp.bin"
 copy_one_optional "$V3_MERGED"  "Heltec_v3_companion_radio_usb_tcp-merged.bin"
+copy_one_optional "$PAPER_PLAIN" "Heltec_Wireless_Paper_companion_radio_usb_tcp.bin"
+copy_one_optional "$PAPER_MERGED" "Heltec_Wireless_Paper_companion_radio_usb_tcp-merged.bin"
 
 echo "Done. prebuilt/ and $RELDIR updated."

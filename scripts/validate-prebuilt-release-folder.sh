@@ -44,4 +44,20 @@ if grep -qiF "heltec_v4_companion_radio_usb_tcp.bin" "$NOTES"; then
   fi
 fi
 
+if grep -qiF "Heltec_Wireless_Paper_companion_radio_usb_tcp.bin" "$NOTES"; then
+  if [ ! -f "${REL}/Heltec_Wireless_Paper_companion_radio_usb_tcp.bin" ]; then
+    echo "ERROR: $NOTES references Heltec_Wireless_Paper_companion_radio_usb_tcp.bin but file is missing in $REL." >&2
+    exit 1
+  fi
+fi
+
+if [ "$KIND" = "repeater" ]; then
+  if grep -qiE 'Heltec_Wireless_Paper_repeater_tcp|Paper.*repeater.tcp|Wireless Paper.*repeater' "$NOTES"; then
+    if [ ! -f "${REL}/Heltec_Wireless_Paper_repeater_tcp.bin" ]; then
+      echo "ERROR: $NOTES mentions Wireless Paper repeater TCP but ${REL}/Heltec_Wireless_Paper_repeater_tcp.bin is missing." >&2
+      exit 1
+    fi
+  fi
+fi
+
 echo "OK: $REL matches notes.md claims (repeater/companion spot checks)."

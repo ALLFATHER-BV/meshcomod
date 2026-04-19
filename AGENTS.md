@@ -32,6 +32,7 @@ export DISABLE_DEBUG=1   # recommended for release
 sh build.sh build-firmware heltec_v4_companion_radio_usb_tcp
 sh build.sh build-firmware Heltec_v3_companion_radio_usb_tcp
 sh build.sh build-firmware heltec_v4_tft_companion_radio_usb_tcp_touch
+sh build.sh build-firmware Heltec_Wireless_Paper_companion_radio_usb_tcp
 
 sh scripts/copy-release-bins.sh vX.Y.Z.W
 ```

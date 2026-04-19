@@ -79,6 +79,8 @@ V4TFT_PLAIN=$(ls -t out/heltec_v4_tft_repeater_tcp-"${GLOB_VERSION}"-*.bin out/h
 V4TFT_MERGED=$(ls -t out/heltec_v4_tft_repeater_tcp-"${GLOB_VERSION}"-*-merged.bin out/heltec_v4_tft_repeater_tcp-meshcomod-"${GLOB_VERSION}"-*-merged.bin 2>/dev/null | head -1)
 V3_PLAIN=$(ls -t out/Heltec_v3_repeater_tcp-"${GLOB_VERSION}"-*.bin out/Heltec_v3_repeater_tcp-meshcomod-"${GLOB_VERSION}"-*.bin 2>/dev/null | grep -v merged | head -1)
 V3_MERGED=$(ls -t out/Heltec_v3_repeater_tcp-"${GLOB_VERSION}"-*-merged.bin out/Heltec_v3_repeater_tcp-meshcomod-"${GLOB_VERSION}"-*-merged.bin 2>/dev/null | head -1)
+PAPER_PLAIN=$(ls -t out/Heltec_Wireless_Paper_repeater_tcp-"${GLOB_VERSION}"-*.bin out/Heltec_Wireless_Paper_repeater_tcp-meshcomod-"${GLOB_VERSION}"-*.bin 2>/dev/null | grep -v merged | head -1)
+PAPER_MERGED=$(ls -t out/Heltec_Wireless_Paper_repeater_tcp-"${GLOB_VERSION}"-*-merged.bin out/Heltec_Wireless_Paper_repeater_tcp-meshcomod-"${GLOB_VERSION}"-*-merged.bin 2>/dev/null | head -1)
 
 copy_one "$V4_PLAIN" "heltec_v4_repeater_tcp.bin"
 copy_one_optional "$V4_MERGED" "heltec_v4_repeater_tcp-merged.bin"
@@ -86,5 +88,7 @@ copy_one_optional "$V4TFT_PLAIN" "heltec_v4_tft_repeater_tcp.bin"
 copy_one_optional "$V4TFT_MERGED" "heltec_v4_tft_repeater_tcp-merged.bin"
 copy_one "$V3_PLAIN" "Heltec_v3_repeater_tcp.bin"
 copy_one_optional "$V3_MERGED" "Heltec_v3_repeater_tcp-merged.bin"
+copy_one_optional "$PAPER_PLAIN" "Heltec_Wireless_Paper_repeater_tcp.bin"
+copy_one_optional "$PAPER_MERGED" "Heltec_Wireless_Paper_repeater_tcp-merged.bin"
 
 echo "Done. prebuilt/ and $RELDIR updated."

@@ -2,7 +2,7 @@
 
 Use this for every new fix or release. **Rule: every release gets a new version number; never overwrite an existing version’s binaries.**
 
-Current latest version in the repo: **v1.15.0.0** (bump to next for the following release).
+Current latest version in the repo: **v1.15.0.1** (bump to next for the following release).
 
 ---
 
@@ -26,6 +26,7 @@ export FIRMWARE_VERSION=v1.14.0.20
 sh build.sh build-firmware heltec_v4_companion_radio_usb_tcp
 sh build.sh build-firmware Heltec_v3_companion_radio_usb_tcp
 sh build.sh build-firmware heltec_v4_tft_companion_radio_usb_tcp_touch
+sh build.sh build-firmware Heltec_Wireless_Paper_companion_radio_usb_tcp
 ```
 
 - Builds go to `out/`. For ESP32 meshcomod **`companion_radio_usb_tcp*`** envs, **`build.sh` also runs `mergebin`** and copies **`…-merged.bin`** next to the app-only bin (same flow for OLED V4, V3, and TFT+touch V4).
@@ -67,7 +68,7 @@ sh scripts/copy-release-bins.sh v1.14.0.20
   Add a new section at the **top** (below “Release process”):
   - Version and date
   - Highlights (bullet list)
-  - Table with links to the binaries in `prebuilt/releases/companion/v1.14.0.20/` (V4 OLED, V4 TFT+touch, V3 — merged + non-merged where applicable)
+  - Table with links to the binaries in `prebuilt/releases/companion/v1.14.0.20/` (V4 OLED, V4 TFT+touch, V3, Wireless Paper — merged + non-merged where applicable)
 
 Use the existing v1.14.0.19 block in `RELEASES.md` as the template (heading, **Firmware version**, **Highlights**, **Prebuilt binaries** table).
 
@@ -93,7 +94,7 @@ sh scripts/validate-prebuilt-release-folder.sh companion v1.14.0.20
 | Step | Action |
 |------|--------|
 | 1 | Bump version in `examples/companion_radio/MyMesh.h` |
-| 2 | `export FIRMWARE_VERSION=vX.Y.Z.W` then build V4 and V3 with `build.sh` |
+| 2 | `export FIRMWARE_VERSION=vX.Y.Z.W` then build V4, V3, V4 TFT+touch, and Wireless Paper companions with `build.sh` |
 | 3 | `sh scripts/copy-release-bins.sh vX.Y.Z.W` |
 | 4 | Add `prebuilt/releases/vX.Y.Z.W/notes.md` and new section in `RELEASES.md` |
 | 5 | Commit and `git push allfather main` |

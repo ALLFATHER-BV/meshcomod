@@ -7,7 +7,7 @@ Versioned prebuilts are listed here so you can **roll back** if a newer release 
 **Rule: Every new fix or release gets a new version number. Never overwrite an existing version's binaries.**
 
 1. **Bump version** — Choose the next version (e.g. `v1.14.0.1`). Do not reuse the current version.
-2. **Build** — `export FIRMWARE_VERSION=v1.14.0.1` then build **Heltec V4 OLED**, **V4 TFT+touch** (expansion kit), and **V3** meshcomod companions per [`docs/RELEASE_PROCEDURE.md`](docs/RELEASE_PROCEDURE.md) §2.
+2. **Build** — `export FIRMWARE_VERSION=v1.14.0.1` then build **Heltec V4 OLED**, **V4 TFT+touch** (expansion kit), **V3**, and **Heltec Wireless Paper** (`Heltec_Wireless_Paper_companion_radio_usb_tcp`) meshcomod companions per [`docs/RELEASE_PROCEDURE.md`](docs/RELEASE_PROCEDURE.md) §2.
 3. **Create versioned folder** — Run `sh scripts/copy-release-bins.sh v1.14.0.1` to populate `prebuilt/releases/companion/<version>/` and `prebuilt/`. Add `notes.md` in that folder (often done in step 4). Repeater drops use **`prebuilt/releases/repeater/r*`** and `copy-repeater-release-bins.sh` (see [`prebuilt/README.md`](prebuilt/README.md)).
 4. **Update this file** — Add a new section above with the new version number, date, highlights, and table linking to the new release paths.
 5. **Commit and push** — Always commit and push: stage version bump, prebuilts, `prebuilt/releases/companion/<version>/` (and repeater folder if applicable), and RELEASES.md; commit with a short message (e.g. `v1.14.0.N: <highlights>`); push to the release remote (e.g. `git push allfather main`). Do not skip this step.
@@ -15,6 +15,29 @@ Versioned prebuilts are listed here so you can **roll back** if a newer release 
 **Summary:** `prebuilt/` = latest only. `prebuilt/releases/companion/v*…/` and `prebuilt/releases/repeater/r*…/` hold pinned drops (bins + `notes.md`); keep all of them so users can roll back.
 
 **WebSocket:** meshcomod **companion** and **repeater TCP** firmware serves **plain `ws://` only** on the WebSocket port (default 8765). **WSS** (`wss://`) was **removed from the device** to reduce flash use and free internal RAM for **HTTPS URL OTA**. Use `ws://` to the radio, or the **HTTP**-hosted web app when HTTPS blocks mixed content — see [`docs/DEVICE_WEBSOCKET_WIFI.md`](docs/DEVICE_WEBSOCKET_WIFI.md).
+
+---
+
+## v1.15.0.1 — 2026-04-19
+
+**Firmware version:** v1.15.0.1 (meshcomod on upstream **MeshCore 1.15.0**).
+
+**Highlights:**
+- **Heltec Wireless Paper:** First meshcomod **USB + BLE + TCP + WebSocket** companion prebuilts (`Heltec_Wireless_Paper_companion_radio_usb_tcp`). E‑ink-friendly **`AUTO_OFF_MILLIS=0`** on the Paper variant; **`set_boot_phase`** declared in **`target.h`** for companion boot trace.
+- **Repeater TCP:** New **`r1.15.0.1`** drop adds **Wireless Paper** repeater TCP bins alongside refreshed V4/V3 — see [`prebuilt/releases/repeater/r1.15.0.1/notes.md`](prebuilt/releases/repeater/r1.15.0.1/notes.md).
+
+**Prebuilt binaries (use [flasher.meshcomod.com](https://flasher.meshcomod.com) — Easy mode auto-downloads versions; for manual upload, use Custom firmware):**
+
+| Device | Merged (recommended) | Non-merged |
+|--------|----------------------|------------|
+| Heltec V4 (OLED) | [heltec_v4_companion_radio_usb_tcp-merged.bin](prebuilt/releases/companion/v1.15.0.1/heltec_v4_companion_radio_usb_tcp-merged.bin) | [heltec_v4_companion_radio_usb_tcp.bin](prebuilt/releases/companion/v1.15.0.1/heltec_v4_companion_radio_usb_tcp.bin) |
+| Heltec V4 TFT + touch | [heltec_v4_tft_companion_radio_usb_tcp_touch-merged.bin](prebuilt/releases/companion/v1.15.0.1/heltec_v4_tft_companion_radio_usb_tcp_touch-merged.bin) | [heltec_v4_tft_companion_radio_usb_tcp_touch.bin](prebuilt/releases/companion/v1.15.0.1/heltec_v4_tft_companion_radio_usb_tcp_touch.bin) |
+| Heltec V3 | [Heltec_v3_companion_radio_usb_tcp-merged.bin](prebuilt/releases/companion/v1.15.0.1/Heltec_v3_companion_radio_usb_tcp-merged.bin) | [Heltec_v3_companion_radio_usb_tcp.bin](prebuilt/releases/companion/v1.15.0.1/Heltec_v3_companion_radio_usb_tcp.bin) |
+| Heltec Wireless Paper (E213) | [Heltec_Wireless_Paper_companion_radio_usb_tcp-merged.bin](prebuilt/releases/companion/v1.15.0.1/Heltec_Wireless_Paper_companion_radio_usb_tcp-merged.bin) | [Heltec_Wireless_Paper_companion_radio_usb_tcp.bin](prebuilt/releases/companion/v1.15.0.1/Heltec_Wireless_Paper_companion_radio_usb_tcp.bin) |
+
+**TCP repeater** (folder **[`r1.15.0.1`](prebuilt/releases/repeater/r1.15.0.1/)**): V4, V3, and **Wireless Paper** — [notes](prebuilt/releases/repeater/r1.15.0.1/notes.md).
+
+**More details:** [`prebuilt/releases/companion/v1.15.0.1/notes.md`](prebuilt/releases/companion/v1.15.0.1/notes.md).
 
 ---
 
