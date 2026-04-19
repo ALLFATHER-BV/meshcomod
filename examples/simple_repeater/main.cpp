@@ -3,6 +3,13 @@
 
 #include "MyMesh.h"
 
+#if defined(ESP32)
+volatile int g_boot_phase = 0;
+extern "C" void set_boot_phase(int phase) {
+  g_boot_phase = phase;
+}
+#endif
+
 #ifdef DISPLAY_CLASS
   #include "UITask.h"
   static UITask ui_task(display);
@@ -153,6 +160,9 @@ void loop() {
   ui_task.loop();
 #endif
   rtc_clock.tick();
+#if defined(ESP32_PLATFORM)
+  board.pollHttpOtaReboot();
+#endif
 
   if (the_mesh.getNodePrefs()->powersaving_enabled && !the_mesh.hasPendingWork()) {
     #if defined(NRF52_PLATFORM)

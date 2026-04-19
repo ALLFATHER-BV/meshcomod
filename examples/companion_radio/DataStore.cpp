@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <string.h>
 #include "DataStore.h"
 
 #if defined(EXTRAFS) || defined(QSPIFLASH)
@@ -199,6 +200,51 @@ void DataStore::loadPrefs(NodePrefs& prefs, double& node_lat, double& node_lon) 
   }
 }
 
+namespace {
+
+void default_rx_boosted_gain_pref(uint8_t& out) {
+#if defined(USE_SX1262) || defined(USE_SX1268) || defined(SX126X_RX_BOOSTED_GAIN)
+  #ifdef SX126X_RX_BOOSTED_GAIN
+  out = (SX126X_RX_BOOSTED_GAIN != 0) ? 1 : 0;
+  #else
+  out = 1;
+  #endif
+#else
+  out = 0;
+#endif
+}
+
+// After multi_acks (byte offset 78): upstream meshcore-dev layout is 15 bytes tail; legacy Meshcomod
+// used 13 bytes (path_hash, autoadd_max, ble_pin..autoadd without reserved pad or trailing rx_boost).
+void load_prefs_tail_meshcomod_legacy(NodePrefs& p, const uint8_t* tail) {
+  p.path_hash_mode = tail[0];
+  p.autoadd_max_hops = tail[1];
+  memcpy(&p.ble_pin, tail + 2, 4);
+  p.buzzer_quiet = tail[6];
+  p.gps_enabled = tail[7];
+  memcpy(&p.gps_interval, tail + 8, 4);
+  p.autoadd_config = tail[12];
+  default_rx_boosted_gain_pref(p.rx_boosted_gain);
+}
+
+void load_prefs_tail_upstream(NodePrefs& p, const uint8_t* tail, size_t n) {
+  p.path_hash_mode = tail[0];
+  // tail[1] reserved
+  memcpy(&p.ble_pin, tail + 2, 4);
+  p.buzzer_quiet = tail[6];
+  p.gps_enabled = tail[7];
+  memcpy(&p.gps_interval, tail + 8, 4);
+  p.autoadd_config = tail[12];
+  p.autoadd_max_hops = tail[13];
+  if (n >= 15) {
+    p.rx_boosted_gain = tail[14] ? 1 : 0;
+  } else {
+    default_rx_boosted_gain_pref(p.rx_boosted_gain);
+  }
+}
+
+}  // namespace
+
 void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& node_lat, double& node_lon) {
   File file = openRead(_fs, filename);
   if (file) {
@@ -222,19 +268,25 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
     file.read((uint8_t *)&_prefs.rx_delay_base, sizeof(_prefs.rx_delay_base));             // 72
     file.read((uint8_t *)&_prefs.advert_loc_policy, sizeof(_prefs.advert_loc_policy));     // 76
     file.read((uint8_t *)&_prefs.multi_acks, sizeof(_prefs.multi_acks));                   // 77
-    file.read((uint8_t *)&_prefs.path_hash_mode, sizeof(_prefs.path_hash_mode));           // 78
-    file.read(pad, 1);                                                                     // 79
-    file.read((uint8_t *)&_prefs.ble_pin, sizeof(_prefs.ble_pin));                         // 80
-    file.read((uint8_t *)&_prefs.buzzer_quiet, sizeof(_prefs.buzzer_quiet));               // 84
-    file.read((uint8_t *)&_prefs.gps_enabled, sizeof(_prefs.gps_enabled));                 // 85
-    file.read((uint8_t *)&_prefs.gps_interval, sizeof(_prefs.gps_interval));               // 86
-    file.read((uint8_t *)&_prefs.autoadd_config, sizeof(_prefs.autoadd_config));           // 87
-    file.read((uint8_t *)&_prefs.autoadd_max_hops, sizeof(_prefs.autoadd_max_hops));       // 88
-    file.read((uint8_t *)&_prefs.rx_boosted_gain, sizeof(_prefs.rx_boosted_gain));         // 89
+    uint8_t tail[15];
+    size_t n = file.read(tail, sizeof(tail));
+    bool migrated_legacy = false;
+    if (n == 13) {
+      load_prefs_tail_meshcomod_legacy(_prefs, tail);
+      migrated_legacy = true;
+    } else if (n >= 14) {
+      load_prefs_tail_upstream(_prefs, tail, n);
+    }
+    memset(_prefs.default_scope_name, 0, sizeof(_prefs.default_scope_name));
+    memset(_prefs.default_scope_key, 0, sizeof(_prefs.default_scope_key));
     file.read((uint8_t *)_prefs.default_scope_name, sizeof(_prefs.default_scope_name));    // 90
-    file.read((uint8_t *)_prefs.default_scope_key, sizeof(_prefs.default_scope_key));     // 121
+    file.read((uint8_t *)_prefs.default_scope_key, sizeof(_prefs.default_scope_key));      // 121
 
     file.close();
+
+    if (migrated_legacy) {
+      savePrefs(_prefs, node_lat, node_lon);
+    }
   }
 }
 
@@ -262,17 +314,16 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     file.write((uint8_t *)&_prefs.rx_delay_base, sizeof(_prefs.rx_delay_base));             // 72
     file.write((uint8_t *)&_prefs.advert_loc_policy, sizeof(_prefs.advert_loc_policy));     // 76
     file.write((uint8_t *)&_prefs.multi_acks, sizeof(_prefs.multi_acks));                   // 77
-    file.write((uint8_t *)&_prefs.path_hash_mode, sizeof(_prefs.path_hash_mode));           // 78
-    file.write(pad, 1);                                                                     // 79
+    file.write((uint8_t *)&_prefs.path_hash_mode, sizeof(_prefs.path_hash_mode));            // 78
+    file.write(pad, 1);                                                                     // 79 reserved (upstream layout)
     file.write((uint8_t *)&_prefs.ble_pin, sizeof(_prefs.ble_pin));                         // 80
     file.write((uint8_t *)&_prefs.buzzer_quiet, sizeof(_prefs.buzzer_quiet));               // 84
     file.write((uint8_t *)&_prefs.gps_enabled, sizeof(_prefs.gps_enabled));                 // 85
-    file.write((uint8_t *)&_prefs.gps_interval, sizeof(_prefs.gps_interval));               // 86
     file.write((uint8_t *)&_prefs.autoadd_config, sizeof(_prefs.autoadd_config));           // 87
     file.write((uint8_t *)&_prefs.autoadd_max_hops, sizeof(_prefs.autoadd_max_hops));       // 88
     file.write((uint8_t *)&_prefs.rx_boosted_gain, sizeof(_prefs.rx_boosted_gain));         // 89
     file.write((uint8_t *)_prefs.default_scope_name, sizeof(_prefs.default_scope_name));    // 90
-    file.write((uint8_t *)_prefs.default_scope_key, sizeof(_prefs.default_scope_key));     // 121
+    file.write((uint8_t *)_prefs.default_scope_key, sizeof(_prefs.default_scope_key));      // 121
 
     file.close();
   }

@@ -56,6 +56,7 @@ public:
 
   size_t writeFrame(const uint8_t src[], size_t len) override;
   size_t checkRecvFrame(uint8_t dest[]) override;
+  bool isHttpOtaWifiControlSession() const override;
 
   bool hasReceivedFrameHeader();
   void resetReceivedFrameHeader();

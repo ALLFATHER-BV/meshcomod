@@ -136,6 +136,7 @@ public:
 
   void loadPrefs(FILESYSTEM* _fs);
   void savePrefs(FILESYSTEM* _fs);
-  void handleCommand(uint32_t sender_timestamp, char* command, char* reply);
+  /** @param http_ota_wifi_path MESHCORE_HTTP_OTA_PATH_* (HttpOtaWifiSession.h); 0 = local serial / disallowed for `ota url`. */
+  void handleCommand(uint32_t sender_timestamp, char* command, char* reply, uint8_t http_ota_wifi_path = 0);
   uint8_t buildAdvertData(uint8_t node_type, uint8_t* app_data);
 };

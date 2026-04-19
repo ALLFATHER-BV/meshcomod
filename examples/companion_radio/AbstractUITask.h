@@ -39,6 +39,17 @@ public:
   bool isSerialEnabled() const { return _serial->isEnabled(); }
   void enableSerial() { _serial->enable(); }
   void disableSerial() { _serial->disable(); }
+  bool isTcpEnabled() const { return _serial->isTcpEnabled(); }
+  void enableTcp() { _serial->enableTcp(); }
+  void disableTcp() { _serial->disableTcp(); }
+  bool isWsStarted() const { return _serial->isWsStarted(); }
+  uint16_t getWsPort() const { return _serial->getWsPort(); }
+  int getWsConnectedCount() const { return _serial->getWsConnectedCount(); }
+  bool hasBleCapability() const { return _serial->hasBleCapability(); }
+  bool isBleEnabled() const { return _serial->isBleEnabled(); }
+  void enableBle() { _serial->enableBle(); }
+  void disableBle() { _serial->disableBle(); }
+  bool getBlePeerAddress(char* buf, size_t len) const { return _serial->getBlePeerAddress(buf, len); }
   virtual void msgRead(int msgcount) = 0;
   virtual void newMsg(uint8_t path_len, const char* from_name, const char* text, int msgcount) = 0;
   virtual void notify(UIEventType t = UIEventType::none) = 0;

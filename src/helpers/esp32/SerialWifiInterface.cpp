@@ -170,3 +170,7 @@ size_t SerialWifiInterface::checkRecvFrame(uint8_t dest[]) {
 bool SerialWifiInterface::isConnected() const {
   return deviceConnected;  //pServer != NULL && pServer->getConnectedCount() > 0;
 }
+
+bool SerialWifiInterface::isHttpOtaWifiControlSession() const {
+  return WiFi.status() == WL_CONNECTED && deviceConnected;
+}

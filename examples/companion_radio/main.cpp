@@ -31,11 +31,24 @@ static uint32_t _atoi(const char* sp) {
   DataStore store(LittleFS, rtc_clock);
 #elif defined(ESP32)
   #include <SPIFFS.h>
+  namespace { struct MainBootTrace { MainBootTrace() { set_boot_phase(2); } } _main_boot_trace; }
   DataStore store(SPIFFS, rtc_clock);
+  #if defined(WIFI_SSID) || defined(MULTI_TRANSPORT_COMPANION)
+    #include "WiFiConfig.h"
+  #endif
 #endif
 
 #ifdef ESP32
-  #ifdef WIFI_SSID
+  #ifdef MULTI_TRANSPORT_COMPANION
+    #include <helpers/esp32/MultiTransportCompanionInterface.h>
+    MultiTransportCompanionInterface serial_interface;
+    #ifndef TCP_PORT
+      #define TCP_PORT 5000
+    #endif
+    #ifndef WS_PORT
+      #define WS_PORT 8765
+    #endif
+  #elif defined(WIFI_SSID)
     #include <helpers/esp32/SerialWifiInterface.h>
     SerialWifiInterface serial_interface;
     #ifndef TCP_PORT
@@ -101,14 +114,22 @@ MyMesh the_mesh(radio_driver, fast_rng, rtc_clock, tables, store
 
 /* END GLOBAL OBJECTS */
 
+#if defined(ESP32)
+volatile int g_boot_phase = 0;
+extern "C" void set_boot_phase(int phase) { g_boot_phase = phase; }
+#endif
+
 void halt() {
   while (1) ;
 }
 
 void setup() {
   Serial.begin(115200);
+  delay(200);
+  Serial.println("[BOOT] setup start");
 
   board.begin();
+  Serial.println("[BOOT] board ok");
 
 #ifdef DISPLAY_CLASS
   DisplayDriver* disp = NULL;
@@ -124,6 +145,7 @@ void setup() {
 #endif
 
   if (!radio_init()) { halt(); }
+  Serial.println("[BOOT] radio ok");
 
   fast_rng.begin(radio_get_rng_seed());
 
@@ -184,6 +206,7 @@ void setup() {
     the_mesh.startInterface(serial_interface);
 #elif defined(ESP32)
   SPIFFS.begin(true);
+  Serial.println("[BOOT] SPIFFS ok");
   store.begin();
   the_mesh.begin(
     #ifdef DISPLAY_CLASS
@@ -192,10 +215,33 @@ void setup() {
         false
     #endif
   );
+  Serial.println("[BOOT] mesh ok");
 
-#ifdef WIFI_SSID
+#if defined(WIFI_SSID) || defined(MULTI_TRANSPORT_COMPANION)
+  wifiConfigBegin();
+  Serial.println("[BOOT] wifiConfig ok");
+#endif
+
+#ifdef MULTI_TRANSPORT_COMPANION
+  board.setInhibitSleep(true);
+  // Defer WiFi until first loop() so setup() always completes (display + USB come up even if WiFi would crash/hang)
+  serial_interface.begin(Serial, TCP_PORT, WS_PORT);
+  Serial.println("[BOOT] serial_interface ok");
+  serial_interface.setBroadcastResponses(true);  // RX log, channel messages, etc. go to all clients (USB + TCP + WS [+ BLE]), not only last sender
+#if defined(BLE_PIN_CODE)
+  serial_interface.beginBle(BLE_NAME_PREFIX, the_mesh.getNodePrefs()->node_name, the_mesh.getBLEPin());
+#endif
+#elif defined(WIFI_SSID)
   board.setInhibitSleep(true);   // prevent sleep when WiFi is active
-  WiFi.begin(WIFI_SSID, WIFI_PWD);
+  if (wifiConfigHasRuntime()) {
+    char ssid[WIFI_CONFIG_SSID_MAX];
+    char pwd[WIFI_CONFIG_PWD_MAX];
+    wifiConfigGetSsid(ssid, sizeof(ssid));
+    wifiConfigGetPwd(pwd, sizeof(pwd));
+    WiFi.begin(ssid, pwd[0] ? pwd : nullptr);
+  } else {
+    WiFi.begin(WIFI_SSID, WIFI_PWD);
+  }
   serial_interface.begin(TCP_PORT);
 #elif defined(BLE_PIN_CODE)
   serial_interface.begin(BLE_NAME_PREFIX, the_mesh.getNodePrefs()->node_name, the_mesh.getBLEPin());
@@ -223,10 +269,84 @@ void setup() {
 }
 
 void loop() {
-  the_mesh.loop();
-  sensors.loop();
+  // Run UI first every iteration so splash can dismiss at 3s even if mesh/serial blocks later (was stuck on version screen when the_mesh.loop() ran before ui_task.loop()).
 #ifdef DISPLAY_CLASS
   ui_task.loop();
 #endif
+#ifdef MULTI_TRANSPORT_COMPANION
+  static bool wifi_started = false;
+  static uint32_t last_wifi_retry_ms = 0;
+  static const uint32_t WIFI_RETRY_INTERVAL_MS = 10000;
+  static bool wifi_radio_prev = true;
+  static bool wifi_radio_inited = false;
+  bool wifi_radio_en = wifiConfigGetRadioEnabled();
+  if (!wifi_radio_inited) {
+    wifi_radio_inited = true;
+    wifi_radio_prev = wifi_radio_en;
+  } else if (wifi_radio_en != wifi_radio_prev) {
+    wifi_radio_prev = wifi_radio_en;
+    if (!wifi_radio_en) {
+      WiFi.disconnect(true);
+      delay(50);
+      WiFi.mode(WIFI_OFF);
+    }
+    wifi_started = false;
+  }
+  if (wifi_radio_en) {
+    if (!wifi_started) {
+      wifi_started = true;
+      if (wifiConfigHasRuntime()) {
+        char ssid[WIFI_CONFIG_SSID_MAX];
+        char pwd[WIFI_CONFIG_PWD_MAX];
+        wifiConfigGetSsid(ssid, sizeof(ssid));
+        wifiConfigGetPwd(pwd, sizeof(pwd));
+        if (strlen(ssid) > 0) {
+          WiFi.mode(WIFI_STA);
+          WiFi.begin(ssid, pwd[0] ? pwd : nullptr);
+          last_wifi_retry_ms = millis();
+        } else {
+          WiFi.mode(WIFI_STA);
+          WiFi.begin("", "");  // no credentials: still start WiFi/tcpip stack so startTcpServer() does not assert (Invalid mbox)
+        }
+      } else if (strlen(WIFI_SSID) > 0) {
+        WiFi.mode(WIFI_STA);
+        WiFi.begin(WIFI_SSID, WIFI_PWD);
+        last_wifi_retry_ms = millis();
+      } else {
+        WiFi.mode(WIFI_STA);
+        WiFi.begin("", "");  // no credentials: still start WiFi/tcpip stack so startTcpServer() does not assert (Invalid mbox)
+      }
+    }
+    // Automatic WiFi recovery for TCP mode: retry connection periodically if link drops.
+    if (WiFi.status() != WL_CONNECTED) {
+      uint32_t now = millis();
+      if ((uint32_t)(now - last_wifi_retry_ms) >= WIFI_RETRY_INTERVAL_MS) {
+        last_wifi_retry_ms = now;
+        if (wifiConfigHasRuntime()) {
+          char ssid[WIFI_CONFIG_SSID_MAX];
+          char pwd[WIFI_CONFIG_PWD_MAX];
+          wifiConfigGetSsid(ssid, sizeof(ssid));
+          wifiConfigGetPwd(pwd, sizeof(pwd));
+          if (strlen(ssid) > 0) {
+            WiFi.begin(ssid, pwd[0] ? pwd : nullptr);
+          }
+        } else if (strlen(WIFI_SSID) > 0) {
+          WiFi.begin(WIFI_SSID, WIFI_PWD);
+        }
+      }
+    }
+  }
+  // Defer TCP and WebSocket until after splash dismisses so the_mesh.loop() never blocks on accept() before ui_task.loop() runs.
+  static const uint32_t TCP_DEFER_MS = 5000;   // 5 s: don't start TCP/WS until version screen has dismissed
+  if (millis() > TCP_DEFER_MS) {
+    serial_interface.startTcpServer(WiFi.status() == WL_CONNECTED);
+    serial_interface.tickWebSocketHandshake();
+  }
+#endif
+  the_mesh.loop();
+  sensors.loop();
   rtc_clock.tick();
+#if defined(ESP32_PLATFORM)
+  board.pollHttpOtaReboot();
+#endif
 }

@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# Sanity-check prebuilt/releases/<companion|repeater>/<version>/ against notes.md claims.
+# Run from MeshCore repo root after copying binaries.
+#
+# Usage: sh scripts/validate-prebuilt-release-folder.sh companion v1.14.1.1
+#        sh scripts/validate-prebuilt-release-folder.sh repeater r1.14.1.0
+
+set -e
+KIND="${1:?Usage: $0 <companion|repeater> <version> e.g. companion v1.14.1.1 or repeater r1.14.1.0}"
+VERSION="${2:?Usage: $0 $KIND <version>}"
+
+case "$KIND" in
+  companion|repeater) ;;
+  *)
+    echo "First arg must be companion or repeater, got: $KIND" >&2
+    exit 1
+    ;;
+esac
+
+REL="prebuilt/releases/${KIND}/${VERSION}"
+
+if [ ! -d "$REL" ]; then
+  echo "Directory not found: $REL" >&2
+  exit 1
+fi
+
+NOTES="${REL}/notes.md"
+if [ ! -f "$NOTES" ]; then
+  echo "OK (no notes.md to check): $REL"
+  exit 0
+fi
+
+if grep -qiE 'repeater.tcp|repeater_tcp|heltec_v4_repeater_tcp' "$NOTES"; then
+  if [ ! -f "${REL}/heltec_v4_repeater_tcp.bin" ]; then
+    echo "ERROR: $NOTES mentions TCP repeater but ${REL}/heltec_v4_repeater_tcp.bin is missing." >&2
+    exit 1
+  fi
+fi
+
+if grep -qiF "heltec_v4_companion_radio_usb_tcp.bin" "$NOTES"; then
+  if [ ! -f "${REL}/heltec_v4_companion_radio_usb_tcp.bin" ]; then
+    echo "ERROR: $NOTES references heltec_v4_companion_radio_usb_tcp.bin but file is missing in $REL." >&2
+    exit 1
+  fi
+fi
+
+echo "OK: $REL matches notes.md claims (repeater/companion spot checks)."

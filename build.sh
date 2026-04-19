@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
 
+# use pio if in PATH, else python3 -m platformio (e.g. when installed via pip)
+PIO_CMD="pio"
+if ! command -v pio >/dev/null 2>&1; then
+  PIO_CMD="python3 -m platformio"
+fi
+
 global_usage() {
   cat - <<EOF
 Usage:
@@ -12,7 +18,7 @@ Commands:
   build-firmwares: Build all firmwares for all targets.
   build-matching-firmwares <build-match-spec>: Build all firmwares for build targets containing the string given for <build-match-spec>.
   build-companion-firmwares: Build all companion firmwares for all build targets.
-  build-repeater-firmwares: Build all repeater firmwares for all build targets.
+  build-repeater-firmwares: Build all TCP repeater firmwares (env names ending in _repeater_tcp).
   build-room-server-firmwares: Build all chat room server firmwares for all build targets.
 
 Examples:
@@ -34,6 +40,12 @@ $ sh build.sh build-room-server-firmwares
 Environment Variables:
   DISABLE_DEBUG=1: Disables all debug logging flags (MESH_DEBUG, MESH_PACKET_LOGGING, etc.)
                    If not set, debug flags from variant platformio.ini files are used.
+  REPEATER_FIRMWARE_VERSION: For env names ending in _repeater_tcp only, overrides FIRMWARE_VERSION
+                   for the compile-time version string and out/ filenames. **Recommended:** repeater train
+                   r1.14.1.x — e.g. r1.14.1.0-repeater-tcp (then copy-repeater-release-bins.sh r1.14.1.0).
+                   Legacy v1.14.1.0-repeater-tcp in out/ still works with copy-repeater-release-bins.sh v1.14.1.0.
+                   Legacy labels like repeater-1.0.x still work. The macro is prefixed with meshcomod-
+                   (e.g. meshcomod-r1.14.1.0-repeater-tcp-<sha>).
 
 Examples:
 Build without debug logging:
@@ -44,12 +56,17 @@ $ sh build.sh build-firmware RAK_4631_repeater
 Build with debug logging (default, uses flags from variant files):
 $ export FIRMWARE_VERSION=v1.0.0
 $ sh build.sh build-firmware RAK_4631_repeater
+
+TCP repeater (r* release id parallel to companion v*, distinct -repeater-tcp suffix):
+$ export REPEATER_FIRMWARE_VERSION=r1.14.1.0-repeater-tcp
+$ sh build.sh build-repeater-firmwares
+$ sh scripts/copy-repeater-release-bins.sh r1.14.1.0
 EOF
 }
 
 # get a list of pio env names that start with "env:"
 get_pio_envs() {
-  pio project config | grep 'env:' | sed 's/env://'
+  $PIO_CMD project config | grep 'env:' | sed 's/env://'
 }
 
 # Catch cries for help before doing anything else.
@@ -63,9 +80,6 @@ case $1 in
     exit 0
     ;;
 esac
-
-# cache project config json for use in get_platform_for_env()
-PIO_CONFIG_JSON=$(pio project config --json-output)
 
 # $1 should be the string to find (case insensitive)
 get_pio_envs_containing_string() {
@@ -93,11 +107,13 @@ get_pio_envs_ending_with_string() {
 # $1 should be the environment name
 get_platform_for_env() {
   local env_name=$1
-  echo "$PIO_CONFIG_JSON" | python3 -c "
+  local result
+  result=$($PIO_CMD project config --json-output | python3 -c "
 import sys, json, re
 data = json.load(sys.stdin)
+env_name = sys.argv[1] if len(sys.argv) > 1 else ''
 for section, options in data:
-    if section == 'env:$env_name':
+    if section == 'env:' + env_name:
         for key, value in options:
             if key == 'build_flags':
                 for flag in value:
@@ -105,7 +121,12 @@ for section, options in data:
                     if match:
                         print(match.group(1))
                         sys.exit(0)
-"
+" "$env_name")
+  if [ -z "$result" ] && [ -f ".pio/build/$env_name/bootloader.bin" ] && [ -f ".pio/build/$env_name/partitions.bin" ]; then
+    echo "ESP32_PLATFORM"
+  else
+    echo "$result"
+  fi
 }
 
 # disable all debug logging flags if DISABLE_DEBUG=1 is set
@@ -126,15 +147,23 @@ build_firmware() {
   # set firmware build date
   FIRMWARE_BUILD_DATE=$(date '+%d-%b-%Y')
 
-  # get FIRMWARE_VERSION, which should be provided by the environment
-  if [ -z "$FIRMWARE_VERSION" ]; then
-    echo "FIRMWARE_VERSION must be set in environment"
+  # Version string: companion / generic builds use FIRMWARE_VERSION; *_repeater_tcp can use REPEATER_FIRMWARE_VERSION instead.
+  EFFECTIVE_FW_VERSION="$FIRMWARE_VERSION"
+  if [[ "$1" == *_repeater_tcp ]] && [ -n "$REPEATER_FIRMWARE_VERSION" ]; then
+    EFFECTIVE_FW_VERSION="$REPEATER_FIRMWARE_VERSION"
+  fi
+  if [ -z "$EFFECTIVE_FW_VERSION" ]; then
+    echo "FIRMWARE_VERSION must be set in environment (or REPEATER_FIRMWARE_VERSION for *_repeater_tcp)"
     exit 1
   fi
 
   # set firmware version string
-  # e.g: v1.0.0-abcdef
-  FIRMWARE_VERSION_STRING="${FIRMWARE_VERSION}-${COMMIT_HASH}"
+  # e.g: v1.0.0-abcdef or v1.14.1.0-repeater-tcp-abcdef or repeater-1.0.0-abcdef
+  FIRMWARE_VERSION_STRING="${EFFECTIVE_FW_VERSION}-${COMMIT_HASH}"
+  # TCP repeater: visible identity includes meshcomod (OLED, device query, out/ filenames).
+  if [[ "$1" == *_repeater_tcp ]]; then
+    FIRMWARE_VERSION_STRING="meshcomod-${FIRMWARE_VERSION_STRING}"
+  fi
 
   # craft filename
   # e.g: RAK_4631_Repeater-v1.0.0-SHA
@@ -147,13 +176,19 @@ build_firmware() {
   disable_debug_flags
 
   # build firmware target
-  pio run -e $1
+  $PIO_CMD run -e $1
 
-  # build merge-bin for esp32 fresh install, copy .bins to out folder (e.g: Heltec_v3_room_server-v1.0.0-SHA.bin)
+  # App image only in out/ (flash at partition app offset).
   if [ "$ENV_PLATFORM" == "ESP32_PLATFORM" ]; then
-    pio run -t mergebin -e $1
     cp .pio/build/$1/firmware.bin out/${FIRMWARE_FILENAME}.bin 2>/dev/null || true
-    cp .pio/build/$1/firmware-merged.bin out/${FIRMWARE_FILENAME}-merged.bin 2>/dev/null || true
+    # Companions (USB+TCP) + Heltec TCP repeaters: merged image at 0x0 for flasher / full-chip flash
+    if [[ "$1" == *companion_radio_usb_tcp* ]] || [[ "$1" == *_repeater_tcp ]]; then
+      if $PIO_CMD run -t mergebin -e "$1"; then
+        if [ -f ".pio/build/$1/firmware-merged.bin" ]; then
+          cp ".pio/build/$1/firmware-merged.bin" "out/${FIRMWARE_FILENAME}-merged.bin" 2>/dev/null || true
+        fi
+      fi
+    fi
   fi
 
   # build .uf2 for nrf52 boards, copy .uf2 and .zip to out folder (e.g: RAK_4631_Repeater-v1.0.0-SHA.uf2)
@@ -195,16 +230,8 @@ build_all_firmwares_by_suffix() {
 
 build_repeater_firmwares() {
 
-#  # build specific repeater firmwares
-#  build_firmware "Heltec_v2_repeater"
-#  build_firmware "Heltec_v3_repeater"
-#  build_firmware "Xiao_C3_Repeater_sx1262"
-#  build_firmware "Xiao_S3_WIO_Repeater"
-#  build_firmware "LilyGo_T3S3_sx1262_Repeater"
-#  build_firmware "RAK_4631_Repeater"
-
-  # build all repeater firmwares
-  build_all_firmwares_by_suffix "_repeater"
+  # TCP companion repeaters only (e.g. heltec_v4_repeater_tcp, Heltec_v3_repeater_tcp), not plain *_repeater
+  build_all_firmwares_by_suffix "_repeater_tcp"
 
 }
 
@@ -245,12 +272,9 @@ build_firmwares() {
   build_room_server_firmwares
 }
 
-# clean build dir
-rm -rf out
-mkdir -p out
-
-# handle script args
+# handle script args (clean out/ only for bulk builds so build-firmware runs accumulate bins)
 if [[ $1 == "build-firmware" ]]; then
+  mkdir -p out
   TARGETS=${@:2}
   if [ "$TARGETS" ]; then
     for env in $TARGETS; do
@@ -261,6 +285,8 @@ if [[ $1 == "build-firmware" ]]; then
     exit 1
   fi
 elif [[ $1 == "build-matching-firmwares" ]]; then
+  rm -rf out
+  mkdir -p out
   if [ "$2" ]; then
      build_all_firmwares_matching $2
   else
@@ -268,11 +294,19 @@ elif [[ $1 == "build-matching-firmwares" ]]; then
     exit 1
   fi
 elif [[ $1 == "build-firmwares" ]]; then
+  rm -rf out
+  mkdir -p out
   build_firmwares
 elif [[ $1 == "build-companion-firmwares" ]]; then
+  rm -rf out
+  mkdir -p out
   build_companion_firmwares
 elif [[ $1 == "build-repeater-firmwares" ]]; then
+  rm -rf out
+  mkdir -p out
   build_repeater_firmwares
 elif [[ $1 == "build-room-server-firmwares" ]]; then
+  rm -rf out
+  mkdir -p out
   build_room_server_firmwares
 fi

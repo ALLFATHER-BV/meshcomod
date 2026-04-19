@@ -5,14 +5,14 @@
 #include "AbstractUITask.h"
 
 /*------------ Frame Protocol --------------*/
-#define FIRMWARE_VER_CODE 11
+#define FIRMWARE_VER_CODE 27
 
 #ifndef FIRMWARE_BUILD_DATE
 #define FIRMWARE_BUILD_DATE "19 Apr 2026"
 #endif
 
 #ifndef FIRMWARE_VERSION
-#define FIRMWARE_VERSION "v1.15.0"
+#define FIRMWARE_VERSION "v1.15.0.0"
 #endif
 
 #if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
@@ -25,6 +25,9 @@
 
 #include "DataStore.h"
 #include "NodePrefs.h"
+
+/* Synthetic local command contact: appears in contact list, messages to it are intercepted and never sent over mesh. */
+#define MESHCOMOD_NAME "Meshcomod"
 
 #include <RTClib.h>
 #include <helpers/ArduinoHelpers.h>
@@ -61,6 +64,16 @@
 
 #ifndef OFFLINE_QUEUE_SIZE
 #define OFFLINE_QUEUE_SIZE 16
+#endif
+
+#ifndef HISTORY_RING_SIZE
+#define HISTORY_RING_SIZE 128
+#endif
+#ifndef MAX_HISTORY_CLIENTS
+#define MAX_HISTORY_CLIENTS 8
+#endif
+#ifndef MAX_CLIENT_ID_LEN
+#define MAX_CLIENT_ID_LEN 31
 #endif
 
 #ifndef BLE_NAME_PREFIX
@@ -102,17 +115,27 @@ public:
 
   int  getRecentlyHeard(AdvertPath dest[], int max_num);
 
+#if defined(ESP32) && (defined(WIFI_SSID) || defined(MULTI_TRANSPORT_COMPANION))
+  /** HTTP OTA: one UTF-8 line as PUSH_CODE_BINARY_RESPONSE (ESP32Board → meshcoreRepeaterTcpOtaEmitLine). */
+  void pushCompanionOtaProgressLine(const char* line);
+#endif
+
 protected:
   float getAirtimeBudgetFactor() const override;
   int getInterferenceThreshold() const override;
   int calcRxDelay(float score, uint32_t air_time) const override;
-  uint32_t getRetransmitDelay(const mesh::Packet *packet) override;
-  uint32_t getDirectRetransmitDelay(const mesh::Packet *packet) override;
   uint8_t getExtraAckTransmitCount() const override;
+  uint8_t getAutoAddMaxHops() const override;
   bool filterRecvFloodPacket(mesh::Packet* packet) override;
   bool allowPacketForward(const mesh::Packet* packet) override;
 
   void sendFloodScoped(const TransportKey& scope, mesh::Packet* pkt, uint32_t delay_millis);
+  // Meshcomod: synthetic local command contact (no RF)
+  static const uint8_t MESHCOMOD_PUB_KEY_PREFIX[6];
+  void getMeshcomodContact(ContactInfo& dest);
+  bool isMeshcomodRecipient(const uint8_t* pub_key_prefix_6) const;
+  bool handleMeshcomodCommand(const char* text, int text_len);
+  void pushMeshcomodReply(const char* text, bool immediate_current = false);
   void sendFloodScoped(const ContactInfo& recipient, mesh::Packet* pkt, uint32_t delay_millis=0) override;
   void sendFloodScoped(const mesh::GroupChannel& channel, mesh::Packet* pkt, uint32_t delay_millis=0) override;
 
@@ -120,7 +143,6 @@ protected:
   bool isAutoAddEnabled() const override;
   bool shouldAutoAddContactType(uint8_t type) const override;
   bool shouldOverwriteWhenFull() const override;
-  uint8_t getAutoAddMaxHops() const override;
   void onContactsFull() override;
   void onContactOverwrite(const uint8_t* pub_key) override;
   bool onContactPathRecv(ContactInfo& from, uint8_t* in_path, uint8_t in_path_len, uint8_t* out_path, uint8_t out_path_len, uint8_t extra_type, uint8_t* extra, uint8_t extra_len) override;
@@ -181,10 +203,25 @@ private:
   void writeOKFrame();
   void writeErrFrame(uint8_t err_code);
   void writeDisabledFrame();
-  void writeContactRespFrame(uint8_t code, const ContactInfo &contact);
+  /** Returns bytes written, or 0 on failure. Caller can retry on 0. */
+  size_t writeContactRespFrame(uint8_t code, const ContactInfo &contact, bool to_all = false);
   void updateContactFromFrame(ContactInfo &contact, uint32_t& last_mod, const uint8_t *frame, int len);
   void addToOfflineQueue(const uint8_t frame[], int len);
   int getFromOfflineQueue(uint8_t frame[]);
+  /** Appends frame to ring; returns assigned seq, or 0 if rejected. */
+  uint32_t addToHistoryRing(const uint8_t frame[], int len);
+  /** Get next history frame for client. If do_advance is false, does not advance last_delivered_seq (call commitHistoryForClient after successful write). */
+  int getNextFromHistoryForClient(const char* client_id, uint8_t frame[], uint32_t* out_seq = nullptr, bool do_advance = true);
+  void commitHistoryForClient(const char* client_id, uint32_t seq);
+  /** After a successful V3 live broadcast, bump sync watermarks for clients that understand V3 on the wire (target_ver >= 3 or unknown 0xFF).
+   *  Legacy apps (CMD_DEVICE_QUERY second byte < 3) are skipped so CMD_SYNC_NEXT_MESSAGE can still deliver adapted 7/8 they never got from live 16/17. */
+  void advanceHistoryClientsAfterV3Broadcast(uint32_t seq);
+  void setClientTargetVer(const char* client_id, uint8_t target_ver);
+  uint8_t getClientTargetVer(const char* client_id) const;
+  void setClientAppName(const char* client_id, const char* app_name);
+  bool shouldAdvanceClientAfterV3Broadcast(const char* client_id) const;
+  int adaptHistoryFrameForClient(const char* client_id, const uint8_t src[], int src_len, uint8_t dest[]) const;
+  void sendSyncSinceDelta(uint32_t T);
   int getBlobByKey(const uint8_t key[], int key_len, uint8_t dest_buf[]) override { 
     return _store->getBlobByKey(key, key_len, dest_buf);
   }
@@ -212,6 +249,8 @@ private:
   ContactsIterator _iter;
   uint32_t _iter_filter_since;
   uint32_t _most_recent_lastmod;
+  uint32_t _contact_send_index;  // temporary diagnostic: index of CONTACT sent
+  int _contact_list_reply_target;  // reply target for this contact list (so CONTACT/END go to same client as START)
   uint32_t _active_ble_pin;
   bool _iter_started;
   bool _cli_rescue;
@@ -235,6 +274,30 @@ private:
   };
   int offline_queue_len;
   Frame offline_queue[OFFLINE_QUEUE_SIZE];
+
+  // Per-client history: ring buffer of frames + per-client read position
+  struct HistoryEntry {
+    uint8_t len;
+    uint8_t buf[MAX_FRAME_SIZE];
+    uint32_t seq;
+  };
+  struct ClientHistoryState {
+    char client_id[MAX_CLIENT_ID_LEN + 1];
+    uint32_t last_delivered_seq;
+  };
+  struct ClientProtoState {
+    char client_id[MAX_CLIENT_ID_LEN + 1];
+    uint8_t target_ver;
+    bool prefer_live_advance;
+  };
+  HistoryEntry history_ring[HISTORY_RING_SIZE];
+  int history_count;
+  int history_head;
+  uint32_t history_next_seq;
+  ClientHistoryState history_clients[MAX_HISTORY_CLIENTS];
+  int history_num_clients;
+  ClientProtoState proto_clients[MAX_HISTORY_CLIENTS];
+  int proto_num_clients;
 
   struct AckTableEntry {
     unsigned long msg_sent;

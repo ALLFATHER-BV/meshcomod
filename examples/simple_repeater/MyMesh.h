@@ -222,8 +222,7 @@ public:
 
   void saveIdentity(const mesh::LocalIdentity& new_id) override;
   void clearStats() override;
-
-  void handleCommand(uint32_t sender_timestamp, char* command, char* reply);
+  void handleCommand(uint32_t sender_timestamp, char* command, char* reply, uint8_t http_ota_wifi_path = 0);
   void loop();
 
 #if defined(WITH_BRIDGE)
@@ -249,6 +248,17 @@ public:
   // To check if there is pending work
   bool hasPendingWork() const;
 
+#if defined(REPEATER_TCP_COMPANION) && defined(ESP32)
+  /** USB-serial hint (long-press in first ~8s after boot, same idea as companion). */
+  void enterCLIRescue();
+  /**
+   * Companion-style binary command (subset). Writes one primary response into out (return length), or
+   * returns 0 after emitting all frames via emit_extra (meshcomod local commands over CMD_SEND_TXT_MSG).
+   */
+  size_t handleRepeaterTcpCompanionCommand(const uint8_t *cmd, size_t cmd_len, uint8_t *out, size_t out_cap,
+                                           void (*emit_extra)(void *, const uint8_t *, size_t),
+                                           void *emit_ctx);
+#endif
 #if defined(USE_SX1262) || defined(USE_SX1268)
   void setRxBoostedGain(bool enable) override;
 #endif

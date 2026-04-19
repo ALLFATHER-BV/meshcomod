@@ -2,12 +2,22 @@
 #include <helpers/TxtDataHelpers.h>
 #include "../MyMesh.h"
 #include "target.h"
+#if defined(HAS_HELTEC_V4_CAP_TOUCH) && defined(ESP32)
+  #include <helpers/input/HeltecV4CapTouch.h>
+#endif
+#ifdef ESP32
+  #include <Esp.h>
+#endif
 #ifdef WIFI_SSID
   #include <WiFi.h>
 #endif
 
 #ifndef AUTO_OFF_MILLIS
-  #define AUTO_OFF_MILLIS     15000   // 15 seconds
+  #if defined(HAS_HELTEC_V4_CAP_TOUCH)
+    #define AUTO_OFF_MILLIS   25000   // touch UX: keep UI awake a bit longer
+  #else
+    #define AUTO_OFF_MILLIS   15000   // 15 seconds
+  #endif
 #endif
 #define BOOT_SCREEN_MILLIS   3000   // 3 seconds
 
@@ -25,8 +35,14 @@
 
 #if UI_HAS_JOYSTICK
   #define PRESS_LABEL "press Enter"
+#elif defined(HAS_HELTEC_V4_CAP_TOUCH)
+  #define PRESS_LABEL "hold"
 #else
   #define PRESS_LABEL "long press"
+#endif
+
+#if defined(HAS_HELTEC_V4_CAP_TOUCH)
+  #define SWIPE_HINT "swipe < >"
 #endif
 
 #include "icons.h"
@@ -52,18 +68,17 @@ public:
   }
 
   int render(DisplayDriver& display) override {
-    // meshcore logo
-    display.setColor(DisplayDriver::BLUE);
-    int logoWidth = 128;
-    display.drawXbm((display.width() - logoWidth) / 2, 3, meshcore_logo, logoWidth, 13);
-
-    // version info
+    // meshcomod title (replaces MeshCore logo)
     display.setColor(DisplayDriver::LIGHT);
     display.setTextSize(2);
-    display.drawTextCentered(display.width()/2, 22, _version_info);
+    display.drawTextCentered(display.width() / 2, 4, "meshcomod");
+
+    // version info
+    display.setTextSize(2);
+    display.drawTextCentered(display.width() / 2, 24, _version_info);
 
     display.setTextSize(1);
-    display.drawTextCentered(display.width()/2, 42, FIRMWARE_BUILD_DATE);
+    display.drawTextCentered(display.width() / 2, 44, FIRMWARE_BUILD_DATE);
 
     return 1000;
   }
@@ -82,11 +97,18 @@ class HomeScreen : public UIScreen {
     RADIO,
     BLUETOOTH,
     ADVERT,
+#ifdef MULTI_TRANSPORT_COMPANION
+    NETWORK,
+    WSS,
+#endif
 #if ENV_INCLUDE_GPS == 1
     GPS,
 #endif
 #if UI_SENSORS_PAGE == 1
     SENSORS,
+#endif
+#ifdef ESP32
+    RESOURCES,
 #endif
     SHUTDOWN,
     Count    // keep as last
@@ -99,6 +121,44 @@ class HomeScreen : public UIScreen {
   uint8_t _page;
   bool _shutdown_init;
   AdvertPath recent[UI_RECENT_LIST_SIZE];
+
+  const char* pageTitle() const {
+    switch (_page) {
+      case HomePage::FIRST: return "HOME";
+      case HomePage::RECENT: return "RECENT";
+      case HomePage::RADIO: return "RADIO";
+      case HomePage::BLUETOOTH: return "BLUETOOTH";
+      case HomePage::ADVERT: return "ADVERT";
+#ifdef MULTI_TRANSPORT_COMPANION
+      case HomePage::NETWORK: return "NETWORK";
+      case HomePage::WSS: return "WEBSOCKET";
+#endif
+#if ENV_INCLUDE_GPS == 1
+      case HomePage::GPS: return "GPS";
+#endif
+#if UI_SENSORS_PAGE == 1
+      case HomePage::SENSORS: return "SENSORS";
+#endif
+#ifdef ESP32
+      case HomePage::RESOURCES: return "RESOURCES";
+#endif
+      case HomePage::SHUTDOWN: return "POWER";
+      default: return "";
+    }
+  }
+
+  DisplayDriver::Color pageAccent() const {
+    switch (_page) {
+      case HomePage::RADIO: return DisplayDriver::ORANGE;
+      case HomePage::BLUETOOTH: return DisplayDriver::BLUE;
+      case HomePage::ADVERT: return DisplayDriver::YELLOW;
+#if ENV_INCLUDE_GPS == 1
+      case HomePage::GPS: return DisplayDriver::GREEN;
+#endif
+      case HomePage::SHUTDOWN: return DisplayDriver::RED;
+      default: return DisplayDriver::LIGHT;
+    }
+  }
 
 
   void renderBatteryIndicator(DisplayDriver& display, uint16_t batteryMilliVolts) {
@@ -115,28 +175,31 @@ class HomeScreen : public UIScreen {
     if (batteryPercentage < 0) batteryPercentage = 0; // Clamp to 0%
     if (batteryPercentage > 100) batteryPercentage = 100; // Clamp to 100%
 
-    // battery icon
-    int iconWidth = 24;
-    int iconHeight = 10;
-    int iconX = display.width() - iconWidth - 5; // Position the icon near the top-right corner
-    int iconY = 0;
-    display.setColor(DisplayDriver::GREEN);
+    // Touch UI: compact battery badge (~20% visual footprint vs previous large icon).
+    int iconWidth = 10;
+    int iconHeight = 4;
+    int iconX = display.width() - iconWidth - 3;
+    int iconY = 2;
+    display.setColor(batteryPercentage <= 20 ? DisplayDriver::RED :
+                     batteryPercentage <= 40 ? DisplayDriver::ORANGE : DisplayDriver::GREEN);
 
     // battery outline
     display.drawRect(iconX, iconY, iconWidth, iconHeight);
 
     // battery "cap"
-    display.fillRect(iconX + iconWidth, iconY + (iconHeight / 4), 3, iconHeight / 2);
+    display.fillRect(iconX + iconWidth, iconY + 1, 1, 2);
 
     // fill the battery based on the percentage
-    int fillWidth = (batteryPercentage * (iconWidth - 4)) / 100;
-    display.fillRect(iconX + 2, iconY + 2, fillWidth, iconHeight - 4);
+    int fillWidth = (batteryPercentage * (iconWidth - 2)) / 100;
+    if (fillWidth > 0) {
+      display.fillRect(iconX + 1, iconY + 1, fillWidth, iconHeight - 2);
+    }
 
     // show muted icon if buzzer is muted
 #ifdef PIN_BUZZER
     if (_task->isBuzzerQuiet()) {
       display.setColor(DisplayDriver::RED);
-      display.drawXbm(iconX - 9, iconY + 1, muted_icon, 8, 8);
+      display.drawXbm(iconX - 9, 0, muted_icon, 8, 8);
     }
 #endif
   }
@@ -192,8 +255,21 @@ public:
     // battery voltage
     renderBatteryIndicator(display, _task->getBattMilliVolts());
 
-    // curr page indicator
-    int y = 14;
+    // page title + indicator
+    display.setTextSize(1);
+    display.setColor(pageAccent());
+    display.drawTextCentered(display.width() / 2, 8, pageTitle());
+    int y = 17;
+#if defined(HAS_HELTEC_V4_CAP_TOUCH)
+    int x = display.width() / 2 - 7 * (HomePage::Count - 1);
+    for (uint8_t i = 0; i < HomePage::Count; i++, x += 14) {
+      if (i == _page) {
+        display.fillRect(x - 2, y - 1, 6, 3);
+      } else {
+        display.fillRect(x, y, 2, 2);
+      }
+    }
+#else
     int x = display.width() / 2 - 5 * (HomePage::Count-1);
     for (uint8_t i = 0; i < HomePage::Count; i++, x += 10) {
       if (i == _page) {
@@ -202,6 +278,7 @@ public:
         display.fillRect(x, y, 1, 1);
       }
     }
+#endif
 
     if (_page == HomePage::FIRST) {
       display.setColor(DisplayDriver::YELLOW);
@@ -213,7 +290,8 @@ public:
         IPAddress ip = WiFi.localIP();
         snprintf(tmp, sizeof(tmp), "IP: %d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
         display.setTextSize(1);
-        display.drawTextCentered(display.width() / 2, 54, tmp); 
+        display.setColor(DisplayDriver::BLUE);
+        display.drawTextCentered(display.width() / 2, 54, tmp);
       #endif
       if (_task->hasConnection()) {
         display.setColor(DisplayDriver::GREEN);
@@ -252,7 +330,7 @@ public:
         display.print(tmp);
       }
     } else if (_page == HomePage::RADIO) {
-      display.setColor(DisplayDriver::YELLOW);
+      display.setColor(DisplayDriver::ORANGE);
       display.setTextSize(1);
       // freq / sf
       display.setCursor(0, 20);
@@ -271,32 +349,148 @@ public:
       sprintf(tmp, "Noise floor: %d", radio_driver.getNoiseFloor());
       display.print(tmp);
     } else if (_page == HomePage::BLUETOOTH) {
-      display.setColor(DisplayDriver::GREEN);
-      display.drawXbm((display.width() - 32) / 2, 18,
-          _task->isSerialEnabled() ? bluetooth_on : bluetooth_off,
-          32, 32);
+      if (_task->hasBleCapability()) {
+        // TCP-style layout: title, state, PIN when on, footer with long-press hint
+        display.setColor(DisplayDriver::BLUE);
+        display.setTextSize(1);
+        int y = 20;
+        if (_task->isBleEnabled()) {
+          display.setColor(DisplayDriver::GREEN);
+          snprintf(tmp, sizeof(tmp), "BLE Pin: %lu", (unsigned long)the_mesh.getBLEPin());
+          display.drawTextCentered(display.width() / 2, y, tmp);
+          y += 11;
+
+          char peer[24];
+          if (_task->getBlePeerAddress(peer, sizeof(peer)) && peer[0] != '\0') {
+            display.drawTextCentered(display.width() / 2, y, "Connected");
+            y += 11;
+            display.drawTextCentered(display.width() / 2, y, peer);
+          } else {
+            y += 5;
+            display.drawTextCentered(display.width() / 2, y, "Waiting for device");
+          }
+        } else {
+          display.setColor(DisplayDriver::RED);
+          display.drawTextCentered(display.width() / 2, y, "BLE disabled");
+        }
+        y = 64 - 11;
+        display.setColor(DisplayDriver::LIGHT);
+  #if defined(HAS_HELTEC_V4_CAP_TOUCH)
+        snprintf(tmp, sizeof(tmp), "%s  %s", SWIPE_HINT, _task->isBleEnabled() ? "OFF: hold" : "ON: hold");
+        display.drawTextCentered(display.width() / 2, y, tmp);
+  #else
+        display.drawTextCentered(display.width() / 2, y, _task->isBleEnabled() ? "OFF: long press" : "ON: long press");
+  #endif
+      } else {
+        display.setColor(DisplayDriver::GREEN);
+        bool on = _task->isSerialEnabled();
+        display.drawXbm((display.width() - 32) / 2, 18,
+            on ? bluetooth_on : bluetooth_off,
+            32, 32);
+        display.setTextSize(1);
+        display.drawTextCentered(display.width() / 2, 64 - 11, "toggle: " PRESS_LABEL);
+      }
+#ifdef MULTI_TRANSPORT_COMPANION
+    } else if (_page == HomePage::NETWORK) {
+      display.setColor(DisplayDriver::BLUE);
       display.setTextSize(1);
-      display.drawTextCentered(display.width() / 2, 64 - 11, "toggle: " PRESS_LABEL);
-    } else if (_page == HomePage::ADVERT) {
+      int y = 20;
+#ifndef TCP_PORT
+#define TCP_PORT 5000
+#endif
+      snprintf(tmp, sizeof(tmp), "TCP Port: %d", TCP_PORT);
+      display.drawTextCentered(display.width() / 2, y, tmp);
+      y += 11;
+      if (_task->isTcpEnabled()) {
+#ifdef WIFI_SSID
+        IPAddress ip = WiFi.localIP();
+        if (ip[0] != 0 || ip[1] != 0 || ip[2] != 0 || ip[3] != 0) {
+          snprintf(tmp, sizeof(tmp), "IP: %d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
+          display.drawTextCentered(display.width() / 2, y, tmp);
+          y += 11;
+          display.setColor(DisplayDriver::GREEN);
+          snprintf(tmp, sizeof(tmp), "SSID: %.32s", WiFi.SSID().c_str());
+          display.drawTextCentered(display.width() / 2, y, tmp);
+        } else {
+          String ssid = WiFi.SSID();
+          wl_status_t ws = WiFi.status();
+          display.setColor(DisplayDriver::RED);
+          if (ssid.length() == 0 || ws == WL_NO_SSID_AVAIL) {
+            display.drawTextCentered(display.width() / 2, y, "WiFi not configured");
+          } else {
+            display.drawTextCentered(display.width() / 2, y, "WiFi connecting...");
+          }
+          y += 11;
+          display.drawTextCentered(display.width() / 2, y, "IP: 0.0.0.0");
+        }
+#else
+        display.drawTextCentered(display.width() / 2, y, "WiFi not configured");
+#endif
+      } else {
+        display.setColor(DisplayDriver::RED);
+        display.drawTextCentered(display.width() / 2, y, "TCP disabled");
+      }
+      y = 64 - 11;
+      display.setColor(DisplayDriver::LIGHT);
+#if defined(HAS_HELTEC_V4_CAP_TOUCH)
+      snprintf(tmp, sizeof(tmp), "%s  %s", SWIPE_HINT, _task->isTcpEnabled() ? "OFF: hold" : "ON: hold");
+      display.drawTextCentered(display.width() / 2, y, tmp);
+#else
+      display.drawTextCentered(display.width() / 2, y, _task->isTcpEnabled() ? "OFF: long press" : "ON: long press");
+#endif
+#endif
+#ifdef MULTI_TRANSPORT_COMPANION
+    } else if (_page == HomePage::WSS) {
+      display.setColor(DisplayDriver::BLUE);
+      display.setTextSize(1);
+      int y = 20;
+      if (_task->isWsStarted()) {
+        display.setColor(DisplayDriver::GREEN);
+        display.drawTextCentered(display.width() / 2, y, "WS running");
+        y += 11;
+        snprintf(tmp, sizeof(tmp), "port: %u", (unsigned)_task->getWsPort());
+        display.drawTextCentered(display.width() / 2, y, tmp);
+        y += 11;
+        int n = _task->getWsConnectedCount();
+        snprintf(tmp, sizeof(tmp), "clients: %d", n);
+        display.drawTextCentered(display.width() / 2, y, tmp);
+      } else {
+        display.setColor(DisplayDriver::RED);
+        display.drawTextCentered(display.width() / 2, y, "WS not running");
+        y += 11;
+        display.setColor(DisplayDriver::LIGHT);
+        display.drawTextCentered(display.width() / 2, y, "when WiFi has IP");
+        y += 11;
+        display.drawTextCentered(display.width() / 2, y, "(after boot delay)");
+      }
+    }
+#endif
+    else if (_page == HomePage::ADVERT) {
       display.setColor(DisplayDriver::GREEN);
       display.drawXbm((display.width() - 32) / 2, 18, advert_icon, 32, 32);
-      display.drawTextCentered(display.width() / 2, 64 - 11, "advert: " PRESS_LABEL);
+#if defined(HAS_HELTEC_V4_CAP_TOUCH)
+      snprintf(tmp, sizeof(tmp), "%s  ADVERT: hold", SWIPE_HINT);
+      display.drawTextCentered(display.width() / 2, 64 - 11, tmp);
+#else
+      display.drawTextCentered(display.width() / 2, 64 - 11, "ADVERT: " PRESS_LABEL);
+#endif
 #if ENV_INCLUDE_GPS == 1
     } else if (_page == HomePage::GPS) {
       LocationProvider* nmea = sensors.getLocationProvider();
       char buf[50];
-      int y = 18;
+      int y = 20;
       bool gps_state = _task->getGPSState();
 #ifdef PIN_GPS_SWITCH
       bool hw_gps_state = digitalRead(PIN_GPS_SWITCH);
       if (gps_state != hw_gps_state) {
-        strcpy(buf, gps_state ? "gps off(hw)" : "gps off(sw)");
+        strcpy(buf, gps_state ? "GPS off(hw)" : "GPS off(sw)");
       } else {
-        strcpy(buf, gps_state ? "gps on" : "gps off");
+        strcpy(buf, gps_state ? "GPS on" : "GPS off");
       }
 #else
-      strcpy(buf, gps_state ? "gps on" : "gps off");
+      strcpy(buf, gps_state ? "GPS on" : "GPS off");
 #endif
+      display.setColor(gps_state ? DisplayDriver::GREEN : DisplayDriver::RED);
       display.drawTextLeftAlign(0, y, buf);
       if (nmea == NULL) {
         y = y + 12;
@@ -319,10 +513,14 @@ public:
         display.drawTextRightAlign(display.width()-1, y, buf);
         y = y + 12;
       }
+#if defined(HAS_HELTEC_V4_CAP_TOUCH)
+      display.setColor(DisplayDriver::LIGHT);
+      display.drawTextCentered(display.width() / 2, 64 - 11, "swipe < >  GPS: hold");
+#endif
 #endif
 #if UI_SENSORS_PAGE == 1
     } else if (_page == HomePage::SENSORS) {
-      int y = 18;
+      int y = 20;
       refresh_sensors();
       char buf[30];
       char name[30];
@@ -392,14 +590,62 @@ public:
       if (sensors_scroll) sensors_scroll_offset = (sensors_scroll_offset+1)%sensors_nb;
       else sensors_scroll_offset = 0;
 #endif
+#ifdef ESP32
+    } else if (_page == HomePage::RESOURCES) {
+      display.setColor(DisplayDriver::LIGHT);
+      display.setTextSize(1);
+      int y = 20;
+      snprintf(tmp, sizeof(tmp), "CPU %u MHz", (unsigned)ESP.getCpuFreqMHz());
+      display.drawTextCentered(display.width() / 2, y, tmp);
+      y += 11;
+      uint32_t heapFree = ESP.getFreeHeap();
+      uint32_t heapTotal = ESP.getHeapSize();
+      uint32_t heapUsed = heapTotal > heapFree ? heapTotal - heapFree : 0;
+      unsigned pctUsed = heapTotal > 0 ? (unsigned)((uint64_t)heapUsed * 100 / heapTotal) : 0;
+      uint32_t heapUsedK = heapUsed / 1024;
+      uint32_t heapTotalK = heapTotal / 1024;
+      char s1[8], s2[8];
+      if (heapUsedK >= 1000) snprintf(s1, sizeof(s1), "%.1fK", heapUsedK / 1000.0); else snprintf(s1, sizeof(s1), "%lu", (unsigned long)heapUsedK);
+      if (heapTotalK >= 1000) snprintf(s2, sizeof(s2), "%.1fK", heapTotalK / 1000.0); else snprintf(s2, sizeof(s2), "%lu", (unsigned long)heapTotalK);
+      snprintf(tmp, sizeof(tmp), "RAM %u%% %s/%s", pctUsed, s1, s2);
+      display.drawTextCentered(display.width() / 2, y, tmp);
+      y += 11;
+      uint32_t psramTotal = ESP.getPsramSize();
+      if (psramTotal > 0) {
+        uint32_t psramFree = ESP.getFreePsram();
+        uint32_t psramUsed = psramTotal > psramFree ? psramTotal - psramFree : 0;
+        pctUsed = (unsigned)((uint64_t)psramUsed * 100 / psramTotal);
+        uint32_t psramUsedK = psramUsed / 1024;
+        uint32_t psramTotalK = psramTotal / 1024;
+        if (psramUsedK >= 1000) snprintf(s1, sizeof(s1), "%.1fK", psramUsedK / 1000.0); else snprintf(s1, sizeof(s1), "%lu", (unsigned long)psramUsedK);
+        if (psramTotalK >= 1000) snprintf(s2, sizeof(s2), "%.1fK", psramTotalK / 1000.0); else snprintf(s2, sizeof(s2), "%lu", (unsigned long)psramTotalK);
+        snprintf(tmp, sizeof(tmp), "PSRAM %u%% %s/%s", pctUsed, s1, s2);
+      } else {
+        snprintf(tmp, sizeof(tmp), "PSRAM n/a");
+      }
+      display.drawTextCentered(display.width() / 2, y, tmp);
+      y += 11;
+      uint32_t flashTotal = ESP.getFlashChipSize();
+      uint32_t sketchFree = ESP.getFreeSketchSpace();
+      uint32_t flashUsed = flashTotal > sketchFree ? flashTotal - sketchFree : 0;
+      pctUsed = flashTotal > 0 ? (unsigned)((uint64_t)flashUsed * 100 / flashTotal) : 0;
+      uint32_t flashUsedK = flashUsed / 1024;
+      uint32_t flashTotalK = flashTotal / 1024;
+      if (flashUsedK >= 1000) snprintf(s1, sizeof(s1), "%.1fK", flashUsedK / 1000.0); else snprintf(s1, sizeof(s1), "%lu", (unsigned long)flashUsedK);
+      if (flashTotalK >= 1000) snprintf(s2, sizeof(s2), "%.1fK", flashTotalK / 1000.0); else snprintf(s2, sizeof(s2), "%lu", (unsigned long)flashTotalK);
+      snprintf(tmp, sizeof(tmp), "Flash %u%% %s/%s", pctUsed, s1, s2);
+      display.drawTextCentered(display.width() / 2, y, tmp);
     } else if (_page == HomePage::SHUTDOWN) {
+#else
+    } else if (_page == HomePage::SHUTDOWN) {
+#endif
       display.setColor(DisplayDriver::GREEN);
       display.setTextSize(1);
       if (_shutdown_init) {
         display.drawTextCentered(display.width() / 2, 34, "hibernating...");
       } else {
         display.drawXbm((display.width() - 32) / 2, 18, power_icon, 32, 32);
-        display.drawTextCentered(display.width() / 2, 64 - 11, "hibernate:" PRESS_LABEL);
+        display.drawTextCentered(display.width() / 2, 64 - 11, "HIBERNATE:" PRESS_LABEL);
       }
     }
     return 5000;   // next render after 5000 ms
@@ -417,25 +663,25 @@ public:
       }
       return true;
     }
-    if (c == KEY_ENTER && _page == HomePage::BLUETOOTH) {
-      if (_task->isSerialEnabled()) {  // toggle Bluetooth on/off
+    if (c == KEY_ENTER && _page == HomePage::BLUETOOTH && !_task->hasBleCapability()) {
+      if (_task->isSerialEnabled()) {
         _task->disableSerial();
       } else {
         _task->enableSerial();
       }
       return true;
     }
-    if (c == KEY_ENTER && _page == HomePage::ADVERT) {
+    if ((c == KEY_ENTER || c == KEY_LONG_ENTER) && _page == HomePage::ADVERT) {
       _task->notify(UIEventType::ack);
       if (the_mesh.advert()) {
-        _task->showAlert("Advert sent!", 1000);
+        _task->showAlert("Advert sent!", 1400);
       } else {
-        _task->showAlert("Advert failed..", 1000);
+        _task->showAlert("Advert failed", 1400);
       }
       return true;
     }
 #if ENV_INCLUDE_GPS == 1
-    if (c == KEY_ENTER && _page == HomePage::GPS) {
+    if ((c == KEY_ENTER || c == KEY_LONG_ENTER) && _page == HomePage::GPS) {
       _task->toggleGPS();
       return true;
     }
@@ -449,6 +695,28 @@ public:
 #endif
     if (c == KEY_ENTER && _page == HomePage::SHUTDOWN) {
       _shutdown_init = true;  // need to wait for button to be released
+      return true;
+    }
+#ifdef MULTI_TRANSPORT_COMPANION
+    if (c == KEY_LONG_ENTER && _page == HomePage::NETWORK) {
+      if (_task->isTcpEnabled()) {
+        _task->disableTcp();
+        _task->showAlert("TCP disabled", 1500);
+      } else {
+        _task->enableTcp();
+        _task->showAlert("TCP enabled", 1500);
+      }
+      return true;
+    }
+#endif
+    if (c == KEY_LONG_ENTER && _page == HomePage::BLUETOOTH && _task->hasBleCapability()) {
+      if (_task->isBleEnabled()) {
+        _task->disableBle();
+        _task->showAlert("BLE disabled", 1500);
+      } else {
+        _task->enableBle();
+        _task->showAlert("BLE enabled", 1500);
+      }
       return true;
     }
     return false;
@@ -529,7 +797,7 @@ public:
   }
 
   bool handleInput(char c) override {
-    if (c == KEY_NEXT || c == KEY_RIGHT) {
+    if (c == KEY_NEXT || c == KEY_RIGHT || c == KEY_PREV || c == KEY_LEFT) {
       head = (head + MAX_UNREAD_MSGS - 1) % MAX_UNREAD_MSGS;
       num_unread--;
       if (num_unread == 0) {
@@ -537,8 +805,9 @@ public:
       }
       return true;
     }
-    if (c == KEY_ENTER) {
-      num_unread = 0;  // clear unread queue
+    if (c == KEY_ENTER || c == KEY_LONG_ENTER) {
+      // KEY_ENTER: single press = clear all and go home. KEY_LONG_ENTER: long press = same, so user can skip through all unread at once.
+      num_unread = 0;
       _task->gotoHomeScreen();
       return true;
     }
@@ -556,6 +825,9 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
 #endif
 #if defined(PIN_USER_BTN_ANA)
   analog_btn.begin();
+#endif
+#if defined(HAS_HELTEC_V4_CAP_TOUCH) && defined(ESP32)
+  heltecV4CapTouchBegin();
 #endif
 
   _node_prefs = node_prefs;
@@ -765,6 +1037,18 @@ void UITask::loop() {
     next_backlight_btn_check = millis() + 300;
   }
 #endif
+#if defined(HAS_HELTEC_V4_CAP_TOUCH) && defined(ESP32)
+  if (c == 0) {
+    int tev = heltecV4CapTouchCheck();
+    if (tev == BUTTON_EVENT_CLICK) {
+      c = checkDisplayOn(KEY_NEXT);
+    } else if (tev == BUTTON_EVENT_DOUBLE_CLICK) {
+      c = handleDoubleClick(KEY_PREV);
+    } else if (tev == BUTTON_EVENT_LONG_PRESS) {
+      c = handleLongPress(KEY_ENTER);
+    }
+  }
+#endif
 
   if (c != 0 && curr) {
     curr->handleInput(c);
@@ -851,9 +1135,9 @@ char UITask::checkDisplayOn(char c) {
 char UITask::handleLongPress(char c) {
   if (millis() - ui_started_at < 8000) {   // long press in first 8 seconds since startup -> CLI/rescue
     the_mesh.enterCLIRescue();
-    c = 0;   // consume event
+    return 0;   // consume event
   }
-  return c;
+  return KEY_LONG_ENTER;   // so screens can distinguish long press (e.g. NETWORK tab: disable TCP)
 }
 
 char UITask::handleDoubleClick(char c) {

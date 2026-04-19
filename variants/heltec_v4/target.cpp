@@ -1,6 +1,13 @@
 #include <Arduino.h>
 #include "target.h"
 
+// Set phase 1 when target.cpp globals start (no Serial - can crash before setup). Read g_boot_phase in setup().
+namespace {
+struct BootTrace {
+  BootTrace() { set_boot_phase(1); }
+} _boot_trace;
+}
+
 HeltecV4Board board;
 
 #if defined(P_LORA_SCLK)

@@ -1,6 +1,16 @@
 #include "MyMesh.h"
 #include <algorithm>
 
+#if defined(REPEATER_TCP_COMPANION) && defined(ESP32)
+#include <WiFi.h>
+#include <cstring>
+#include <strings.h>
+#include <helpers/esp32/WifiRuntimeStore.h>
+#include <helpers/HttpOtaWifiSession.h>
+#include <helpers/RepeaterTcpOtaEmit.h>
+extern void repeater_on_wifi_radio_toggled();
+#endif
+
 /* ------------------------------ Config -------------------------------- */
 
 #ifndef LORA_FREQ
@@ -729,7 +739,7 @@ void MyMesh::onPeerDataRecv(mesh::Packet *packet, uint8_t type, int sender_idx, 
           timestamp++;
         }
         memcpy(temp, &timestamp, 4);        // mostly an extra blob to help make packet_hash unique
-        temp[4] = (TXT_TYPE_CLI_DATA << 2); // NOTE: legacy was: TXT_TYPE_PLAIN
+        temp[4] = (TXT_TYPE_CLI_DATA << 2);
 
         auto reply = createDatagram(PAYLOAD_TYPE_TXT_MSG, client->id, secret, temp, 5 + text_len);
         if (reply) {
@@ -1165,7 +1175,7 @@ void MyMesh::clearStats() {
   ((SimpleMeshTables *)getTables())->resetStats();
 }
 
-void MyMesh::handleCommand(uint32_t sender_timestamp, char *command, char *reply) {
+void MyMesh::handleCommand(uint32_t sender_timestamp, char *command, char *reply, uint8_t http_ota_wifi_path) {
   if (region_load_active) {
     if (StrHelper::isBlank(command)) {  // empty/blank line, signal to terminate 'load' operation
       region_map = temp_map;  // copy over the temp instance as new current map
@@ -1251,8 +1261,57 @@ void MyMesh::handleCommand(uint32_t sender_timestamp, char *command, char *reply
       sendNodeDiscoverReq();
       strcpy(reply, "OK - Discover sent");
     }
-  } else{
-    _cli.handleCommand(sender_timestamp, command, reply);  // common CLI commands
+#if defined(REPEATER_TCP_COMPANION) && defined(ESP32)
+  } else if (strncmp(command, "set wifi.ssid ", 14) == 0) {
+    if (wifiConfigSetSsid(&command[14])) {
+      strcpy(reply, "OK - set wifi.pwd then wifi.apply");
+    } else {
+      strcpy(reply, "Err - invalid SSID");
+    }
+  } else if (strncmp(command, "set wifi.pwd ", 13) == 0) {
+    if (wifiConfigSetPwd(&command[13])) {
+      strcpy(reply, "OK - run wifi.apply");
+    } else {
+      strcpy(reply, "Err - password too long");
+    }
+  } else if (strcmp(command, "wifi.apply") == 0 || strcmp(command, "set wifi.apply") == 0) {
+    if (!wifiConfigGetRadioEnabled()) {
+      strcpy(reply, "Err - wifi radio off; set wifi.radio 1 first");
+    } else if (!wifiConfigHasRuntime()) {
+      strcpy(reply, "Err - no runtime credentials");
+    } else {
+      wifiConfigApply();
+      strcpy(reply, "OK - reconnecting");
+    }
+  } else if (strcmp(command, "wifi.clear") == 0 || strcmp(command, "set wifi.clear") == 0) {
+    wifiConfigClear();
+    strcpy(reply, "OK - cleared");
+  } else if (strcmp(command, "get wifi.ssid") == 0) {
+    char ssid[WIFI_CONFIG_SSID_MAX];
+    wifiConfigGetSsid(ssid, sizeof(ssid));
+    snprintf(reply, 160, "%s", ssid[0] ? ssid : "(none)");
+  } else if (strncmp(command, "set wifi.radio ", 17) == 0) {
+    int v = atoi(&command[17]);
+    wifiConfigSetRadioEnabled(v != 0);
+#if defined(REPEATER_TCP_COMPANION)
+    if (v != 0) repeater_on_wifi_radio_toggled();
+#endif
+    strcpy(reply, v ? "OK - wifi radio on" : "OK - wifi radio off");
+  } else if (strcmp(command, "get wifi.status") == 0 || strcmp(command, "wifi.status") == 0) {
+    char ssid[WIFI_CONFIG_SSID_MAX];
+    wifiConfigGetSsid(ssid, sizeof(ssid));
+    int re = wifiConfigGetRadioEnabled() ? 1 : 0;
+    if (WiFi.status() == WL_CONNECTED) {
+      IPAddress ip = WiFi.localIP();
+      snprintf(reply, 160, "runtime=%d radio_enabled=%d ssid=%s ip=%d.%d.%d.%d", wifiConfigHasRuntime() ? 1 : 0,
+               re, ssid[0] ? ssid : "(none)", ip[0], ip[1], ip[2], ip[3]);
+    } else {
+      snprintf(reply, 160, "runtime=%d radio_enabled=%d ssid=%s disconnected", wifiConfigHasRuntime() ? 1 : 0,
+               re, ssid[0] ? ssid : "(none)");
+    }
+#endif
+  } else {
+    _cli.handleCommand(sender_timestamp, command, reply, http_ota_wifi_path);  // common CLI commands
   }
 }
 
@@ -1308,3 +1367,883 @@ bool MyMesh::hasPendingWork() const {
 #endif
   return _mgr->getOutboundTotal() > 0;
 }
+
+#if defined(REPEATER_TCP_COMPANION) && defined(ESP32)
+
+#include <repeater_companion_proto.h>
+#include <helpers/BaseSerialInterface.h>
+#include <helpers/TxtDataHelpers.h>
+
+#ifndef MAX_CLIENT_ID_LEN
+  #define MAX_CLIENT_ID_LEN 31
+#endif
+
+namespace {
+
+struct FreqRange {
+  uint32_t lower_freq, upper_freq;
+};
+
+bool isValidClientRepeatFreq(uint32_t f) {
+  static const FreqRange repeat_freq_ranges[] = {
+      {433000, 433000},
+      {869000, 869000},
+      {918000, 918000},
+  };
+  for (size_t k = 0; k < sizeof(repeat_freq_ranges) / sizeof(repeat_freq_ranges[0]); k++) {
+    const FreqRange *r = &repeat_freq_ranges[k];
+    if (f >= r->lower_freq && f <= r->upper_freq) return true;
+  }
+  return false;
+}
+
+static const uint8_t kMeshcomodPubPrefix[6] = {0x4D, 0x45, 0x53, 0x48, 0x43, 0x4D};
+
+static bool isMeshcomodRecipientTcp(const uint8_t *p6) {
+  return p6 && memcmp(p6, kMeshcomodPubPrefix, 6) == 0;
+}
+
+#define MESHCOMOD_WIFI_SCAN_MAX_TCP 12
+static char s_meshcomod_scan_ssids_tcp[MESHCOMOD_WIFI_SCAN_MAX_TCP][WIFI_CONFIG_SSID_MAX];
+static int s_meshcomod_scan_count_tcp = 0;
+static uint32_t s_meshcomod_last_reply_ts_tcp = 0;
+
+static char *trimWsInPlaceTcp(char *s) {
+  if (!s) return s;
+  while (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n') s++;
+  int n = (int)strlen(s);
+  while (n > 0) {
+    char c = s[n - 1];
+    if (c == ' ' || c == '\t' || c == '\r' || c == '\n') {
+      s[n - 1] = '\0';
+      n--;
+    } else {
+      break;
+    }
+  }
+  return s;
+}
+
+static char *unquoteInPlaceTcp(char *s) {
+  s = trimWsInPlaceTcp(s);
+  if (!s) return s;
+  int n = (int)strlen(s);
+  if (n >= 2) {
+    char q = s[0];
+    if ((q == '"' || q == '\'') && s[n - 1] == q) {
+      s[n - 1] = '\0';
+      s++;
+    }
+  }
+  return s;
+}
+
+static const char kRepeaterMeshcomodHelp[] =
+    "help\n"
+    "status\n"
+    "wifi scan\n"
+    "wifi use <n>\n"
+    "wifi set ssid \"...\"\n"
+    "wifi set pwd \"...\"\n"
+    "wifi status\n"
+    "wifi on\n"
+    "wifi off\n"
+    "wifi apply\n"
+    "wifi clear\n";
+
+static void repeaterEmitRaw(void (*emit)(void *, const uint8_t *, size_t), void *ctx, const uint8_t *p,
+                            size_t n) {
+  if (emit && n > 0) emit(ctx, p, n);
+}
+
+static bool repeaterCliReplyIsPlainInteger(const char *s, size_t len) {
+  if (!s || len == 0) return false;
+  size_t i = 0;
+  if (s[0] == '-') {
+    i = 1;
+    if (i >= len) return false;
+  }
+  for (; i < len; i++) {
+    if (s[i] < '0' || s[i] > '9') return false;
+  }
+  return true;
+}
+
+static void repeaterEmitBinaryCliResponse(void (*emit)(void *, const uint8_t *, size_t), void *ctx,
+                                          uint32_t tag, const char *reply) {
+  if (!emit) return;
+  if (!reply) reply = "";
+  size_t trimmed_end = strlen(reply);
+  while (trimmed_end > 0 && (reply[trimmed_end - 1] == '\r' || reply[trimmed_end - 1] == '\n')) trimmed_end--;
+  const char *body = reply;
+  size_t body_len = trimmed_end;
+  if (trimmed_end >= 2 && reply[0] == '>' && reply[1] == ' ') {
+    const char *tail = reply + 2;
+    size_t tail_len = trimmed_end - 2;
+    if (repeaterCliReplyIsPlainInteger(tail, tail_len)) {
+      body = tail;
+      body_len = tail_len;
+    }
+  }
+  if (body_len > MAX_FRAME_SIZE - 6) body_len = MAX_FRAME_SIZE - 6;
+  uint8_t out[MAX_FRAME_SIZE];
+  int j = 0;
+  out[j++] = PUSH_CODE_BINARY_RESPONSE;
+  out[j++] = 0;
+  memcpy(&out[j], &tag, 4);
+  j += 4;
+  memcpy(&out[j], body, body_len);
+  j += (int)body_len;
+  repeaterEmitRaw(emit, ctx, out, (size_t)j);
+  uint8_t tickle[1] = {PUSH_CODE_MSG_WAITING};
+  repeaterEmitRaw(emit, ctx, tickle, 1);
+}
+
+static void repeaterEmitMeshcomodText(mesh::RTCClock *rtc, void (*emit)(void *, const uint8_t *, size_t),
+                                      void *ctx, const char *text) {
+  if (!text || !emit) return;
+  int total_len = (int)strlen(text);
+  if (total_len <= 0) return;
+
+  const int header_len = 16;
+  const int max_text_per_frame = MAX_FRAME_SIZE - header_len;
+  if (max_text_per_frame <= 0) return;
+
+  uint8_t out_frame[MAX_FRAME_SIZE];
+  int pos = 0;
+  while (pos < total_len) {
+    int remaining = total_len - pos;
+    int take = remaining < max_text_per_frame ? remaining : max_text_per_frame;
+    if (remaining > max_text_per_frame) {
+      int split = -1;
+      for (int k = take - 1; k >= 0; k--) {
+        if (text[pos + k] == '\n') {
+          split = k + 1;
+          break;
+        }
+      }
+      if (split > 0) take = split;
+    }
+
+    int j = 0;
+    out_frame[j++] = RESP_CODE_CONTACT_MSG_RECV_V3;
+    out_frame[j++] = 0;
+    out_frame[j++] = 0;
+    out_frame[j++] = 0;
+    memcpy(&out_frame[j], kMeshcomodPubPrefix, 6);
+    j += 6;
+    out_frame[j++] = 0xFF;
+    out_frame[j++] = TXT_TYPE_PLAIN;
+    uint32_t ts = rtc->getCurrentTimeUnique();
+    if (ts <= s_meshcomod_last_reply_ts_tcp) ts = s_meshcomod_last_reply_ts_tcp + 1;
+    s_meshcomod_last_reply_ts_tcp = ts;
+    memcpy(&out_frame[j], &ts, 4);
+    j += 4;
+    memcpy(&out_frame[j], &text[pos], (size_t)take);
+    j += take;
+    repeaterEmitRaw(emit, ctx, out_frame, (size_t)j);
+    uint8_t tickle[1] = {PUSH_CODE_MSG_WAITING};
+    repeaterEmitRaw(emit, ctx, tickle, 1);
+    pos += take;
+  }
+}
+
+static bool handleRepeaterMeshcomodLine(MyMesh *mesh, const char *text, int text_len,
+                                        void (*emit)(void *, const uint8_t *, size_t), void *ctx) {
+  if (!mesh || !emit) return false;
+  char buf[160];
+  if (text_len < 0) text_len = 0;
+  if ((size_t)text_len >= sizeof(buf)) text_len = (int)sizeof(buf) - 1;
+  memcpy(buf, text, (size_t)text_len);
+  buf[text_len] = '\0';
+
+  const char *p = buf;
+  while (*p == ' ' || *p == '\t') p++;
+
+  mesh::RTCClock *rtc = mesh->getRTCClock();
+
+  if (strncasecmp(p, "help", 4) == 0 && (p[4] == '\0' || p[4] == ' ' || p[4] == '\t')) {
+    repeaterEmitMeshcomodText(rtc, emit, ctx, kRepeaterMeshcomodHelp);
+    return true;
+  }
+
+  if (strncasecmp(p, "status", 6) == 0 && (p[6] == '\0' || p[6] == ' ' || p[6] == '\t')) {
+    char line[200];
+    if (WiFi.status() == WL_CONNECTED) {
+      IPAddress ip = WiFi.localIP();
+      snprintf(line, sizeof(line), "repeater status:\ntcp: on\nwifi: connected\nip: %d.%d.%d.%d", ip[0],
+               ip[1], ip[2], ip[3]);
+    } else {
+      snprintf(line, sizeof(line), "repeater status:\ntcp: on\nwifi: disconnected");
+    }
+    repeaterEmitMeshcomodText(rtc, emit, ctx, line);
+    return true;
+  }
+
+  if (strncasecmp(p, "wifi", 4) != 0 || (p[4] != '\0' && p[4] != ' ' && p[4] != '\t')) {
+    repeaterEmitMeshcomodText(rtc, emit, ctx, kRepeaterMeshcomodHelp);
+    return true;
+  }
+  p += 4;
+  while (*p == ' ' || *p == '\t') p++;
+
+  if (strncasecmp(p, "on", 2) == 0 && (p[2] == '\0' || p[2] == ' ' || p[2] == '\t')) {
+    wifiConfigSetRadioEnabled(true);
+    repeater_on_wifi_radio_toggled();
+    repeaterEmitMeshcomodText(rtc, emit, ctx, "OK wifi radio on");
+    return true;
+  }
+  if (strncasecmp(p, "off", 3) == 0 && (p[3] == '\0' || p[3] == ' ' || p[3] == '\t')) {
+    wifiConfigSetRadioEnabled(false);
+    repeaterEmitMeshcomodText(rtc, emit, ctx, "OK wifi radio off (TCP/WS drop until on or USB)");
+    return true;
+  }
+
+  if (strncasecmp(p, "set", 3) == 0 && (p[3] == '\0' || p[3] == ' ' || p[3] == '\t')) {
+    p += 3;
+    while (*p == ' ' || *p == '\t') p++;
+    if (strncasecmp(p, "ssid", 4) == 0 && (p[4] == '\0' || p[4] == ' ' || p[4] == '\t')) {
+      p += 4;
+      while (*p == ' ' || *p == '\t') p++;
+      char *ssid = unquoteInPlaceTcp((char *)p);
+      if (wifiConfigSetSsid(ssid)) {
+        char ok[168];
+        snprintf(ok, sizeof(ok),
+                 "OK ssid=\"%s\"\nnext: wifi set pwd \"<password>\" (or \"\" for open)\nthen: wifi apply",
+                 ssid);
+        repeaterEmitMeshcomodText(rtc, emit, ctx, ok);
+      } else {
+        repeaterEmitMeshcomodText(rtc, emit, ctx, "error: ssid too long or invalid");
+      }
+      return true;
+    }
+    if (strncasecmp(p, "pwd", 3) == 0 && (p[3] == '\0' || p[3] == ' ' || p[3] == '\t')) {
+      p += 3;
+      while (*p == ' ' || *p == '\t') p++;
+      char *pwd = unquoteInPlaceTcp((char *)p);
+      if (wifiConfigSetPwd(pwd)) {
+        repeaterEmitMeshcomodText(rtc, emit, ctx, "OK\npwd set\nnext: wifi apply");
+      } else {
+        repeaterEmitMeshcomodText(rtc, emit, ctx, "error: password too long");
+      }
+      return true;
+    }
+    repeaterEmitMeshcomodText(rtc, emit, ctx, "error: usage wifi set ssid|pwd \"<value>\"");
+    return true;
+  }
+
+  if (strncasecmp(p, "scan", 4) == 0 && (p[4] == '\0' || p[4] == ' ' || p[4] == '\t')) {
+    if (!wifiConfigGetRadioEnabled()) {
+      repeaterEmitMeshcomodText(rtc, emit, ctx, "error: wifi radio off — send wifi on first");
+      return true;
+    }
+    wifi_mode_t mode = WiFi.getMode();
+    if ((mode & WIFI_MODE_STA) == 0) {
+      WiFi.mode(WIFI_STA);
+      delay(180);
+    } else {
+      delay(40);
+    }
+    WiFi.scanDelete();
+    s_meshcomod_scan_count_tcp = 0;
+    int found = WiFi.scanNetworks(false, true, false, 300, 0);
+    if (found <= 0 && WiFi.status() != WL_CONNECTED) {
+      WiFi.disconnect(false, false);
+      delay(120);
+      found = WiFi.scanNetworks(false, true, false, 300, 0);
+    }
+    if (found <= 0) {
+      repeaterEmitMeshcomodText(rtc, emit, ctx, "scan: no networks (2.4GHz only)");
+      WiFi.scanDelete();
+      return true;
+    }
+    String scanMsg = "scan results:";
+    for (int idx = 0; idx < found && s_meshcomod_scan_count_tcp < MESHCOMOD_WIFI_SCAN_MAX_TCP; idx++) {
+      String ssid = WiFi.SSID(idx);
+      if (ssid.length() <= 0) continue;
+      bool dup = false;
+      for (int k = 0; k < s_meshcomod_scan_count_tcp; k++) {
+        if (strcmp(s_meshcomod_scan_ssids_tcp[k], ssid.c_str()) == 0) {
+          dup = true;
+          break;
+        }
+      }
+      if (dup) continue;
+      StrHelper::strzcpy(s_meshcomod_scan_ssids_tcp[s_meshcomod_scan_count_tcp], ssid.c_str(),
+                         WIFI_CONFIG_SSID_MAX);
+      int ch = WiFi.channel(idx);
+      const char *band = (ch >= 1 && ch <= 14) ? "2.4GHz" : "5GHz";
+      char line[96];
+      snprintf(line, sizeof(line), "\n%d) %s [%s]", s_meshcomod_scan_count_tcp + 1,
+               s_meshcomod_scan_ssids_tcp[s_meshcomod_scan_count_tcp], band);
+      scanMsg += line;
+      s_meshcomod_scan_count_tcp++;
+    }
+    if (s_meshcomod_scan_count_tcp == 0) {
+      String curr = WiFi.SSID();
+      if (curr.length() > 0) {
+        StrHelper::strzcpy(s_meshcomod_scan_ssids_tcp[0], curr.c_str(), WIFI_CONFIG_SSID_MAX);
+        s_meshcomod_scan_count_tcp = 1;
+        int ch = WiFi.channel();
+        const char *band = (ch >= 1 && ch <= 14) ? "2.4GHz" : "5GHz";
+        char line[96];
+        snprintf(line, sizeof(line), "\n1) %s [%s] (connected)", s_meshcomod_scan_ssids_tcp[0], band);
+        scanMsg += line;
+      }
+    }
+    if (s_meshcomod_scan_count_tcp == 0) {
+      repeaterEmitMeshcomodText(rtc, emit, ctx, "scan: no usable SSIDs");
+      repeaterEmitMeshcomodText(rtc, emit, ctx, "tip: try wifi status or move closer to AP");
+    } else {
+      scanMsg += "\nselect SSID: wifi use <n>";
+      scanMsg += "\nthen set password: wifi set pwd \"<password>\" and wifi apply";
+      repeaterEmitMeshcomodText(rtc, emit, ctx, scanMsg.c_str());
+    }
+    WiFi.scanDelete();
+    return true;
+  }
+
+  if (strncasecmp(p, "use", 3) == 0 && (p[3] == '\0' || p[3] == ' ' || p[3] == '\t')) {
+    p += 3;
+    while (*p == ' ' || *p == '\t') p++;
+    int n = atoi(p);
+    if (s_meshcomod_scan_count_tcp <= 0) {
+      repeaterEmitMeshcomodText(rtc, emit, ctx, "error: no scan results; run wifi scan");
+      return true;
+    }
+    if (n < 1 || n > s_meshcomod_scan_count_tcp) {
+      repeaterEmitMeshcomodText(rtc, emit, ctx, "error: invalid index");
+      return true;
+    }
+    if (!wifiConfigSetSsid(s_meshcomod_scan_ssids_tcp[n - 1])) {
+      repeaterEmitMeshcomodText(rtc, emit, ctx, "error: ssid too long or invalid");
+      return true;
+    }
+    char line[192];
+    snprintf(line, sizeof(line), "OK ssid=\"%s\"\nnext: wifi set pwd \"<password>\" (or \"\" for open)\nthen: wifi apply",
+             s_meshcomod_scan_ssids_tcp[n - 1]);
+    repeaterEmitMeshcomodText(rtc, emit, ctx, line);
+    return true;
+  }
+
+  if (strncasecmp(p, "status", 6) == 0 && (p[6] == '\0' || p[6] == ' ' || p[6] == '\t')) {
+    char ssid[WIFI_CONFIG_SSID_MAX];
+    wifiConfigGetSsid(ssid, sizeof(ssid));
+    bool has_runtime = wifiConfigHasRuntime();
+    int re = wifiConfigGetRadioEnabled() ? 1 : 0;
+    char reply[140];
+    if (!has_runtime || ssid[0] == '\0') {
+      snprintf(reply, sizeof(reply), "radio_enabled=%d ssid=(none) runtime=0", re);
+    } else {
+      int connected = (WiFi.status() == WL_CONNECTED) ? 1 : 0;
+      if (connected) {
+        IPAddress ip = WiFi.localIP();
+        snprintf(reply, sizeof(reply), "radio_enabled=%d ssid=%s connected=1 ip=%d.%d.%d.%d", re, ssid,
+                 ip[0], ip[1], ip[2], ip[3]);
+      } else {
+        snprintf(reply, sizeof(reply), "radio_enabled=%d ssid=%s connected=0", re, ssid);
+      }
+    }
+    repeaterEmitMeshcomodText(rtc, emit, ctx, reply);
+    return true;
+  }
+
+  if (strncasecmp(p, "clear", 5) == 0 && (p[5] == '\0' || p[5] == ' ' || p[5] == '\t')) {
+    wifiConfigClear();
+    repeaterEmitMeshcomodText(rtc, emit, ctx, "OK");
+    return true;
+  }
+
+  if (strncasecmp(p, "apply", 5) == 0 && (p[5] == '\0' || p[5] == ' ' || p[5] == '\t')) {
+    if (!wifiConfigGetRadioEnabled()) {
+      repeaterEmitMeshcomodText(rtc, emit, ctx, "error: wifi radio off — send wifi on first");
+      return true;
+    }
+    if (!wifiConfigHasRuntime()) {
+      repeaterEmitMeshcomodText(rtc, emit, ctx, "No runtime credentials; set ssid/pwd first");
+      return true;
+    }
+    wifiConfigApply();
+    repeaterEmitMeshcomodText(rtc, emit, ctx, "OK reconnecting");
+    return true;
+  }
+
+  repeaterEmitMeshcomodText(rtc, emit, ctx, kRepeaterMeshcomodHelp);
+  return true;
+}
+
+}  // namespace
+
+#if defined(REPEATER_TCP_COMPANION) && defined(ESP32)
+namespace {
+
+struct TcpOtaEmitState {
+  void (*emit)(void *, const uint8_t *, size_t);
+  void *ctx;
+  uint32_t tag;
+  bool active;
+};
+
+TcpOtaEmitState s_tcp_ota_emit{};
+
+}  // namespace
+
+void meshcoreRepeaterTcpOtaEmitBegin(void (*emit)(void *, const uint8_t *, size_t), void *ctx, uint32_t tag) {
+  s_tcp_ota_emit.emit = emit;
+  s_tcp_ota_emit.ctx = ctx;
+  s_tcp_ota_emit.tag = tag;
+  s_tcp_ota_emit.active = emit != nullptr;
+}
+
+void meshcoreRepeaterTcpOtaEmitEnd() { s_tcp_ota_emit = {}; }
+
+void meshcoreRepeaterTcpOtaEmitLine(const char *line) {
+  if (!s_tcp_ota_emit.active || !line || !line[0]) return;
+  repeaterEmitBinaryCliResponse(s_tcp_ota_emit.emit, s_tcp_ota_emit.ctx, s_tcp_ota_emit.tag, line);
+}
+#endif
+
+void MyMesh::enterCLIRescue() {
+  Serial.println();
+  Serial.println("========= USB serial CLI =========");
+  Serial.println("WiFi (saved to NVS): set wifi.ssid, set wifi.pwd, set wifi.apply");
+}
+
+size_t MyMesh::handleRepeaterTcpCompanionCommand(const uint8_t *cmd, size_t cmd_len, uint8_t *out,
+                                                 size_t out_cap,
+                                                 void (*emit_extra)(void *, const uint8_t *, size_t),
+                                                 void *emit_ctx) {
+  if (!cmd || out_cap < 8) return 0;
+
+  const uint8_t *c = cmd;
+  size_t len = cmd_len;
+
+  auto reply_err = [&](uint8_t err_code) -> size_t {
+    if (out_cap < 2) return 0;
+    out[0] = RESP_CODE_ERR;
+    out[1] = err_code;
+    return 2;
+  };
+
+  auto reply_ok = [&]() -> size_t {
+    if (out_cap < 1) return 0;
+    out[0] = RESP_CODE_OK;
+    return 1;
+  };
+
+  auto reply_disabled = [&]() -> size_t {
+    if (out_cap < 1) return 0;
+    out[0] = RESP_CODE_DISABLED;
+    return 1;
+  };
+
+  if (len < 1) return reply_err(ERR_CODE_UNSUPPORTED_CMD);
+
+  if (c[0] == CMD_DEVICE_QUERY && len >= 2) {
+    size_t i = 0;
+    if (out_cap < 102) return 0;
+    (void)c[1];  // app protocol version (companion stores per client)
+    out[i++] = RESP_CODE_DEVICE_INFO;
+    out[i++] = REPEATER_COMPANION_FIRMWARE_VER_CODE;
+    out[i++] = 0;  // MAX_CONTACTS / 2 — repeater has no contact store
+    out[i++] = 0;  // MAX_GROUP_CHANNELS
+    memset(&out[i], 0, 4);  // ble_pin (N/A)
+    i += 4;
+    memset(&out[i], 0, 12);
+    StrHelper::strncpy((char *)&out[i], FIRMWARE_BUILD_DATE, 12);
+    i += 12;
+    StrHelper::strzcpy((char *)&out[i], board.getManufacturerName(), 40);
+    i += 40;
+    memset((void *)&out[i], 0, 40);
+    StrHelper::strncpy((char *)&out[i], FIRMWARE_VERSION, 40);
+    i += 40;
+    out[i++] = 0;  // client_repeat (not persisted on repeater prefs)
+    out[i++] = _prefs.path_hash_mode;
+    return i;
+  }
+
+  if (c[0] == CMD_APP_START && len >= 8) {
+    (void)len;
+    size_t i = 0;
+    if (out_cap < 5 + PUB_KEY_SIZE + 4 + 4 + 1 + 1 + 1 + 4 + 4 + 1 + 1 + sizeof(_prefs.node_name))
+      return 0;
+
+    out[i++] = RESP_CODE_SELF_INFO;
+    out[i++] = ADV_TYPE_REPEATER;
+    out[i++] = (uint8_t)_prefs.tx_power_dbm;
+    out[i++] = MAX_LORA_TX_POWER;
+    memcpy(&out[i], self_id.pub_key, PUB_KEY_SIZE);
+    i += PUB_KEY_SIZE;
+
+    int32_t lat = (int32_t)(sensors.node_lat * 1000000.0);
+    int32_t lon = (int32_t)(sensors.node_lon * 1000000.0);
+    memcpy(&out[i], &lat, 4);
+    i += 4;
+    memcpy(&out[i], &lon, 4);
+    i += 4;
+    out[i++] = _prefs.multi_acks;
+    out[i++] = _prefs.advert_loc_policy;
+    out[i++] = 0;  // telemetry modes (not used on repeater wire subset)
+    out[i++] = 0;  // manual_add_contacts
+
+    uint32_t freq = (uint32_t)(_prefs.freq * 1000.0f);
+    memcpy(&out[i], &freq, 4);
+    i += 4;
+    uint32_t bw = (uint32_t)(_prefs.bw * 1000.0f);
+    memcpy(&out[i], &bw, 4);
+    i += 4;
+    out[i++] = _prefs.sf;
+    out[i++] = _prefs.cr;
+
+    size_t nlen = strlen(_prefs.node_name);
+    if (i + nlen > out_cap) return 0;
+    memcpy(&out[i], _prefs.node_name, nlen);
+    i += nlen;
+    return i;
+  }
+
+  if (c[0] == CMD_GET_CONTACTS) {
+    if (out_cap < 5) return 0;
+    out[0] = RESP_CODE_CONTACTS_START;
+    uint32_t count = 0;
+    memcpy(&out[1], &count, 4);
+    return 5;
+  }
+
+  if (c[0] == CMD_SYNC_NEXT_MESSAGE) {
+    if (out_cap < 1) return 0;
+    out[0] = RESP_CODE_NO_MORE_MESSAGES;
+    return 1;
+  }
+
+  if (c[0] == CMD_SYNC_SINCE && len >= 5) {
+    if (out_cap < 1) return 0;
+    out[0] = RESP_CODE_SYNC_SINCE_DONE;
+    return 1;
+  }
+
+  if (c[0] == CMD_GET_DEVICE_TIME) {
+    if (out_cap < 5) return 0;
+    out[0] = RESP_CODE_CURR_TIME;
+    uint32_t now = getRTCClock()->getCurrentTime();
+    memcpy(&out[1], &now, 4);
+    return 5;
+  }
+
+  if (c[0] == CMD_SET_DEVICE_TIME && len >= 5) {
+    uint32_t secs;
+    memcpy(&secs, &c[1], 4);
+    uint32_t curr = getRTCClock()->getCurrentTime();
+    if (secs >= curr) {
+      getRTCClock()->setCurrentTime(secs);
+      return reply_ok();
+    }
+    return reply_err(ERR_CODE_ILLEGAL_ARG);
+  }
+
+  if (c[0] == CMD_SET_ADVERT_NAME && len >= 2) {
+    int nlen = (int)len - 1;
+    if (nlen > (int)sizeof(_prefs.node_name) - 1) nlen = sizeof(_prefs.node_name) - 1;
+    memcpy(_prefs.node_name, &c[1], (size_t)nlen);
+    _prefs.node_name[nlen] = 0;
+    savePrefs();
+    return reply_ok();
+  }
+
+  if (c[0] == CMD_SET_ADVERT_LATLON && len >= 9) {
+    int32_t lat, lon, alt = 0;
+    memcpy(&lat, &c[1], 4);
+    memcpy(&lon, &c[5], 4);
+    if (len >= 13) memcpy(&alt, &c[9], 4);
+    (void)alt;
+    if (lat <= 90 * 1000000 && lat >= -90 * 1000000 && lon <= 180 * 1000000 && lon >= -180 * 1000000) {
+      sensors.node_lat = ((double)lat) / 1000000.0;
+      sensors.node_lon = ((double)lon) / 1000000.0;
+      _prefs.node_lat = sensors.node_lat;
+      _prefs.node_lon = sensors.node_lon;
+      savePrefs();
+      return reply_ok();
+    }
+    return reply_err(ERR_CODE_ILLEGAL_ARG);
+  }
+
+  if (c[0] == CMD_SEND_SELF_ADVERT) {
+    mesh::Packet *pkt = createSelfAdvert();
+    if (!pkt) return reply_err(ERR_CODE_TABLE_FULL);
+    if (len >= 2 && c[1] == 1) {
+      sendFlood(pkt, 0, (uint8_t)(_prefs.path_hash_mode + 1));
+    } else {
+      sendZeroHop(pkt);
+    }
+    return reply_ok();
+  }
+
+  if (c[0] == CMD_SET_RADIO_PARAMS) {
+    if (len < 1 + 4 + 4 + 1 + 1) return reply_err(ERR_CODE_ILLEGAL_ARG);
+    size_t j = 1;
+    uint32_t freq_khz, bw_khz;
+    memcpy(&freq_khz, &c[j], 4);
+    j += 4;
+    memcpy(&bw_khz, &c[j], 4);
+    j += 4;
+    uint8_t sf = c[j++];
+    uint8_t cr = c[j++];
+    uint8_t repeat = 0;
+    if (len > j) repeat = c[j++];
+
+    if (repeat && !isValidClientRepeatFreq(freq_khz)) return reply_err(ERR_CODE_ILLEGAL_ARG);
+    if (freq_khz >= 300000 && freq_khz <= 2500000 && sf >= 5 && sf <= 12 && cr >= 5 && cr <= 8 &&
+        bw_khz >= 7000 && bw_khz <= 500000) {
+      _prefs.sf = sf;
+      _prefs.cr = cr;
+      _prefs.freq = (float)freq_khz / 1000.0f;
+      _prefs.bw = (float)bw_khz / 1000.0f;
+      savePrefs();
+      radio_set_params(_prefs.freq, _prefs.bw, _prefs.sf, _prefs.cr);
+      return reply_ok();
+    }
+    return reply_err(ERR_CODE_ILLEGAL_ARG);
+  }
+
+  if (c[0] == CMD_SET_RADIO_TX_POWER) {
+    if (len < 2) return reply_err(ERR_CODE_ILLEGAL_ARG);
+    int8_t power = (int8_t)c[1];
+    if (power < -9 || power > MAX_LORA_TX_POWER) return reply_err(ERR_CODE_ILLEGAL_ARG);
+    _prefs.tx_power_dbm = power;
+    savePrefs();
+    radio_set_tx_power(_prefs.tx_power_dbm);
+    return reply_ok();
+  }
+
+  if (c[0] == CMD_SET_TUNING_PARAMS && len >= 1 + 4 + 4) {
+    uint32_t rx, af;
+    memcpy(&rx, &c[1], 4);
+    memcpy(&af, &c[5], 4);
+    _prefs.rx_delay_base = ((float)rx) / 1000.0f;
+    _prefs.airtime_factor = ((float)af) / 1000.0f;
+    savePrefs();
+    return reply_ok();
+  }
+
+  if (c[0] == CMD_GET_TUNING_PARAMS) {
+    if (out_cap < 1 + 4 + 4) return 0;
+    uint32_t rx = (uint32_t)(_prefs.rx_delay_base * 1000.0f);
+    uint32_t af = (uint32_t)(_prefs.airtime_factor * 1000.0f);
+    size_t i = 0;
+    out[i++] = RESP_CODE_TUNING_PARAMS;
+    memcpy(&out[i], &rx, 4);
+    i += 4;
+    memcpy(&out[i], &af, 4);
+    i += 4;
+    return i;
+  }
+
+  if (c[0] == CMD_SET_OTHER_PARAMS) {
+    if (len >= 4) _prefs.advert_loc_policy = c[3];
+    if (len >= 5) _prefs.multi_acks = c[4];
+    savePrefs();
+    return reply_ok();
+  }
+
+  if (c[0] == CMD_SET_PATH_HASH_MODE && len >= 3 && c[1] == 0) {
+    if (c[2] >= 3) return reply_err(ERR_CODE_ILLEGAL_ARG);
+    _prefs.path_hash_mode = c[2];
+    savePrefs();
+    return reply_ok();
+  }
+
+  if (c[0] == CMD_REBOOT && len >= 7 && memcmp(&c[1], "reboot", 6) == 0) {
+    if (dirty_contacts_expiry) {
+      acl.save(_fs);
+      dirty_contacts_expiry = 0;
+    }
+    board.reboot();
+    return reply_ok();
+  }
+
+  if (c[0] == CMD_GET_BATT_AND_STORAGE) {
+    if (out_cap < 11) return 0;
+    size_t i = 0;
+    out[i++] = RESP_CODE_BATT_AND_STORAGE;
+    uint16_t battery_millivolts = board.getBattMilliVolts();
+    uint32_t used_kb = SPIFFS.usedBytes() / 1024;
+    uint32_t total_kb = SPIFFS.totalBytes() / 1024;
+    memcpy(&out[i], &battery_millivolts, 2);
+    i += 2;
+    memcpy(&out[i], &used_kb, 4);
+    i += 4;
+    memcpy(&out[i], &total_kb, 4);
+    i += 4;
+    return i;
+  }
+
+  if (c[0] == CMD_GET_STATS && len >= 2) {
+    uint8_t stats_type = c[1];
+    if (stats_type == STATS_TYPE_CORE) {
+      if (out_cap < 11) return 0;
+      size_t i = 0;
+      out[i++] = RESP_CODE_STATS;
+      out[i++] = STATS_TYPE_CORE;
+      uint16_t battery_mv = board.getBattMilliVolts();
+      uint32_t uptime_secs = _ms->getMillis() / 1000;
+      uint8_t queue_len = (uint8_t)_mgr->getOutboundCount(0xFFFFFFFF);
+      memcpy(&out[i], &battery_mv, 2);
+      i += 2;
+      memcpy(&out[i], &uptime_secs, 4);
+      i += 4;
+      memcpy(&out[i], &_err_flags, 2);
+      i += 2;
+      out[i++] = queue_len;
+      return i;
+    }
+    if (stats_type == STATS_TYPE_RADIO) {
+      if (out_cap < 14) return 0;
+      size_t i = 0;
+      out[i++] = RESP_CODE_STATS;
+      out[i++] = STATS_TYPE_RADIO;
+      int16_t noise_floor = (int16_t)_radio->getNoiseFloor();
+      int8_t last_rssi = (int8_t)radio_driver.getLastRSSI();
+      int8_t last_snr = (int8_t)(radio_driver.getLastSNR() * 4.0f);
+      uint32_t tx_air_secs = getTotalAirTime() / 1000;
+      uint32_t rx_air_secs = getReceiveAirTime() / 1000;
+      memcpy(&out[i], &noise_floor, 2);
+      i += 2;
+      out[i++] = (uint8_t)last_rssi;
+      out[i++] = (uint8_t)last_snr;
+      memcpy(&out[i], &tx_air_secs, 4);
+      i += 4;
+      memcpy(&out[i], &rx_air_secs, 4);
+      i += 4;
+      return i;
+    }
+    if (stats_type == STATS_TYPE_PACKETS) {
+      if (out_cap < 34) return 0;
+      size_t i = 0;
+      out[i++] = RESP_CODE_STATS;
+      out[i++] = STATS_TYPE_PACKETS;
+      uint32_t recv = radio_driver.getPacketsRecv();
+      uint32_t sent = radio_driver.getPacketsSent();
+      uint32_t n_sent_flood = getNumSentFlood();
+      uint32_t n_sent_direct = getNumSentDirect();
+      uint32_t n_recv_flood = getNumRecvFlood();
+      uint32_t n_recv_direct = getNumRecvDirect();
+      uint32_t n_recv_errors = radio_driver.getPacketsRecvErrors();
+      memcpy(&out[i], &recv, 4);
+      i += 4;
+      memcpy(&out[i], &sent, 4);
+      i += 4;
+      memcpy(&out[i], &n_sent_flood, 4);
+      i += 4;
+      memcpy(&out[i], &n_sent_direct, 4);
+      i += 4;
+      memcpy(&out[i], &n_recv_flood, 4);
+      i += 4;
+      memcpy(&out[i], &n_recv_direct, 4);
+      i += 4;
+      memcpy(&out[i], &n_recv_errors, 4);
+      i += 4;
+      return i;
+    }
+    return reply_err(ERR_CODE_ILLEGAL_ARG);
+  }
+
+  if (c[0] == CMD_EXPORT_PRIVATE_KEY) {
+#if ENABLE_PRIVATE_KEY_EXPORT
+    if (out_cap < 65) return 0;
+    out[0] = RESP_CODE_PRIVATE_KEY;
+    self_id.writeTo(&out[1], 64);
+    return 65;
+#else
+    return reply_disabled();
+#endif
+  }
+
+  if (c[0] == CMD_IMPORT_PRIVATE_KEY && len >= 65) {
+#if ENABLE_PRIVATE_KEY_IMPORT
+    if (!mesh::LocalIdentity::validatePrivateKey(&c[1])) return reply_err(ERR_CODE_ILLEGAL_ARG);
+    mesh::LocalIdentity identity;
+    identity.readFrom(&c[1], 64);
+    IdentityStore store(*_fs, "/identity");
+    if (store.save("_main", identity)) {
+      self_id = identity;
+      acl.load(_fs, self_id);
+      return reply_ok();
+    }
+    return reply_err(ERR_CODE_FILE_IO_ERROR);
+#else
+    return reply_disabled();
+#endif
+  }
+
+  if (c[0] == CMD_SEND_TXT_MSG && len >= 14) {
+    if (!emit_extra) return reply_err(ERR_CODE_BAD_STATE);
+    int ii = 1;
+    uint8_t txt_type = c[ii++];
+    uint8_t attempt = c[ii++];
+    (void)attempt;
+    uint32_t msg_timestamp;
+    memcpy(&msg_timestamp, &c[ii], 4);
+    ii += 4;
+    const uint8_t *pub_key_prefix = &c[ii];
+    ii += 6;
+    if (!isMeshcomodRecipientTcp(pub_key_prefix)) {
+      return reply_err(ERR_CODE_UNSUPPORTED_CMD);
+    }
+    if (txt_type != TXT_TYPE_PLAIN && txt_type != TXT_TYPE_CLI_DATA) {
+      return reply_err(ERR_CODE_UNSUPPORTED_CMD);
+    }
+    if (len >= MAX_FRAME_SIZE) return reply_err(ERR_CODE_ILLEGAL_ARG);
+    uint8_t cmd_mut[MAX_FRAME_SIZE + 1];
+    memcpy(cmd_mut, c, len);
+    cmd_mut[len] = '\0';
+    char *text = (char *)&cmd_mut[ii];
+    int tlen = (int)len - ii;
+    uint32_t expected_ack =
+        msg_timestamp ? msg_timestamp : getRTCClock()->getCurrentTimeUnique();
+    uint32_t est_timeout = 1;
+    uint8_t sent_fr[10];
+    sent_fr[0] = RESP_CODE_SENT;
+    sent_fr[1] = 0;
+    memcpy(&sent_fr[2], &expected_ack, 4);
+    memcpy(&sent_fr[6], &est_timeout, 4);
+    emit_extra(emit_ctx, sent_fr, sizeof(sent_fr));
+
+    if (txt_type == TXT_TYPE_CLI_DATA) {
+      // Same CLI as USB serial; response only via push 0x8C (no CONTACT_MSG_RECV_V3, no send-confirmed ack).
+      char tcp_cli_reply[320];
+      tcp_cli_reply[0] = '\0';
+      meshcoreRepeaterTcpOtaEmitBegin(emit_extra, emit_ctx, expected_ack);
+      if (tlen > 0) {
+        text[tlen] = '\0';
+        const MeshcoreRepeaterEmitCtx *ecx = (const MeshcoreRepeaterEmitCtx *)emit_ctx;
+        uint8_t ota_path = ecx ? ecx->transport_path : MESHCORE_HTTP_OTA_PATH_NONE;
+        this->handleCommand(msg_timestamp, text, tcp_cli_reply, ota_path);
+      }
+      meshcoreRepeaterTcpOtaEmitEnd();
+      repeaterEmitBinaryCliResponse(emit_extra, emit_ctx, expected_ack, tcp_cli_reply);
+      return 0;
+    }
+
+    uint8_t confirmed[9];
+    confirmed[0] = PUSH_CODE_SEND_CONFIRMED;
+    uint32_t trip_time = 0;
+    memcpy(&confirmed[1], &expected_ack, 4);
+    memcpy(&confirmed[5], &trip_time, 4);
+    emit_extra(emit_ctx, confirmed, sizeof(confirmed));
+    if (tlen > 0) {
+      text[tlen] = '\0';
+      handleRepeaterMeshcomodLine(this, text, tlen, emit_extra, emit_ctx);
+    } else {
+      repeaterEmitMeshcomodText(getRTCClock(), emit_extra, emit_ctx, "usage: wifi help");
+    }
+    return 0;
+  }
+
+  if (c[0] == CMD_FACTORY_RESET) {
+    return reply_err(ERR_CODE_UNSUPPORTED_CMD);
+  }
+
+  return reply_err(ERR_CODE_UNSUPPORTED_CMD);
+}
+
+#endif  // REPEATER_TCP_COMPANION && ESP32
