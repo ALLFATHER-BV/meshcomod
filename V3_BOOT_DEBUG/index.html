@@ -10,11 +10,13 @@
       
       
       
-        <link rel="canonical" href="https://meshcore-dev.github.io/meshcore/terminal_chat_cli/">
+        <link rel="canonical" href="https://meshcore-dev.github.io/meshcore/V3_BOOT_DEBUG/">
       
       
-        <link rel="prev" href="../stats_binary_frames/">
+        <link rel="prev" href="../REPEATER_TCP_COMPANION/">
       
+      
+        <link rel="next" href="../cli_commands/">
       
       
         
@@ -25,7 +27,7 @@
     
     
       
-        <title>Terminal Chat CLI - MeshCore Docs</title>
+        <title>Heltec V3 boot-loop debug build - MeshCore Docs</title>
       
     
     
@@ -68,7 +70,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#terminal-chat-cli" class="md-skip">
+        <a href="#heltec-v3-boot-loop-debug-build" class="md-skip">
           Skip to content
         </a>
       
@@ -103,7 +105,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Terminal Chat CLI
+              Heltec V3 boot-loop debug build
             
           </span>
         </div>
@@ -410,10 +412,37 @@
       
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../V3_BOOT_DEBUG/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Heltec V3 boot-loop debug build
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -429,6 +458,81 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-flash-the-debug-build" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Flash the debug build
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-open-usb-serial-before-powering-or-resetting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Open USB serial before powering or resetting
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-what-to-capture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. What to capture
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#building-the-debug-image-yourself" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Building the debug image yourself
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-this-build-enables" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What this build enables
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -734,19 +838,10 @@
       
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../terminal_chat_cli/" class="md-nav__link">
         
   
   
@@ -762,7 +857,6 @@
   
 
       </a>
-      
     </li>
   
 
@@ -787,6 +881,69 @@
     
   
   
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-flash-the-debug-build" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Flash the debug build
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-open-usb-serial-before-powering-or-resetting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Open USB serial before powering or resetting
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-what-to-capture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. What to capture
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#building-the-debug-image-yourself" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Building the debug image yourself
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-this-build-enables" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What this build enables
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
 </nav>
                   </div>
                 </div>
@@ -802,7 +959,7 @@
 
 
   
-    <a href="https://github.com/meshcore-dev/meshcore/edit/main/docs/terminal_chat_cli.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+    <a href="https://github.com/meshcore-dev/meshcore/edit/main/docs/V3_BOOT_DEBUG.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
       
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
     </a>
@@ -810,65 +967,45 @@
   
 
 
-<h1 id="terminal-chat-cli">Terminal Chat CLI</h1>
-<p>Below are the commands you can enter into the Terminal Chat clients:</p>
-<pre><code>set freq {frequency}
+<h1 id="heltec-v3-boot-loop-debug-build">Heltec V3 boot-loop debug build</h1>
+<p>If your <strong>Heltec WiFi LoRa 32 V3</strong> gets stuck in a boot loop (e.g. shows the boot logo then hangs or resets), use this debug firmware to see where it stops. It prints verbose logs over <strong>USB serial</strong> so you can capture the last messages before the hang.</p>
+<h2 id="1-flash-the-debug-build">1. Flash the debug build</h2>
+<ul>
+<li><strong>Merged image (recommended):</strong> Use the file <strong><code>Heltec_v3_BOOT_DEBUG_FLASH_THIS-merged.bin</code></strong> in the MeshCore repo root (or build your own — see below).</li>
+<li>Flash it the same way as normal meshcomod firmware, e.g. <a href="https://flasher.meshcomod.com">flasher.meshcomod.com</a> → <strong>Custom firmware</strong> → upload this merged <code>.bin</code>. Use full erase if the device is unstable.</li>
+</ul>
+<h2 id="2-open-usb-serial-before-powering-or-resetting">2. Open USB serial <strong>before</strong> powering or resetting</h2>
+<ul>
+<li>Connect the V3 over USB.</li>
+<li>Open a serial console at <strong>115200 baud</strong>:</li>
+<li><strong>Web:</strong> <a href="https://console.meshcomod.com">console.meshcomod.com</a> or the Console tab on the flasher — select the V3’s serial port, set 115200.</li>
+<li><strong>Desktop:</strong> PuTTY, screen, or PlatformIO Serial Monitor at 115200.</li>
+<li>Then power the device or press reset. The debug build prints mesh, WiFi, BLE, and core logs from early boot. <strong>Capture or note the last lines</strong> before it stops or reboots — that shows where the boot is failing.</li>
+</ul>
+<h2 id="3-what-to-capture">3. What to capture</h2>
+<ul>
+<li>Copy or screenshot the <strong>last 20–50 lines</strong> of serial output when the device gets stuck or just before it resets.</li>
+<li>Share that with the meshcomod maintainers (e.g. GitHub issue or your usual channel). The log will show which init step (display, WiFi, TCP, BLE, mesh, etc.) is hanging or crashing.</li>
+</ul>
+<h2 id="building-the-debug-image-yourself">Building the debug image yourself</h2>
+<p>From the MeshCore repo:</p>
+<pre><code class="language-bash">cd MeshCore
+export FIRMWARE_VERSION=v1.14.0.29-boot-debug
+export WIFI_SSID=&quot;YourSSID&quot;   # optional, for WiFi init logs
+export WIFI_PWD=&quot;YourPassword&quot;
+sh build.sh build-firmware Heltec_v3_companion_radio_usb_tcp_boot_debug
 </code></pre>
-<p>Set the LoRa frequency. Example:  set freq 915.8</p>
-<pre><code>set tx {tx-power-dbm}
-</code></pre>
-<p>Sets LoRa transmit power in dBm.</p>
-<pre><code>set name {name}
-</code></pre>
-<p>Sets your advertisement name.</p>
-<pre><code>set lat {latitude}
-</code></pre>
-<p>Sets your advertisement map latitude. (decimal degrees)</p>
-<pre><code>set lon {longitude}
-</code></pre>
-<p>Sets your advertisement map longitude. (decimal degrees)</p>
-<pre><code>set dutycycle {percent}
-</code></pre>
-<p>Sets the transmit duty cycle limit (1-100%). Example: <code>set dutycycle 10</code> for 10%.</p>
-<pre><code>set af {air-time-factor}
-</code></pre>
-<p>Sets the transmit air-time-factor. Deprecated — use <code>set dutycycle</code> instead.</p>
-<pre><code>time {epoch-secs}
-</code></pre>
-<p>Set the device clock using UNIX epoch seconds. Example:  time 1738242833</p>
-<pre><code>advert
-</code></pre>
-<p>Sends an advertisement packet</p>
-<pre><code>clock
-</code></pre>
-<p>Displays current time per device's clock.</p>
-<pre><code>ver
-</code></pre>
-<p>Shows the device version and firmware build date.</p>
-<pre><code>card
-</code></pre>
-<p>Displays <em>your</em> 'business card', for other to manually <em>import</em></p>
-<pre><code>import {card}
-</code></pre>
-<p>Imports the given card to your contacts.</p>
-<pre><code>list {n}
-</code></pre>
-<p>List all contacts by most recent. (optional {n}, is the last n by advertisement date)</p>
-<pre><code>to
-</code></pre>
-<p>Shows the name of current recipient contact. (for subsequent 'send' commands)</p>
-<pre><code>to {name-prefix}
-</code></pre>
-<p>Sets the recipient to the <em>first</em> matching contact (in 'list') by the name prefix. (ie. you don't have to type whole name)</p>
-<pre><code>send {text}
-</code></pre>
-<p>Sends the text message (as DM) to current recipient.</p>
-<pre><code>reset path
-</code></pre>
-<p>Resets the path to current recipient, for new path discovery.</p>
-<pre><code>public {text}
-</code></pre>
-<p>Sends the text message to the built-in 'public' group channel</p>
+<p>The merged image is written to:</p>
+<p><code>out/Heltec_v3_companion_radio_usb_tcp_boot_debug-&lt;version&gt;-&lt;sha&gt;-merged.bin</code></p>
+<p>Copy it to a convenient name (e.g. <code>Heltec_v3_BOOT_DEBUG_FLASH_THIS-merged.bin</code>) and flash that file.</p>
+<h2 id="what-this-build-enables">What this build enables</h2>
+<ul>
+<li><strong>MESH_DEBUG=1</strong> — mesh/routing debug messages</li>
+<li><strong>BLE_DEBUG_LOGGING=1</strong> — Bluetooth stack logs</li>
+<li><strong>WIFI_DEBUG_LOGGING=1</strong> — WiFi/connection logs  </li>
+<li><strong>CORE_DEBUG_LEVEL=5</strong> — ESP32 core verbose logs</li>
+</ul>
+<p>Serial remains at <strong>115200</strong> baud. After troubleshooting, re-flash a normal (non-debug) meshcomod build from <a href="RELEASES.md">RELEASES.md</a>.</p>
 
 
 

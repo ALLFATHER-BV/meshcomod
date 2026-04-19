@@ -10,11 +10,13 @@
       
       
       
-        <link rel="canonical" href="https://meshcore-dev.github.io/meshcore/terminal_chat_cli/">
+        <link rel="canonical" href="https://meshcore-dev.github.io/meshcore/COMPANION_OTA_MEMORY_ROOT_CAUSE/">
       
       
-        <link rel="prev" href="../stats_binary_frames/">
+        <link rel="prev" href="..">
       
+      
+        <link rel="next" href="../DEVICE_WEBSOCKET_WIFI/">
       
       
         
@@ -25,7 +27,7 @@
     
     
       
-        <title>Terminal Chat CLI - MeshCore Docs</title>
+        <title>Companion OTA HTTPS Memory Root Cause - MeshCore Docs</title>
       
     
     
@@ -68,7 +70,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#terminal-chat-cli" class="md-skip">
+        <a href="#companion-ota-https-memory-root-cause" class="md-skip">
           Skip to content
         </a>
       
@@ -103,7 +105,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Terminal Chat CLI
+              Companion OTA HTTPS Memory Root Cause
             
           </span>
         </div>
@@ -248,10 +250,37 @@
       
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../COMPANION_OTA_MEMORY_ROOT_CAUSE/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Companion OTA HTTPS Memory Root Cause
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -267,6 +296,136 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Summary
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-the-logs-proved" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the logs proved
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#why-the-original-http-1-message-was-misleading" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why the original HTTP -1 message was misleading
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#key-evidence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key evidence
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#why-repeater-ota-seemed-better" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why repeater OTA seemed better
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-fixed-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What fixed it
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#important-implementation-detail" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Important implementation detail
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#recommended-rule-going-forward" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recommended rule going forward
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#future-debugging-checklist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Future debugging checklist
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#result" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Result
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -734,19 +893,10 @@
       
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../terminal_chat_cli/" class="md-nav__link">
         
   
   
@@ -762,7 +912,6 @@
   
 
       </a>
-      
     </li>
   
 
@@ -787,6 +936,124 @@
     
   
   
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Summary
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-the-logs-proved" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the logs proved
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#why-the-original-http-1-message-was-misleading" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why the original HTTP -1 message was misleading
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#key-evidence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key evidence
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#why-repeater-ota-seemed-better" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why repeater OTA seemed better
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-fixed-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What fixed it
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#important-implementation-detail" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Important implementation detail
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#recommended-rule-going-forward" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recommended rule going forward
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#future-debugging-checklist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Future debugging checklist
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#result" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Result
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
 </nav>
                   </div>
                 </div>
@@ -802,7 +1069,7 @@
 
 
   
-    <a href="https://github.com/meshcore-dev/meshcore/edit/main/docs/terminal_chat_cli.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+    <a href="https://github.com/meshcore-dev/meshcore/edit/main/docs/COMPANION_OTA_MEMORY_ROOT_CAUSE.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
       
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
     </a>
@@ -810,65 +1077,136 @@
   
 
 
-<h1 id="terminal-chat-cli">Terminal Chat CLI</h1>
-<p>Below are the commands you can enter into the Terminal Chat clients:</p>
-<pre><code>set freq {frequency}
-</code></pre>
-<p>Set the LoRa frequency. Example:  set freq 915.8</p>
-<pre><code>set tx {tx-power-dbm}
-</code></pre>
-<p>Sets LoRa transmit power in dBm.</p>
-<pre><code>set name {name}
-</code></pre>
-<p>Sets your advertisement name.</p>
-<pre><code>set lat {latitude}
-</code></pre>
-<p>Sets your advertisement map latitude. (decimal degrees)</p>
-<pre><code>set lon {longitude}
-</code></pre>
-<p>Sets your advertisement map longitude. (decimal degrees)</p>
-<pre><code>set dutycycle {percent}
-</code></pre>
-<p>Sets the transmit duty cycle limit (1-100%). Example: <code>set dutycycle 10</code> for 10%.</p>
-<pre><code>set af {air-time-factor}
-</code></pre>
-<p>Sets the transmit air-time-factor. Deprecated — use <code>set dutycycle</code> instead.</p>
-<pre><code>time {epoch-secs}
-</code></pre>
-<p>Set the device clock using UNIX epoch seconds. Example:  time 1738242833</p>
-<pre><code>advert
-</code></pre>
-<p>Sends an advertisement packet</p>
-<pre><code>clock
-</code></pre>
-<p>Displays current time per device's clock.</p>
-<pre><code>ver
-</code></pre>
-<p>Shows the device version and firmware build date.</p>
-<pre><code>card
-</code></pre>
-<p>Displays <em>your</em> 'business card', for other to manually <em>import</em></p>
-<pre><code>import {card}
-</code></pre>
-<p>Imports the given card to your contacts.</p>
-<pre><code>list {n}
-</code></pre>
-<p>List all contacts by most recent. (optional {n}, is the last n by advertisement date)</p>
-<pre><code>to
-</code></pre>
-<p>Shows the name of current recipient contact. (for subsequent 'send' commands)</p>
-<pre><code>to {name-prefix}
-</code></pre>
-<p>Sets the recipient to the <em>first</em> matching contact (in 'list') by the name prefix. (ie. you don't have to type whole name)</p>
-<pre><code>send {text}
-</code></pre>
-<p>Sends the text message (as DM) to current recipient.</p>
-<pre><code>reset path
-</code></pre>
-<p>Resets the path to current recipient, for new path discovery.</p>
-<pre><code>public {text}
-</code></pre>
-<p>Sends the text message to the built-in 'public' group channel</p>
+<h1 id="companion-ota-https-memory-root-cause">Companion OTA HTTPS Memory Root Cause</h1>
+<h2 id="summary">Summary</h2>
+<p>Companion URL OTA on ESP32 was failing before any firmware bytes were downloaded.</p>
+<p>The visible error originally looked like:</p>
+<ul>
+<li><code>ERR: HTTP -1 (connection refused)</code></li>
+</ul>
+<p>After adding lower-level TLS diagnostics, the real failure was:</p>
+<ul>
+<li><code>OTA: get fail http=-1 tls=-32512 SSL - Memory allocation failed</code></li>
+</ul>
+<p>This was <strong>not</strong> a bad firmware URL, not a GitHub outage, and not a flasher proxy issue. The root cause was <strong>insufficient allocatable internal RAM for the HTTPS/TLS client</strong> on the companion while BLE and other companion transports were still alive.</p>
+<h2 id="what-the-logs-proved">What the logs proved</h2>
+<p>Two distinct failure classes happened during this investigation:</p>
+<ol>
+<li><strong>Mid-download flash failure</strong></li>
+<li>Example:<ul>
+<li><code>OTA: HTTP OK, flashing</code></li>
+<li><code>OTA: downloading 57%</code></li>
+<li><code>OTA: ERR flash write</code></li>
+</ul>
+</li>
+<li>
+<p>This proved OTA could sometimes reach the write path.</p>
+</li>
+<li>
+<p><strong>Pre-download TLS allocation failure</strong></p>
+</li>
+<li>Example:<ul>
+<li><code>OTA: fetch raw-github</code></li>
+<li><code>OTA: get fail http=-1 tls=-32512 SSL - Memory allocation failed</code></li>
+</ul>
+</li>
+<li>This proved some failing runs never reached HTTP 200 or any flash write at all.</li>
+</ol>
+<p>The second failure class turned out to be the blocker for companion OTA in current testing.</p>
+<h2 id="why-the-original-http-1-message-was-misleading">Why the original <code>HTTP -1</code> message was misleading</h2>
+<p>The OTA wrapper used <code>HTTPClient</code>, which collapses several connection/setup failures into <code>HTTPC_ERROR_CONNECTION_REFUSED</code> (<code>-1</code>). That made early logs look like generic network refusal even when the underlying failure was inside the TLS layer.</p>
+<p>Adding <code>WiFiClientSecure::lastError(...)</code> exposed the real mbedTLS error string and code.</p>
+<h2 id="key-evidence">Key evidence</h2>
+<p>The important runtime numbers were:</p>
+<ul>
+<li><code>heap=35520</code></li>
+<li><code>max=24564</code></li>
+<li><code>psram=2072147</code></li>
+<li><code>pmax=2064372</code></li>
+</ul>
+<p>Interpretation:</p>
+<ul>
+<li>Total free heap was only around <strong>35 KB</strong>.</li>
+<li>Largest allocatable internal block was only around <strong>24-25 KB</strong>.</li>
+<li>PSRAM had plenty of free space, but the TLS stack needed <strong>internal RAM</strong>, not PSRAM.</li>
+</ul>
+<p>So although the device still reported "some free heap", the HTTPS client could not allocate the memory needed for the TLS session.</p>
+<h2 id="why-repeater-ota-seemed-better">Why repeater OTA seemed better</h2>
+<p>Repeater and companion both use the same ESP32 HTTP OTA function, but companion keeps more runtime services alive:</p>
+<ul>
+<li>BLE</li>
+<li>TCP companion server</li>
+<li>optional WebSocket/WSS stack</li>
+<li>companion-specific transport bookkeeping</li>
+</ul>
+<p>The biggest confirmed offender was BLE. The existing BLE "disable" path only stopped advertising and disconnected clients; it did <strong>not</strong> actually release the BLE stack memory.</p>
+<h2 id="what-fixed-it">What fixed it</h2>
+<p>The successful fix was:</p>
+<ol>
+<li>Keep OTA transport deterministic:</li>
+<li>companion resolves meshcomod <code>firmware-download</code> URLs back to raw GitHub</li>
+<li>tries raw GitHub first</li>
+<li>
+<p>falls back once to flasher HTTPS</p>
+</li>
+<li>
+<p>Add better diagnostics:</p>
+</li>
+<li>selected/effective URL</li>
+<li>content metadata and signature</li>
+<li>TLS client error text</li>
+<li>
+<p>heap shape: free heap, max alloc heap, PSRAM, max alloc PSRAM</p>
+</li>
+<li>
+<p>Lower TLS memory pressure:</p>
+</li>
+<li>
+<p>asymmetric mbedTLS buffer settings for companion envs</p>
+</li>
+<li>
+<p><strong>Release BLE memory before HTTPS OTA starts</strong></p>
+</li>
+<li>if the active reply target is not BLE, fully deinitialize BLE before <code>startHttpOtaFromUrl(...)</code></li>
+<li>this reclaimed enough internal RAM for HTTPS OTA to succeed</li>
+</ol>
+<h2 id="important-implementation-detail">Important implementation detail</h2>
+<p>A partial BLE shutdown was <strong>not enough</strong>.</p>
+<p>These actions did not solve the issue by themselves:</p>
+<ul>
+<li>stopping BLE advertising</li>
+<li>disconnecting the BLE client</li>
+<li>shrinking TLS output buffer alone</li>
+</ul>
+<p>The change that mattered was a <strong>real BLE stack teardown</strong> using the BLE library deinit path so internal memory was actually released before the OTA HTTPS session started.</p>
+<h2 id="recommended-rule-going-forward">Recommended rule going forward</h2>
+<p>For ESP32 companion OTA over HTTPS:</p>
+<ul>
+<li>treat OTA as a memory-sensitive mode</li>
+<li>shut down non-essential transports before starting HTTPS, especially BLE</li>
+<li>log <code>max alloc heap</code>, not just total free heap</li>
+<li>do not assume PSRAM helps TLS failures</li>
+</ul>
+<h2 id="future-debugging-checklist">Future debugging checklist</h2>
+<p>If companion OTA breaks again, check these in order:</p>
+<ol>
+<li>Does the log reach <code>OTA: HTTP OK, flashing</code>?</li>
+<li>If yes, it is no longer a TLS connect/setup problem.</li>
+<li>Is there a <code>tls=</code> diagnostic line?</li>
+<li>If yes, trust that over <code>HTTP -1</code>.</li>
+<li>What are <code>heap=</code> and <code>max=</code> before OTA starts?</li>
+<li>Low <code>max=</code> is the most useful signal for TLS allocation failures.</li>
+<li>Which transports are active?</li>
+<li>BLE is the first thing to suspect for internal RAM pressure.</li>
+<li>Is the OTA command coming from BLE?</li>
+<li>If yes, BLE cannot be torn down before the response path is preserved or switched.</li>
+</ol>
+<h2 id="result">Result</h2>
+<p>After the BLE memory release change, companion OTA successfully completed using the same general OTA path that had previously failed with:</p>
+<ul>
+<li><code>tls=-32512 SSL - Memory allocation failed</code></li>
+</ul>
+<p>That confirms the root cause was <strong>companion transport memory pressure</strong>, not the firmware artifact or the remote host.</p>
 
 
 

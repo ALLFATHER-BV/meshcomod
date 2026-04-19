@@ -10,11 +10,13 @@
       
       
       
-        <link rel="canonical" href="https://meshcore-dev.github.io/meshcore/terminal_chat_cli/">
+        <link rel="canonical" href="https://meshcore-dev.github.io/meshcore/DEVICE_WEBSOCKET_WIFI/">
       
       
-        <link rel="prev" href="../stats_binary_frames/">
+        <link rel="prev" href="../COMPANION_OTA_MEMORY_ROOT_CAUSE/">
       
+      
+        <link rel="next" href="../RELEASE_PROCEDURE/">
       
       
         
@@ -25,7 +27,7 @@
     
     
       
-        <title>Terminal Chat CLI - MeshCore Docs</title>
+        <title>Device WebSocket over Wi‑Fi (plain WS) - MeshCore Docs</title>
       
     
     
@@ -68,7 +70,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#terminal-chat-cli" class="md-skip">
+        <a href="#device-websocket-over-wifi-plain-ws" class="md-skip">
           Skip to content
         </a>
       
@@ -103,7 +105,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Terminal Chat CLI
+              Device WebSocket over Wi‑Fi (plain WS)
             
           </span>
         </div>
@@ -275,10 +277,37 @@
       
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../DEVICE_WEBSOCKET_WIFI/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Device WebSocket over Wi‑Fi (plain WS)
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -294,6 +323,81 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#default-ws" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Default: ws://
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#browsers-and-https-meshcomodcom" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Browsers and HTTPS (meshcomod.com)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#optional-wss-in-the-client" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Optional: wss:// in the client
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#firmware-implementation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Firmware implementation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#references" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        References
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -734,19 +838,10 @@
       
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../terminal_chat_cli/" class="md-nav__link">
         
   
   
@@ -762,7 +857,6 @@
   
 
       </a>
-      
     </li>
   
 
@@ -787,6 +881,69 @@
     
   
   
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#default-ws" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Default: ws://
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#browsers-and-https-meshcomodcom" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Browsers and HTTPS (meshcomod.com)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#optional-wss-in-the-client" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Optional: wss:// in the client
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#firmware-implementation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Firmware implementation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#references" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        References
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
 </nav>
                   </div>
                 </div>
@@ -802,7 +959,7 @@
 
 
   
-    <a href="https://github.com/meshcore-dev/meshcore/edit/main/docs/terminal_chat_cli.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+    <a href="https://github.com/meshcore-dev/meshcore/edit/main/docs/DEVICE_WEBSOCKET_WIFI.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
       
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
     </a>
@@ -810,65 +967,30 @@
   
 
 
-<h1 id="terminal-chat-cli">Terminal Chat CLI</h1>
-<p>Below are the commands you can enter into the Terminal Chat clients:</p>
-<pre><code>set freq {frequency}
-</code></pre>
-<p>Set the LoRa frequency. Example:  set freq 915.8</p>
-<pre><code>set tx {tx-power-dbm}
-</code></pre>
-<p>Sets LoRa transmit power in dBm.</p>
-<pre><code>set name {name}
-</code></pre>
-<p>Sets your advertisement name.</p>
-<pre><code>set lat {latitude}
-</code></pre>
-<p>Sets your advertisement map latitude. (decimal degrees)</p>
-<pre><code>set lon {longitude}
-</code></pre>
-<p>Sets your advertisement map longitude. (decimal degrees)</p>
-<pre><code>set dutycycle {percent}
-</code></pre>
-<p>Sets the transmit duty cycle limit (1-100%). Example: <code>set dutycycle 10</code> for 10%.</p>
-<pre><code>set af {air-time-factor}
-</code></pre>
-<p>Sets the transmit air-time-factor. Deprecated — use <code>set dutycycle</code> instead.</p>
-<pre><code>time {epoch-secs}
-</code></pre>
-<p>Set the device clock using UNIX epoch seconds. Example:  time 1738242833</p>
-<pre><code>advert
-</code></pre>
-<p>Sends an advertisement packet</p>
-<pre><code>clock
-</code></pre>
-<p>Displays current time per device's clock.</p>
-<pre><code>ver
-</code></pre>
-<p>Shows the device version and firmware build date.</p>
-<pre><code>card
-</code></pre>
-<p>Displays <em>your</em> 'business card', for other to manually <em>import</em></p>
-<pre><code>import {card}
-</code></pre>
-<p>Imports the given card to your contacts.</p>
-<pre><code>list {n}
-</code></pre>
-<p>List all contacts by most recent. (optional {n}, is the last n by advertisement date)</p>
-<pre><code>to
-</code></pre>
-<p>Shows the name of current recipient contact. (for subsequent 'send' commands)</p>
-<pre><code>to {name-prefix}
-</code></pre>
-<p>Sets the recipient to the <em>first</em> matching contact (in 'list') by the name prefix. (ie. you don't have to type whole name)</p>
-<pre><code>send {text}
-</code></pre>
-<p>Sends the text message (as DM) to current recipient.</p>
-<pre><code>reset path
-</code></pre>
-<p>Resets the path to current recipient, for new path discovery.</p>
-<pre><code>public {text}
-</code></pre>
-<p>Sends the text message to the built-in 'public' group channel</p>
+<h1 id="device-websocket-over-wifi-plain-ws">Device WebSocket over Wi‑Fi (plain WS)</h1>
+<p>When TCP is enabled and Wi‑Fi has an address, the device serves the companion protocol over <strong>plain WebSocket</strong> (<strong><code>ws://</code></strong>) on the configured port (default <strong>8765</strong>).</p>
+<p>Meshcomod <strong>does not</strong> implement <strong>WSS</strong> (<code>wss://</code>) on the device. That keeps the firmware smaller and leaves more <strong>internal RAM</strong> for <strong>HTTPS URL OTA</strong> (especially on boards without PSRAM).</p>
+<h2 id="default-ws">Default: <code>ws://</code></h2>
+<ul>
+<li><strong>Companion USB+TCP</strong> builds: WebSocket is <strong><code>ws://&lt;device-ip&gt;:8765</code></strong> (or <code>WS_PORT</code> from the build).</li>
+<li><strong>Repeater TCP</strong> builds: same — plain <strong><code>ws://</code></strong> only.</li>
+</ul>
+<h2 id="browsers-and-https-meshcomodcom">Browsers and HTTPS (meshcomod.com)</h2>
+<ul>
+<li><strong>HTTPS</strong> pages (e.g. <code>https://meshcomod.com</code>) normally <strong>block</strong> <code>ws://</code> to a LAN IP (<strong>mixed content</strong>).</li>
+<li>Use the <strong>HTTP</strong>-hosted app when offered (e.g. <strong><code>http://app.meshcomod.com</code></strong>) so the browser may open <strong><code>ws://</code></strong> to your radio, or follow the in-app prompt for the HTTP mirror.</li>
+<li>You can still paste a full <strong><code>ws://192.168.x.x:8765</code></strong> URL when the page allows it.</li>
+</ul>
+<h2 id="optional-wss-in-the-client">Optional: <code>wss://</code> in the client</h2>
+<p>The web client may still accept a manually entered <strong><code>wss://</code></strong> URL for <strong>custom or third-party</strong> firmware. <strong>Stock meshcomod firmware will not answer</strong> on TLS; use <strong><code>ws://</code></strong> to the device.</p>
+<h2 id="firmware-implementation">Firmware implementation</h2>
+<ul>
+<li>Server: <a href="../src/helpers/esp32/WebSocketCompanionServer.cpp"><code>src/helpers/esp32/WebSocketCompanionServer.cpp</code></a> — RFC 6455 upgrade and binary frames, <code>WiFiServer</code> only.</li>
+</ul>
+<h2 id="references">References</h2>
+<ul>
+<li><strong>Client:</strong> Wi‑Fi connect flow in the meshcomod web app; IP:port handling prefers <strong><code>ws://</code></strong> for meshcomod devices when allowed by the page origin.</li>
+</ul>
 
 
 

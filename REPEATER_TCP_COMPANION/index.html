@@ -1,0 +1,1222 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Documentation for the open source MeshCore firmware">
+      
+      
+      
+        <link rel="canonical" href="https://meshcore-dev.github.io/meshcore/REPEATER_TCP_COMPANION/">
+      
+      
+        <link rel="prev" href="../REPEATER_RELEASE_PROCEDURE/">
+      
+      
+        <link rel="next" href="../V3_BOOT_DEBUG/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Repeater TCP companion protocol - MeshCore Docs</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../_stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    <body dir="ltr">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#repeater-tcp-companion-protocol" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="MeshCore Docs" class="md-header__button md-logo" aria-label="MeshCore Docs" data-md-component="logo">
+      
+  <img src="../_assets/meshcore.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            MeshCore Docs
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Repeater TCP companion protocol
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/meshcore-dev/meshcore/" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    meshcore-dev/meshcore
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="MeshCore Docs" class="md-nav__button md-logo" aria-label="MeshCore Docs" data-md-component="logo">
+      
+  <img src="../_assets/meshcore.svg" alt="logo">
+
+    </a>
+    MeshCore Docs
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/meshcore-dev/meshcore/" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    meshcore-dev/meshcore
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Introduction
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../COMPANION_OTA_MEMORY_ROOT_CAUSE/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Companion OTA HTTPS Memory Root Cause
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../DEVICE_WEBSOCKET_WIFI/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Device WebSocket over Wi‑Fi (plain WS)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../RELEASE_PROCEDURE/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release procedure (companion firmware)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../REPEATER_MESHCOMOD_CLIENT_INTEGRATION/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Meshcomod / custom client ↔ Wi‑Fi repeater (TCP &amp; WebSocket)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../REPEATER_RELEASE_PROCEDURE/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TCP repeater release procedure (prebuilt / flasher)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Repeater TCP companion protocol
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Repeater TCP companion protocol
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Configuration">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#wi-fi-same-nvs-model-as-companion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wi-Fi (same NVS model as companion)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#oled-ui-heltec-v4-heltec_v4_repeater_tcp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OLED UI (Heltec V4 heltec_v4_repeater_tcp)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#supported-commands-subset" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Supported commands (subset)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#security" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Security
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#source-layout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Source layout
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../V3_BOOT_DEBUG/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Heltec V3 boot-loop debug build
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli_commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../companion_protocol/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Companion Protocol
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../docs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Local Documentation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../faq/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Frequently Asked Questions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../kiss_modem_protocol/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MeshCore KISS Modem Protocol
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../nrf52_power_management/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    nRF52 Power Management
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../number_allocations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Number Allocations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../packet_format/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Packet Format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../payloads/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Payload Format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../qr_codes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    QR Codes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../stats_binary_frames/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Stats Binary Frame Structures
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../terminal_chat_cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Terminal Chat CLI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Configuration">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#wi-fi-same-nvs-model-as-companion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wi-Fi (same NVS model as companion)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#oled-ui-heltec-v4-heltec_v4_repeater_tcp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OLED UI (Heltec V4 heltec_v4_repeater_tcp)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#supported-commands-subset" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Supported commands (subset)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#security" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Security
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#source-layout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Source layout
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/meshcore-dev/meshcore/edit/main/docs/REPEATER_TCP_COMPANION.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="repeater-tcp-companion-protocol">Repeater TCP companion protocol</h1>
+<p>Repeater firmware can expose the <strong>same binary framing</strong> as the USB/BLE/TCP companion: client sends frames prefixed with <code>&lt;</code> (0x3C), length as two little-endian bytes, then payload; the device responds with <code>&gt;</code> (0x3E), same length header, then payload. This matches <a href="../src/helpers/esp32/TCPCompanionServer.h"><code>TCPCompanionServer</code></a> and <strong><a href="../src/helpers/esp32/WebSocketCompanionServer.h"><code>WebSocketCompanionServer</code></a></strong> (<strong>plain <code>ws://</code></strong> on port <strong>8765</strong> by default; meshcomod does not ship WSS on the device), and the meshcomod / MeshCore companion wire format (see project docs such as <code>COMPANION_SERIAL_PROTOCOL</code> / meshcomod <code>companion_serial.ts</code>).</p>
+<p><strong>Custom client / meshcomod UI:</strong> see <strong><a href="../REPEATER_MESHCOMOD_CLIENT_INTEGRATION/"><code>REPEATER_MESHCOMOD_CLIENT_INTEGRATION.md</code></a></strong> for TCP+WS parity, MESHCM Wi‑Fi CLI, <code>CMD_GET_STATS</code> byte layouts, and a suggested repeater settings screen checklist.</p>
+<p>Firmware environments:</p>
+<ul>
+<li><code>heltec_v4_repeater_tcp</code> — Heltec WiFi LoRa 32 V4 (OLED repeater + TCP).</li>
+<li><code>Heltec_v3_repeater_tcp</code> — Heltec V3 variant (parity).</li>
+</ul>
+<p>They <strong>do not</strong> compile <code>examples/companion_radio/</code>; command handling is a <strong>subset</strong> implemented on <code>simple_repeater</code> <a href="../examples/simple_repeater/MyMesh.cpp"><code>MyMesh</code></a> when <code>REPEATER_TCP_COMPANION</code> is set, plus <a href="../examples/repeater_tcp/main.cpp"><code>examples/repeater_tcp/main.cpp</code></a> for WiFi, <strong>TCP + WebSocket</strong> accept/poll, and USB serial.</p>
+<h2 id="configuration">Configuration</h2>
+<ul>
+<li><strong><code>TCP_PORT</code></strong> — defaults to <code>5000</code> in the PlatformIO env (raw TCP companion protocol).</li>
+<li><strong><code>WS_PORT</code></strong> — defaults to <code>8765</code>. Repeater and companion builds use <strong>plain <code>ws://</code> only</strong> (see <a href="../DEVICE_WEBSOCKET_WIFI/"><code>DEVICE_WEBSOCKET_WIFI.md</code></a> for HTTPS vs mixed content).</li>
+</ul>
+<p>WebSocket listening starts only after <strong>TCP companion is enabled</strong> and <strong>WiFi is connected</strong> (socket is stopped whenever TCP companion transport is off, or before WiFi has an IP). <strong><code>tickHandshake()</code></strong> runs every loop while the WebSocket server is up so accepts and upgrades are processed promptly.</p>
+<h3 id="wi-fi-same-nvs-model-as-companion">Wi-Fi (same NVS model as companion)</h3>
+<p>Credentials are stored in ESP32 <strong>Preferences</strong> namespace <code>meshcomod</code> (keys <code>wifi_ssid</code> / <code>wifi_pwd</code>) via <a href="../src/helpers/esp32/WifiRuntimeStore.cpp"><code>WifiRuntimeStore</code></a> — the <strong>same storage</strong> as companion firmware, so you can move a board between images without re-entering SSID if NVS is kept.</p>
+<p><strong>Primary (runtime):</strong></p>
+<ol>
+<li><strong>USB serial</strong> (repeater text CLI): <code>set wifi.ssid MyNet</code>, <code>set wifi.pwd secret</code>, <strong><code>set wifi.apply</code></strong> (meshcomod uses this form), or <code>wifi.apply</code> / <code>set wifi.clear</code> / <code>wifi.clear</code>, plus <code>get wifi.ssid</code>, <code>get wifi.status</code> / <code>wifi.status</code> (includes <code>radio_enabled=0|1</code>), <strong><code>set wifi.radio 1</code></strong> / <strong><code>set wifi.radio 0</code></strong> to turn the Wi‑Fi interface on or off (saved in NVS; off powers down STA and drops LAN until turned back on) — same idea as companion debug <code>set</code> / <code>get</code> lines.</li>
+<li><strong>meshcomod over TCP or WebSocket</strong>: same binary protocol on <strong>TCP</strong> (<code>5000</code>) or <strong>WS</strong> (<code>8765</code>); use <strong><code>ws://&lt;device-ip&gt;:8765/</code></strong>.</li>
+</ol>
+<p><strong>Optional compile-time defaults:</strong> uncomment <code>WIFI_SSID</code> / <code>WIFI_PWD</code> in the <code>*_repeater_tcp</code> env in <code>platformio.ini</code> if you want a factory fallback when NVS is empty.</p>
+<p>Example build:</p>
+<pre><code class="language-bash">cd MeshCore
+python3 -m platformio run -e heltec_v4_repeater_tcp
+</code></pre>
+<p><strong>Flash image:</strong> use the <strong>app-only</strong> <code>firmware.bin</code> (PlatformIO: <code>.pio/build/heltec_v4_repeater_tcp/firmware.bin</code>, or <code>out/heltec_v4_repeater_tcp.bin</code> after a plain <code>pio run</code>). Flash at the <strong>app partition offset</strong> (typically <strong>0x10000</strong> on these ESP32-S3 images), not at 0x0, unless you also flash bootloader + partition table separately. A single <strong>merged</strong> file for 0x0 is optional: <code>python3 -m platformio run -e heltec_v4_repeater_tcp -t mergebin</code> → <code>.pio/build/heltec_v4_repeater_tcp/firmware-merged.bin</code> (not copied to <code>out/</code> by default).</p>
+<p><strong>OTA (over-the-air) updates:</strong> the <code>*_repeater_tcp</code> envs already pull in <strong><code>esp32_ota</code></strong> (AsyncElegantOTA + ESPAsyncWebServer), same as the plain Heltec repeater.</p>
+<ol>
+<li>
+<p><strong><code>start ota</code></strong> (USB serial or MESHCM <strong><code>TXT_TYPE_CLI_DATA</code></strong>) — open AP <strong><code>MeshCore-OTA</code></strong>, HTTP <strong><code>/update</code></strong> upload (same as other ESP32 repeaters). Use a second device on that AP; not on your LAN STA at the same time.</p>
+</li>
+<li>
+<p><strong><code>ota url &lt;https://…&gt;</code></strong> — while <strong>Wi‑Fi STA is connected</strong>, the device <strong>GETs</strong> an <strong>app-only</strong> <code>.bin</code> from an <strong>allowlisted</strong> HTTPS URL, streams it into the running app partition, then reboots. Allowed hosts/paths include <strong><code>https://raw.githubusercontent.com/…</code></strong>, <strong><code>https://github.com/…/raw/…</code></strong>, and meshcomod <strong><code>/firmware-download/</code></strong> on <strong><code>flasher.meshcomod.com</code></strong> or <strong><code>repeater.meshcomod.com</code></strong> (same nginx proxy as the web flasher). <strong><code>https://github.com/…/raw/…</code></strong> is rewritten internally to <strong><code>https://raw.githubusercontent.com/…</code></strong> before the request (GitHub issues <strong>302</strong> for the short URL; HTTPClient defaults to <strong>not</strong> following redirects). Redirect follow is also set to <strong>force</strong> for any remaining hops. Example: <code>ota url https://github.com/ALLFATHER-BV/meshcomod/raw/main/prebuilt/heltec_v4_repeater_tcp.bin</code>. <strong>Final</strong> reply: <strong><code>&gt; OK rebooting</code></strong> (same <strong><code>0x8C</code></strong> tag as other MESHCM CLI lines; sent after progress). <strong>Merged</strong> full-flash images are not supported on this path—use USB + flasher if partitions/bootloader mismatch. TLS uses <strong>insecure verify</strong> today (<code>setInsecure()</code>); prefer pinned URLs you trust. <strong>Companion builds</strong> (<code>*companion_radio_usb_tcp*</code>): for <strong><code>ALLFATHER-BV/meshcomod/main/…</code></strong> raw paths, the firmware uses <strong><code>https://flasher.meshcomod.com/firmware-download/…</code></strong> as the <strong>primary</strong> GET; if that fails it retries <strong>raw GitHub only</strong> (no jsDelivr, repeater, or HTTP mirror hopping).</p>
+</li>
+</ol>
+<p><strong>Companion OTA memory note:</strong> If companion HTTPS OTA fails before <code>HTTP OK</code> with <code>HTTP -1</code> or <code>tls=... SSL - Memory allocation failed</code>, see <a href="../COMPANION_OTA_MEMORY_ROOT_CAUSE/"><code>COMPANION_OTA_MEMORY_ROOT_CAUSE.md</code></a>. The confirmed root cause was internal-RAM pressure from live companion transports, especially BLE; fully releasing BLE before OTA made companion HTTPS OTA succeed.</p>
+<p><strong>Progress (MESHCM / repeater.meshcomod.com):</strong> During the download, the firmware may push <strong>additional</strong> <strong><code>0x8C</code></strong> frames with the <strong>same 4-byte tag</strong> as the pending CLI reply. Bodies are UTF-8 lines, typically prefixed with <strong><code>OTA:</code></strong> (e.g. <code>OTA: connecting</code>, <code>OTA: HTTP OK, flashing</code>, <code>OTA: downloading 42%</code>, <code>OTA: verifying</code>, <code>OTA: rebooting</code>, or <code>OTA: ERR …</code> on failure). The web client should <strong><code>SyncNextMessage</code></strong> while OTA runs (as for Debug CLI) to drain these. <strong>Heltec OLED (<code>SSD1306</code>):</strong> While URL OTA is active, the display switches to a full-screen <strong>WiFi OTA</strong> view: status line, progress bar (percent when <code>Content-Length</code> is known, else an indeterminate animation), and <strong>do not power off</strong>.</p>
+<p><strong>Flasher / release bundles:</strong> repeater TCP uses release id <strong><code>r1.14.1.x</code></strong> under <strong><code>prebuilt/releases/repeater/</code></strong> (parallel to companion <strong><code>v1.14.1.x</code></strong>) plus <strong><code>‑repeater-tcp</code></strong> in <strong><code>REPEATER_FIRMWARE_VERSION</code></strong>. <strong><code>build.sh</code></strong> adds the <strong><code>meshcomod-</code></strong> prefix on <strong><code>*_repeater_tcp</code></strong> targets. Build with <strong><code>REPEATER_FIRMWARE_VERSION=r1.14.1.0-repeater-tcp</code></strong>, then <strong><code>scripts/copy-repeater-release-bins.sh r1.14.1.0</code></strong> — binaries land under <strong><code>prebuilt/</code></strong> and <strong><code>prebuilt/releases/repeater/r1.14.1.0/</code></strong>. Legacy <strong><code>v1.14.1.0-repeater-tcp</code></strong> in <strong><code>out/</code></strong> still works with <strong><code>copy-repeater-release-bins.sh v1.14.1.0</code></strong> (destination <strong><code>repeater/r1.14.1.0/</code></strong>). The copy script accepts <strong><code>repeater-X.Y.Z</code></strong> → <strong><code>prebuilt/releases/repeater/repeater-X.Y.Z/</code></strong> in forks. See <a href="../REPEATER_RELEASE_PROCEDURE/"><code>REPEATER_RELEASE_PROCEDURE.md</code></a>, <a href="../prebuilt/README.md"><code>prebuilt/README.md</code></a>, <a href="../WHERE_IS_REPEATER_FIRMWARE.md"><code>WHERE_IS_REPEATER_FIRMWARE.md</code></a>.</p>
+<h3 id="oled-ui-heltec-v4-heltec_v4_repeater_tcp">OLED UI (Heltec V4 <code>heltec_v4_repeater_tcp</code>)</h3>
+<p>Heltec V3 <strong><code>Heltec_v3_repeater_tcp</code></strong> uses the same OLED behaviour when <strong><code>DISPLAY_CLASS</code></strong> is set.</p>
+<p><strong>Boot splash</strong> (~3 s, same spirit as companion <strong>ui-new</strong>): <strong><code>meshcomod</code></strong> (large), firmware version (trailing <strong><code>-&lt;gitsha&gt;</code></strong> hidden on screen if it looks like a short hex SHA), <strong><code>FIRMWARE_BUILD_DATE</code></strong>, then <strong>Repeater</strong>. After that, the multi-page UI runs as before.</p>
+<p>After the boot splash, the user button matches the <strong>companion-style</strong> flow where possible:</p>
+<ul>
+<li><strong>Short press</strong> — next page (four pages: radio summary, <strong>network</strong> status, <strong>WebSocket</strong> URL/status, advert). Page changes are ignored during the <strong>boot splash</strong> (~3 s) so presses don’t skip past the network screen unseen.</li>
+<li><strong>Double-click</strong> — previous page (also ignored during ~3 s boot splash).</li>
+<li><strong>Long press (first ~8 s after boot)</strong> — USB CLI banner (WiFi <code>set</code> commands hint), like companion “rescue” timing.</li>
+<li><strong>Long press on network page</strong> (after splash, after rescue window) — toggle <strong>TCP + WebSocket</strong> off/on together (<code>repeater_transport_enabled</code>).</li>
+<li><strong>Long press on advert page</strong> — send <strong>flood</strong> advert (short press only advances to the next page, same as companion-style paging).</li>
+</ul>
+<h2 id="supported-commands-subset">Supported commands (subset)</h2>
+<table>
+<thead>
+<tr>
+<th>Cmd</th>
+<th>Name</th>
+<th>Behaviour</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>22</td>
+<td>Device query</td>
+<td><code>RESP</code> 13 device info; repeater reports <strong>0</strong> contacts / <strong>0</strong> channels, <strong>0</strong> BLE PIN, <strong>0</strong> <code>client_repeat</code>; <code>path_hash_mode</code> from prefs. <strong>Firmware string</strong> is <strong>40 bytes</strong> at offset <strong>60</strong> (total payload <strong>102</strong> bytes); <strong><code>REPEATER_COMPANION_FIRMWARE_VER_CODE</code></strong> <strong>27</strong>+ (meshcomod clients: <code>parseDeviceInfoBinaryV10</code> when <code>payload.length &gt;= 102</code>). Older repeaters used <strong>20</strong> bytes / <strong>82</strong> bytes total.</td>
+</tr>
+<tr>
+<td>1</td>
+<td>App start</td>
+<td><code>RESP</code> 5 self info; advert type <strong>repeater</strong> (<code>ADV_TYPE_REPEATER</code>).</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Send text (Meshcomod)</td>
+<td>To pubkey prefix <strong><code>MESHCM</code></strong>: <strong><code>TXT_TYPE_PLAIN</code></strong> → <strong>wifi</strong> / <strong>help</strong> / <strong>status</strong> only; replies <code>SENT</code>, <code>CONFIRMED</code>, <code>CONTACT_MSG_RECV_V3</code>, <code>MSG_WAITING</code>. <strong><code>TXT_TYPE_CLI_DATA</code></strong> → <strong>same CLI as USB</strong> (<code>get</code>/<code>set advert.interval</code>, <code>get</code>/<code>set flood.advert.interval</code>, etc.); replies <code>SENT</code> then <strong><code>PUSH_CODE_BINARY_RESPONSE</code> (0x8C)</strong> = <code>[8C][0][tag 4 LE][UTF-8 output]</code> + <code>MSG_WAITING</code> (no code 16). Other destinations → <code>ERR</code> unsupported.</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Get contacts</td>
+<td><code>RESP</code> 2 with count <strong>0</strong> (meshcomod resolves immediately).</td>
+</tr>
+<tr>
+<td>10</td>
+<td>Sync next message</td>
+<td><code>RESP</code> 10 no more messages.</td>
+</tr>
+<tr>
+<td>62</td>
+<td>Sync since</td>
+<td><code>RESP</code> 61 done (no history stream).</td>
+</tr>
+<tr>
+<td>5 / 6</td>
+<td>Get / set device time</td>
+<td>Same as companion.</td>
+</tr>
+<tr>
+<td>8</td>
+<td>Set advert name</td>
+<td>Updates prefs + save.</td>
+</tr>
+<tr>
+<td>14</td>
+<td>Set advert lat/lon</td>
+<td>Updates <code>sensors</code> + prefs.</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Send self advert</td>
+<td>Zero-hop or flood (byte 2 optional: <code>1</code> = flood).</td>
+</tr>
+<tr>
+<td>11 / 12</td>
+<td>Set radio params / TX power</td>
+<td>Applies <code>radio_set_*</code> + save prefs.</td>
+</tr>
+<tr>
+<td>21 / 43</td>
+<td>Set / get tuning params</td>
+<td><code>rx_delay_base</code>, <code>airtime_factor</code>.</td>
+</tr>
+<tr>
+<td>38</td>
+<td>Set other params</td>
+<td>Updates <code>advert_loc_policy</code>, <code>multi_acks</code> when bytes present (manual/telemetry bytes ignored).</td>
+</tr>
+<tr>
+<td>61</td>
+<td>Set path hash mode</td>
+<td>Same rules as companion (<code>[61, 0, mode]</code>).</td>
+</tr>
+<tr>
+<td>19</td>
+<td>Reboot</td>
+<td>Payload <code>reboot</code> (6 chars after command byte).</td>
+</tr>
+<tr>
+<td>20</td>
+<td>Battery + storage</td>
+<td>Millivolts + SPIFFS used/total (KiB).</td>
+</tr>
+<tr>
+<td>56</td>
+<td>Get stats</td>
+<td>Subtypes 0 / 1 / 2 — core / radio / packets (layout matches companion).</td>
+</tr>
+<tr>
+<td>23 / 24</td>
+<td>Export / import private key</td>
+<td>Honours <code>ENABLE_PRIVATE_KEY_*</code> like base firmware.</td>
+</tr>
+</tbody>
+</table>
+<p>Any other command returns <strong><code>RESP</code> 1</strong> with <strong><code>ERR_CODE_UNSUPPORTED_CMD</code> (1)</strong> (or another error code where validation fails). <strong>Factory reset</strong> (51) is explicitly unsupported on this image.</p>
+<h2 id="security">Security</h2>
+<p>TCP exposes <strong>remote</strong> control comparable to an open serial console: radio settings, identity export/import (if enabled), reboot, time, etc. Use only on <strong>trusted networks</strong>; prefer VLAN/firewall rules, strong WiFi, and non-default passwords. This is <strong>not</strong> authenticated companion transport by itself.</p>
+<h2 id="source-layout">Source layout</h2>
+<ul>
+<li><a href="../examples/repeater_tcp/repeater_companion_proto.h"><code>examples/repeater_tcp/repeater_companion_proto.h</code></a> — shared command/response constants.</li>
+<li><a href="../examples/repeater_tcp/main.cpp"><code>examples/repeater_tcp/main.cpp</code></a> — WiFi, <code>TCPCompanionServer</code>, frame loop.</li>
+<li><code>MyMesh::handleRepeaterTcpCompanionCommand</code> — command implementation (ESP32 + <code>REPEATER_TCP_COMPANION</code> only).</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["content.action.edit", "content.code.copy", "search.highlight", "search.suggest"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

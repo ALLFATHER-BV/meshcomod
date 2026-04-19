@@ -1,0 +1,1766 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Documentation for the open source MeshCore firmware">
+      
+      
+      
+        <link rel="canonical" href="https://meshcore-dev.github.io/meshcore/REPEATER_MESHCOMOD_CLIENT_INTEGRATION/">
+      
+      
+        <link rel="prev" href="../RELEASE_PROCEDURE/">
+      
+      
+        <link rel="next" href="../REPEATER_RELEASE_PROCEDURE/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Meshcomod / custom client ↔ Wi‑Fi repeater (TCP & WebSocket) - MeshCore Docs</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../_stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    <body dir="ltr">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#meshcomod-custom-client-wifi-repeater-tcp-websocket" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="MeshCore Docs" class="md-header__button md-logo" aria-label="MeshCore Docs" data-md-component="logo">
+      
+  <img src="../_assets/meshcore.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            MeshCore Docs
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Meshcomod / custom client ↔ Wi‑Fi repeater (TCP &amp; WebSocket)
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/meshcore-dev/meshcore/" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    meshcore-dev/meshcore
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="MeshCore Docs" class="md-nav__button md-logo" aria-label="MeshCore Docs" data-md-component="logo">
+      
+  <img src="../_assets/meshcore.svg" alt="logo">
+
+    </a>
+    MeshCore Docs
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/meshcore-dev/meshcore/" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    meshcore-dev/meshcore
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Introduction
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../COMPANION_OTA_MEMORY_ROOT_CAUSE/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Companion OTA HTTPS Memory Root Cause
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../DEVICE_WEBSOCKET_WIFI/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Device WebSocket over Wi‑Fi (plain WS)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../RELEASE_PROCEDURE/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release procedure (companion firmware)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Meshcomod / custom client ↔ Wi‑Fi repeater (TCP &amp; WebSocket)
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Meshcomod / custom client ↔ Wi‑Fi repeater (TCP &amp; WebSocket)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-can-you-do-it-over-tcp-and-websocket" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Can you do it over TCP and WebSocket?
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-how-to-know-the-connected-device-is-this-repeater" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. How to know the connected device is this repeater
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-two-channels-of-control-binary-commands-vs-mesh-text" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Two channels of control: binary commands vs “mesh text”
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. Two channels of control: binary commands vs “mesh text”">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#31-meshcm-destination-sendtxtmsg" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.1 MESHCM destination (SendTxtMsg)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#32-wifi-cli-commands-plain-text-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.2 Wi‑Fi CLI commands (plain text only)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#33-txt_type_cli_data-meshcm-binary-response-0x8c" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.3 TXT_TYPE_CLI_DATA + MESHCM → binary response (0x8C)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-suggested-wifi-repeater-settings-screen-client-ux" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Suggested “Wi‑Fi repeater settings” screen (client UX)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-supported-binary-commands-subset" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Supported binary commands (subset)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-cmd_get_stats-56-layouts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. CMD_GET_STATS (56) — layouts
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="6. CMD_GET_STATS (56) — layouts">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#subtype-0-core-11-bytes-total-payload" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Subtype 0 — Core (11 bytes total payload)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#subtype-1-radio-14-bytes-total" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Subtype 1 — Radio (14 bytes total)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#subtype-2-packets-34-bytes-total" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Subtype 2 — Packets (34 bytes total)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-meshcomod-repo-pointers-where-to-implement" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. meshcomod repo pointers (where to implement)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-limitations-safety" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Limitations &amp; safety
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-checklist-before-shipping-your-screen" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Checklist before shipping your screen
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#see-also" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        See also
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../REPEATER_RELEASE_PROCEDURE/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TCP repeater release procedure (prebuilt / flasher)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../REPEATER_TCP_COMPANION/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Repeater TCP companion protocol
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../V3_BOOT_DEBUG/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Heltec V3 boot-loop debug build
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli_commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../companion_protocol/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Companion Protocol
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../docs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Local Documentation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../faq/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Frequently Asked Questions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../kiss_modem_protocol/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MeshCore KISS Modem Protocol
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../nrf52_power_management/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    nRF52 Power Management
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../number_allocations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Number Allocations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../packet_format/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Packet Format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../payloads/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Payload Format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../qr_codes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    QR Codes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../stats_binary_frames/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Stats Binary Frame Structures
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../terminal_chat_cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Terminal Chat CLI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-can-you-do-it-over-tcp-and-websocket" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Can you do it over TCP and WebSocket?
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-how-to-know-the-connected-device-is-this-repeater" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. How to know the connected device is this repeater
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-two-channels-of-control-binary-commands-vs-mesh-text" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Two channels of control: binary commands vs “mesh text”
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. Two channels of control: binary commands vs “mesh text”">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#31-meshcm-destination-sendtxtmsg" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.1 MESHCM destination (SendTxtMsg)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#32-wifi-cli-commands-plain-text-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.2 Wi‑Fi CLI commands (plain text only)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#33-txt_type_cli_data-meshcm-binary-response-0x8c" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.3 TXT_TYPE_CLI_DATA + MESHCM → binary response (0x8C)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-suggested-wifi-repeater-settings-screen-client-ux" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Suggested “Wi‑Fi repeater settings” screen (client UX)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-supported-binary-commands-subset" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Supported binary commands (subset)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-cmd_get_stats-56-layouts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. CMD_GET_STATS (56) — layouts
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="6. CMD_GET_STATS (56) — layouts">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#subtype-0-core-11-bytes-total-payload" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Subtype 0 — Core (11 bytes total payload)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#subtype-1-radio-14-bytes-total" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Subtype 1 — Radio (14 bytes total)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#subtype-2-packets-34-bytes-total" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Subtype 2 — Packets (34 bytes total)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-meshcomod-repo-pointers-where-to-implement" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. meshcomod repo pointers (where to implement)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-limitations-safety" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Limitations &amp; safety
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-checklist-before-shipping-your-screen" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Checklist before shipping your screen
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#see-also" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        See also
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/meshcore-dev/meshcore/edit/main/docs/REPEATER_MESHCOMOD_CLIENT_INTEGRATION.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="meshcomod-custom-client-wifi-repeater-tcp-websocket">Meshcomod / custom client ↔ Wi‑Fi repeater (TCP &amp; WebSocket)</h1>
+<p>This document is a <strong>practical integration spec</strong> so you can add a <strong>repeater / Wi‑Fi settings screen</strong> (and optional power‑user stats) in your custom meshcomod client. It matches the <strong><code>heltec_v4_repeater_tcp</code></strong> / <strong><code>Heltec_v3_repeater_tcp</code></strong> firmware in this repo.</p>
+<p><strong>Repeater firmware version</strong> (device query / UI) uses the <strong><code>repeater-X.Y.Z</code></strong> release train, independent of companion <strong><code>v1.14.0.x</code></strong> — see <a href="../REPEATER_RELEASE_PROCEDURE/"><code>REPEATER_RELEASE_PROCEDURE.md</code></a>.</p>
+<hr />
+<h2 id="1-can-you-do-it-over-tcp-and-websocket">1. Can you do it over TCP <em>and</em> WebSocket?</h2>
+<p><strong>Yes.</strong> The repeater speaks one <strong>binary companion protocol</strong> on:</p>
+<ul>
+<li><strong>TCP</strong> port <code>5000</code> (default)</li>
+<li><strong>WebSocket</strong> port <code>8765</code> (default; plain <strong><code>ws://</code></strong> in meshcomod builds)</li>
+</ul>
+<p>Framing is identical: frame prefix <strong><code>&lt;</code></strong> (0x3C), <strong>2-byte little-endian</strong> payload length, then payload; responses use <strong><code>&gt;</code></strong> (0x3E) with the same length header. Your existing <code>NodeConnection</code> + <code>buildOutgoingFrame()</code> path works unchanged—only the transport (TCP vs WS) differs.</p>
+<p><strong>Prerequisite:</strong> The device must have <strong>Wi‑Fi associated</strong> and <strong>TCP+WS companion transport</strong> enabled on the device (default on; see limitations below).</p>
+<hr />
+<h2 id="2-how-to-know-the-connected-device-is-this-repeater">2. How to know the connected device is this repeater</h2>
+<p>Use <strong><code>CMD_DEVICE_QUERY</code> (22)</strong> or <strong><code>CMD_APP_START</code> (1)</strong> after connect:</p>
+<ul>
+<li><strong>Device query</strong> response (<strong><code>RESP_DEVICE_INFO</code> = 13</strong>): repeater reports <strong>0 contacts</strong>, <strong>0 channels</strong>, no BLE features—use as a heuristic together with <strong>SelfInfo</strong>.</li>
+<li><strong>App start</strong> response (<strong><code>RESP_SELF_INFO</code> = 5</strong>): advert / node type should indicate <strong>repeater</strong> (meshcomod already parses SelfInfo for name, radio, etc.).</li>
+</ul>
+<p>If you only want to show the <strong>Wi‑Fi repeater</strong> screen when appropriate, gate on <strong>SelfInfo repeater type</strong> + <strong>zero channels</strong> (or a explicit firmware version string from device info when you add one).</p>
+<p>Constants and command list: <a href="../examples/repeater_tcp/repeater_companion_proto.h"><code>examples/repeater_tcp/repeater_companion_proto.h</code></a>.</p>
+<hr />
+<h2 id="3-two-channels-of-control-binary-commands-vs-mesh-text">3. Two channels of control: binary commands vs “mesh text”</h2>
+<table>
+<thead>
+<tr>
+<th>Mechanism</th>
+<th>Use for</th>
+<th>Works on repeater?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Binary frames</strong> (<code>nodeConnection.send(buildOutgoingFrame(payload))</code>)</td>
+<td>Radio, name, time, battery, stats, reboot, etc.</td>
+<td><strong>Yes</strong> for the <a href="#5-supported-binary-commands-subset">supported subset</a></td>
+</tr>
+<tr>
+<td><strong><code>CMD_SEND_TXT_MSG</code> (2)</strong> + <strong><code>TXT_TYPE_PLAIN</code> (0)</strong> + <strong>MESHCM</strong></td>
+<td><strong>Wi‑Fi helper</strong> chat (<code>wifi status</code>, <code>wifi on</code>, …)</td>
+<td><strong>Yes</strong> — <code>RESP_SENT</code> + <code>PUSH_SEND_CONFIRMED</code> + <strong>code 16</strong> text chunks</td>
+</tr>
+<tr>
+<td><strong><code>CMD_SEND_TXT_MSG</code> (2)</strong> + <strong><code>TXT_TYPE_CLI_DATA</code> (1)</strong> + <strong>MESHCM</strong></td>
+<td><strong>Full MeshCore CLI</strong> (same as USB serial), incl. <strong><code>get</code> / <code>set advert.interval</code></strong>, <strong><code>get</code> / <code>set flood.advert.interval</code></strong></td>
+<td><strong>Yes</strong> — response in <strong><code>PUSH_BINARY_RESPONSE</code> (0x8C)</strong> only (see <a href="#33-cli_data-meshcm--binary-response-0x8c">§3.3</a>)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="31-meshcm-destination-sendtxtmsg">3.1 MESHCM destination (SendTxtMsg)</h3>
+<p>Repeater only accepts <strong>SendTxtMsg</strong> when the <strong>6-byte pubkey prefix</strong> is <strong>ASCII <code>MESHCM</code></strong>:</p>
+<p><code>0x4D, 0x45, 0x53, 0x48, 0x43, 0x4D</code></p>
+<p>Use the same <strong><code>buildSendTxtMsgPayload</code></strong> (or equivalent): <strong>txtType</strong> (<code>0</code> = plain, <code>1</code> = CLI), <strong>attempt</strong>, <strong>senderTimestamp</strong>, <strong>6-byte prefix</strong>, <strong>UTF‑8 text</strong> body.</p>
+<p><strong>Plain (<code>TXT_TYPE_PLAIN</code>):</strong> device sends <strong><code>RESP_SENT</code> (6)</strong> (ack = your timestamp), <strong><code>PUSH_SEND_CONFIRMED</code> (0x82)</strong>, then <strong><code>RESP_CONTACT_MSG_RECV_V3</code> (16)</strong> multi-part text + <strong><code>PUSH_MSG_WAITING</code> (0x83)</strong> — good for human chat and <strong>wifi …</strong> lines.</p>
+<p><strong>CLI (<code>TXT_TYPE_CLI_DATA</code>):</strong> device sends <strong><code>RESP_SENT</code></strong> only (no 0x82), then <strong>one</strong> <strong><code>PUSH_CODE_BINARY_RESPONSE</code> (0x8C)</strong> + <strong><code>0x83</code></strong> tickle. <strong>Do not</strong> expect code 16 for CLI lines.</p>
+<h3 id="32-wifi-cli-commands-plain-text-only">3.2 Wi‑Fi CLI commands (plain text only)</h3>
+<p>Implemented in firmware (<code>handleRepeaterMeshcomodLine</code>) when <strong>txtType is PLAIN</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>help</code></td>
+<td>Lists commands</td>
+</tr>
+<tr>
+<td><code>status</code></td>
+<td>Short repeater / Wi‑Fi summary</td>
+</tr>
+<tr>
+<td><code>wifi status</code></td>
+<td><strong><code>radio_enabled=0|1</code></strong>, <code>ssid=…</code>, <code>connected=0|1</code>, optional <code>ip=…</code></td>
+</tr>
+<tr>
+<td><code>wifi on</code> / <code>wifi off</code></td>
+<td>NVS + immediate <strong>STA power</strong> (off drops LAN until USB or <code>wifi on</code>)</td>
+</tr>
+<tr>
+<td><code>wifi scan</code></td>
+<td>Scan results (requires radio on)</td>
+</tr>
+<tr>
+<td><code>wifi use &lt;n&gt;</code></td>
+<td>Pick SSID from last scan</td>
+</tr>
+<tr>
+<td><code>wifi set ssid "…"</code> / <code>wifi set pwd "…"</code></td>
+<td>NVS credentials</td>
+</tr>
+<tr>
+<td><code>wifi apply</code></td>
+<td>Reconnect (fails if <code>radio_enabled=0</code>)</td>
+</tr>
+<tr>
+<td><code>wifi clear</code></td>
+<td>Clear stored SSID/password</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Parsing tip:</strong> <code>wifi status</code> lines include <strong><code>radio_enabled=0</code></strong> or <strong><code>radio_enabled=1</code></strong> — regex: <code>\bradio_enabled=([01])\b</code>.</p>
+<p><strong>USB serial:</strong> Same Wi‑Fi helpers exist as <code>set wifi.*</code> / <code>get wifi.*</code> lines on the repeater’s USB CLI (see <a href="../REPEATER_TCP_COMPANION/"><code>REPEATER_TCP_COMPANION.md</code></a>).</p>
+<h3 id="33-txt_type_cli_data-meshcm-binary-response-0x8c">3.3 <code>TXT_TYPE_CLI_DATA</code> + MESHCM → binary response (0x8C)</h3>
+<p>For <strong>auto-advert settings</strong> (and any other <strong>CommonCLI</strong> command), send <strong><code>CMD_SEND_TXT_MSG</code></strong> with <strong><code>TXT_TYPE_CLI_DATA = 1</code></strong>.</p>
+<p><strong>Wire payload (after command byte 2):</strong></p>
+<p><code>[0x01][attempt][ts0][ts1][ts2][ts3]['M']['E','S','H','C','M'][UTF-8 command line…]</code></p>
+<p><strong>Device → client (order):</strong></p>
+<ol>
+<li><strong><code>RESP_SENT</code> (6):</strong> byte 0 = 6, byte 1 = 0, bytes 2–5 = <strong>ack tag</strong> (same as your <strong>senderTimestamp</strong> if non-zero, else device-generated).</li>
+<li><strong><code>PUSH_CODE_BINARY_RESPONSE</code> (0x8C):</strong> <code>[0x8C][0x00][tag 4 LE][UTF-8 body…]</code>  </li>
+<li><strong>tag</strong> matches bytes 2–5 of <strong><code>RESP_SENT</code></strong> — use this to pair request/response in the UI.  </li>
+<li><strong>body</strong> = CLI output. For <strong><code>get advert.interval</code></strong> / <strong><code>get flood.advert.interval</code></strong>, firmware normalizes a lone <strong><code>&gt; &lt;integer&gt;</code></strong> to <strong>just the integer</strong> (e.g. <code>12</code>) so parsers can use <code>parseInt</code> on the whole payload. Other replies (e.g. <code>OK</code>, errors) pass through unchanged.</li>
+<li><strong><code>PUSH_MSG_WAITING</code> (0x83)</strong> — single byte, same as companion “poll for messages” tickle.</li>
+</ol>
+<p><strong>CLI commands (persist in <code>NodePrefs</code> / flash via existing CommonCLI):</strong></p>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>get advert.interval</code></td>
+<td><strong>Local / zero-hop</strong> auto-advert period in <strong>minutes</strong> (<code>0</code> = off). Stored internally as half-minutes; device reports <strong>actual minutes</strong> (even integer).</td>
+</tr>
+<tr>
+<td><code>get flood.advert.interval</code></td>
+<td><strong>Flood</strong> auto-advert period in <strong>hours</strong> (<code>0</code> = off).</td>
+</tr>
+<tr>
+<td><code>set advert.interval &lt;minutes&gt;</code></td>
+<td>Valid when <strong>off</strong> (<code>0</code>) or <strong>60–240</strong> minutes (MeshCore <code>MIN_LOCAL_ADVERT_INTERVAL</code> = 60).</td>
+</tr>
+<tr>
+<td><code>set flood.advert.interval &lt;hours&gt;</code></td>
+<td>Valid when <strong>off</strong> (<code>0</code>) or <strong>3–168</strong> hours (non-zero).</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Ordering:</strong> Send one CLI line per request and match <strong>one</strong> 0x8C to each <strong><code>RESP_SENT</code></strong> via tag; avoid interleaving other CLI traffic on the same connection if your UI assumes strict order.</p>
+<hr />
+<h2 id="4-suggested-wifi-repeater-settings-screen-client-ux">4. Suggested “Wi‑Fi repeater settings” screen (client UX)</h2>
+<p>Split into blocks so casual vs power users stay sane:</p>
+<ol>
+<li><strong>Connection / identity</strong> — From SelfInfo + DeviceInfo: name, firmware, battery (existing <code>CMD_GET_BATT_AND_STORAGE</code> / KPI poll).</li>
+<li><strong>Wi‑Fi</strong> — Buttons: <strong>Refresh</strong> (<code>wifi status</code>), <strong>Radio on</strong>, <strong>Radio off</strong>; optional fields for SSID/password + <strong>Apply</strong> implemented as sending the right <strong>wifi set</strong> / <strong>wifi apply</strong> lines via <strong>SendTxtMsg → MESHCM</strong> (or guide user to mesh chat). Show last parsed <code>radio_enabled</code> + <code>connected</code> + <code>ip</code> from replies.</li>
+<li><strong>Companion transport</strong> — <strong>Read-only note:</strong> Turning <strong>TCP+WS</strong> off is currently <strong>OLED long‑press on Network page</strong> (<code>repeater_transport_enabled</code>). There is <strong>no</strong> binary command for this on the repeater image today; document in UI (“Use device button”) or add a firmware command later if you need remote control.</li>
+<li><strong>Radio / node</strong> — Reuse existing Settings payloads: <strong><code>CMD_SET_ADVERT_NAME</code> (8)</strong>, <strong><code>CMD_SET_RADIO_PARAMS</code> (11)</strong>, <strong><code>CMD_SET_RADIO_TX_POWER</code> (12)</strong>, <strong><code>CMD_SET_ADVERT_LATLON</code> (14)</strong>, tuning / other / path hash as needed (all supported on repeater per table below).</li>
+<li><strong>Auto adverts</strong> — Use <strong><code>SendTxtMsg</code> + <code>TXT_TYPE_CLI_DATA</code></strong> + MESHCM: <code>get advert.interval</code> / <code>get flood.advert.interval</code>; parse <strong>0x8C</strong> body as integer minutes/hours. <strong>Set</strong> with <code>set advert.interval &lt;n&gt;</code> / <code>set flood.advert.interval &lt;n&gt;</code> (same transport).</li>
+<li><strong>Power user / stats</strong> — Poll <strong><code>CMD_GET_STATS</code> (56)</strong> (see <a href="#6-cmd_get_stats-56--layouts">§6</a>) on a timer when this screen or Advanced tab is visible.</li>
+</ol>
+<hr />
+<h2 id="5-supported-binary-commands-subset">5. Supported binary commands (subset)</h2>
+<p>Full table: <a href="../REPEATER_TCP_COMPANION/"><code>REPEATER_TCP_COMPANION.md</code></a> § Supported commands.</p>
+<p>Summary for the client:</p>
+<table>
+<thead>
+<tr>
+<th>Cmd (dec)</th>
+<th>Name</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>22</td>
+<td>Device query</td>
+<td>Model, version, storage, …</td>
+</tr>
+<tr>
+<td>1</td>
+<td>App start</td>
+<td>SelfInfo</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Send text</td>
+<td><strong>MESHCM</strong> only: <strong>PLAIN</strong> → Wi‑Fi chat; <strong>CLI_DATA</strong> → full serial CLI + <strong>0x8C</strong> reply</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Get contacts</td>
+<td>Always <strong>0</strong> contacts</td>
+</tr>
+<tr>
+<td>10 / 62</td>
+<td>Sync</td>
+<td>No message history</td>
+</tr>
+<tr>
+<td>5 / 6</td>
+<td>Get / set device time</td>
+<td></td>
+</tr>
+<tr>
+<td>8</td>
+<td>Set advert name</td>
+<td></td>
+</tr>
+<tr>
+<td>14</td>
+<td>Set advert lat/lon</td>
+<td></td>
+</tr>
+<tr>
+<td>7</td>
+<td>Send self advert</td>
+<td></td>
+</tr>
+<tr>
+<td>11 / 12</td>
+<td>Set radio params / TX power</td>
+<td></td>
+</tr>
+<tr>
+<td>21 / 43</td>
+<td>Set / get tuning params</td>
+<td></td>
+</tr>
+<tr>
+<td>38</td>
+<td>Set other params</td>
+<td>Partial</td>
+</tr>
+<tr>
+<td>61</td>
+<td>Set path hash mode</td>
+<td></td>
+</tr>
+<tr>
+<td>19</td>
+<td>Reboot</td>
+<td>Payload <code>reboot</code> after cmd byte</td>
+</tr>
+<tr>
+<td>20</td>
+<td>Battery + storage</td>
+<td></td>
+</tr>
+<tr>
+<td><strong>56</strong></td>
+<td><strong>Get stats</strong></td>
+<td><strong>Subtype byte</strong> 0 / 1 / 2</td>
+</tr>
+<tr>
+<td>23 / 24</td>
+<td>Export / import private key</td>
+<td>If enabled in build</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Unsupported:</strong> <code>CMD_FACTORY_RESET</code> (51) → error.</p>
+<p>Payload layouts for most commands match <strong>meshcomod</strong> <code>companion_serial.ts</code> builders used for the full companion; if a builder is missing for the repeater-only path, copy lengths from <strong>companion_radio</strong> <code>MyMesh.cpp</code> command handlers.</p>
+<hr />
+<h2 id="6-cmd_get_stats-56-layouts">6. <code>CMD_GET_STATS</code> (56) — layouts</h2>
+<p>Request: <strong><code>[56, subtype]</code></strong> where <strong>subtype</strong> is:</p>
+<ul>
+<li><code>0</code> = <strong>STATS_TYPE_CORE</strong></li>
+<li><code>1</code> = <strong>STATS_TYPE_RADIO</strong></li>
+<li><code>2</code> = <strong>STATS_TYPE_PACKETS</strong></li>
+</ul>
+<p>Response: first byte <strong><code>RESP_CODE_STATS</code> = 24</strong>, second byte <strong>subtype</strong>, then fields (<strong>little-endian</strong>):</p>
+<h3 id="subtype-0-core-11-bytes-total-payload">Subtype 0 — Core (11 bytes total payload)</h3>
+<table>
+<thead>
+<tr>
+<th>Offset</th>
+<th>Size</th>
+<th>Field</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>1</td>
+<td><code>0x18</code> (24) = RESP_CODE_STATS</td>
+</tr>
+<tr>
+<td>1</td>
+<td>1</td>
+<td><code>0</code> = CORE</td>
+</tr>
+<tr>
+<td>2</td>
+<td>2</td>
+<td>Battery mV (<code>uint16</code>)</td>
+</tr>
+<tr>
+<td>4</td>
+<td>4</td>
+<td>Uptime seconds (<code>uint32</code>)</td>
+</tr>
+<tr>
+<td>8</td>
+<td>2</td>
+<td>Error flags (<code>uint16</code>)</td>
+</tr>
+<tr>
+<td>10</td>
+<td>1</td>
+<td>TX queue length (<code>uint8</code>)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="subtype-1-radio-14-bytes-total">Subtype 1 — Radio (14 bytes total)</h3>
+<table>
+<thead>
+<tr>
+<th>Offset</th>
+<th>Size</th>
+<th>Field</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>1</td>
+<td>24</td>
+</tr>
+<tr>
+<td>1</td>
+<td>1</td>
+<td><code>1</code> = RADIO</td>
+</tr>
+<tr>
+<td>2</td>
+<td>2</td>
+<td>Noise floor (<code>int16</code>, dBm typical)</td>
+</tr>
+<tr>
+<td>4</td>
+<td>1</td>
+<td>Last RSSI (<code>int8</code>)</td>
+</tr>
+<tr>
+<td>5</td>
+<td>1</td>
+<td>Last SNR <strong>×4</strong> (<code>int8</code>, 0.25 dB steps)</td>
+</tr>
+<tr>
+<td>6</td>
+<td>4</td>
+<td>TX airtime seconds (<code>uint32</code>)</td>
+</tr>
+<tr>
+<td>10</td>
+<td>4</td>
+<td>RX airtime seconds (<code>uint32</code>)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="subtype-2-packets-34-bytes-total">Subtype 2 — Packets (34 bytes total)</h3>
+<table>
+<thead>
+<tr>
+<th>Offset</th>
+<th>Size</th>
+<th>Field</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>1</td>
+<td>24</td>
+</tr>
+<tr>
+<td>1</td>
+<td>1</td>
+<td><code>2</code> = PACKETS</td>
+</tr>
+<tr>
+<td>2</td>
+<td>4</td>
+<td>Packets recv (total)</td>
+</tr>
+<tr>
+<td>6</td>
+<td>4</td>
+<td>Packets sent (total)</td>
+</tr>
+<tr>
+<td>10</td>
+<td>4</td>
+<td>Sent flood</td>
+</tr>
+<tr>
+<td>14</td>
+<td>4</td>
+<td>Sent direct</td>
+</tr>
+<tr>
+<td>18</td>
+<td>4</td>
+<td>Recv flood</td>
+</tr>
+<tr>
+<td>22</td>
+<td>4</td>
+<td>Recv direct</td>
+</tr>
+<tr>
+<td>26</td>
+<td>4</td>
+<td>Recv errors</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Client work:</strong> add <code>CMD_GET_STATS = 56</code>, <code>RESP_STATS = 24</code>, <code>buildGetStatsPayload(subtype)</code>, <code>parseStatsPayload(...)</code>, then call from your repeater screen or Advanced dashboard. Wire <strong><code>processOneIncomingFrame</code></strong> (or equivalent) to resolve a Promise if you use request/response pairing.</p>
+<p>Reference implementation: <a href="../examples/simple_repeater/MyMesh.cpp"><code>examples/simple_repeater/MyMesh.cpp</code></a> (<code>handleRepeaterTcpCompanionCommand</code>), mirroring <a href="../examples/companion_radio/MyMesh.cpp"><code>examples/companion_radio/MyMesh.cpp</code></a>.</p>
+<hr />
+<h2 id="7-meshcomod-repo-pointers-where-to-implement">7. meshcomod repo pointers (where to implement)</h2>
+<p>Typical files under <strong><code>Meshcomod-client/</code></strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Area</th>
+<th>File / area</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Frame builders</td>
+<td><code>src/protocol/companion_serial.ts</code> — add stats + any missing repeater payloads</td>
+</tr>
+<tr>
+<td>Web UI</td>
+<td><code>apps/web-client/src/main.ts</code> — new tab/panel, gated on “repeater” detection</td>
+</tr>
+<tr>
+<td>Transport</td>
+<td><code>src/transports/tcp_transport.ts</code>, <code>websocket_transport.ts</code> — no protocol change</td>
+</tr>
+<tr>
+<td>Session</td>
+<td><code>src/core/node_connection.ts</code> — unchanged if you use same <code>send()</code></td>
+</tr>
+</tbody>
+</table>
+<p>You can <strong>duplicate the pattern</strong> already used for:</p>
+<ul>
+<li><strong>Wi‑Fi radio</strong> buttons → <code>sendDeviceWifiMeshCommand</code> + channel/MESHCM SendTxtMsg (see existing Settings → Device section)</li>
+<li><strong>Device query / battery</strong> → existing payloads + polling</li>
+</ul>
+<hr />
+<h2 id="8-limitations-safety">8. Limitations &amp; safety</h2>
+<ul>
+<li><strong>Turning Wi‑Fi radio off</strong> over <strong>TCP/WS</strong> will <strong>drop the connection</strong> you’re using—expect disconnect; recovery via <strong>USB</strong> or physical access.</li>
+<li><strong>TCP+WS companion off</strong> (OLED) cannot be toggled from the client <strong>without new firmware</strong>.</li>
+<li><strong>No authentication</strong> on raw TCP/WS—treat as <strong>trusted LAN</strong> only.</li>
+<li><strong>Plain WS</strong> from <strong>HTTPS</strong> pages is often blocked by browsers; use <strong>HTTP</strong> to the client, <strong>WSS</strong> build, or a browser extension / native wrapper.</li>
+</ul>
+<hr />
+<h2 id="9-checklist-before-shipping-your-screen">9. Checklist before shipping your screen</h2>
+<ul>
+<li>[ ] Connect via <strong>TCP</strong> and <strong>WS</strong> with same code path (<code>buildOutgoingFrame</code>).</li>
+<li>[ ] Detect repeater (SelfInfo + Device query).</li>
+<li>[ ] <strong>Wi‑Fi:</strong> send <strong>SendTxtMsg</strong> with <strong>MESHCM</strong> prefix; parse <strong><code>radio_enabled</code></strong> from <code>wifi status</code>.</li>
+<li>[ ] <strong>Stats (optional):</strong> implement <strong>56/24</strong> request/response and poll every N seconds.</li>
+<li>[ ] Document <strong>OLED-only</strong> companion transport toggle in UI.</li>
+<li>[ ] Test <strong>wifi off</strong> recovery path (USB serial or second interface).</li>
+</ul>
+<hr />
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="../REPEATER_TCP_COMPANION/"><code>REPEATER_TCP_COMPANION.md</code></a> — OLED, ports, full command table  </li>
+<li><a href="../examples/repeater_tcp/repeater_companion_proto.h"><code>repeater_companion_proto.h</code></a> — constants  </li>
+<li><a href="../src/helpers/esp32/WifiRuntimeStore.cpp"><code>WifiRuntimeStore</code></a> — NVS keys (<code>meshcomod</code>, <code>wifi_ssid</code>, <code>wifi_pwd</code>, <code>wifi_radio_en</code>)</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["content.action.edit", "content.code.copy", "search.highlight", "search.suggest"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

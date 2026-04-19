@@ -10,11 +10,13 @@
       
       
       
-        <link rel="canonical" href="https://meshcore-dev.github.io/meshcore/terminal_chat_cli/">
+        <link rel="canonical" href="https://meshcore-dev.github.io/meshcore/RELEASE_PROCEDURE/">
       
       
-        <link rel="prev" href="../stats_binary_frames/">
+        <link rel="prev" href="../DEVICE_WEBSOCKET_WIFI/">
       
+      
+        <link rel="next" href="../REPEATER_MESHCOMOD_CLIENT_INTEGRATION/">
       
       
         
@@ -25,7 +27,7 @@
     
     
       
-        <title>Terminal Chat CLI - MeshCore Docs</title>
+        <title>Release procedure (companion firmware) - MeshCore Docs</title>
       
     
     
@@ -68,7 +70,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#terminal-chat-cli" class="md-skip">
+        <a href="#release-procedure-companion-firmware" class="md-skip">
           Skip to content
         </a>
       
@@ -103,7 +105,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Terminal Chat CLI
+              Release procedure (companion firmware)
             
           </span>
         </div>
@@ -302,10 +304,37 @@
       
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../RELEASE_PROCEDURE/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release procedure (companion firmware)
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -321,6 +350,131 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-bump-version" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Bump version
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-build-companion-targets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Build companion targets
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. Build companion targets">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#companion-only-release" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Companion-only release
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-copy-release-binaries" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Copy release binaries
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-update-docs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Update docs
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-commit-and-push" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Commit and push
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Summary
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#repeater-tcp-prebuilts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Repeater TCP prebuilts
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#optional-github-actions-other-firmware" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Optional: GitHub Actions (other firmware)
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -734,19 +888,10 @@
       
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../terminal_chat_cli/" class="md-nav__link">
         
   
   
@@ -762,7 +907,6 @@
   
 
       </a>
-      
     </li>
   
 
@@ -787,6 +931,119 @@
     
   
   
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-bump-version" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Bump version
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-build-companion-targets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Build companion targets
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. Build companion targets">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#companion-only-release" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Companion-only release
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-copy-release-binaries" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Copy release binaries
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-update-docs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Update docs
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-commit-and-push" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Commit and push
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Summary
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#repeater-tcp-prebuilts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Repeater TCP prebuilts
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#optional-github-actions-other-firmware" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Optional: GitHub Actions (other firmware)
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
 </nav>
                   </div>
                 </div>
@@ -802,7 +1059,7 @@
 
 
   
-    <a href="https://github.com/meshcore-dev/meshcore/edit/main/docs/terminal_chat_cli.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+    <a href="https://github.com/meshcore-dev/meshcore/edit/main/docs/RELEASE_PROCEDURE.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
       
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
     </a>
@@ -810,65 +1067,124 @@
   
 
 
-<h1 id="terminal-chat-cli">Terminal Chat CLI</h1>
-<p>Below are the commands you can enter into the Terminal Chat clients:</p>
-<pre><code>set freq {frequency}
+<h1 id="release-procedure-companion-firmware">Release procedure (companion firmware)</h1>
+<p>Use this for every new fix or release. <strong>Rule: every release gets a new version number; never overwrite an existing version’s binaries.</strong></p>
+<p>Current latest version in the repo: <strong>v1.14.1.1</strong> (bump to next for the following release).</p>
+<hr />
+<h2 id="1-bump-version">1. Bump version</h2>
+<ul>
+<li>Choose the next version (e.g. <code>v1.14.0.20</code>).</li>
+<li>In <strong><code>examples/companion_radio/MyMesh.h</code></strong>, update the fallback:
+  <code>c
+  #define FIRMWARE_VERSION "v1.14.0.20"</code></li>
+</ul>
+<hr />
+<h2 id="2-build-companion-targets">2. Build companion targets</h2>
+<p>From <strong><code>MeshCore/</code></strong>:</p>
+<pre><code class="language-bash">export FIRMWARE_VERSION=v1.14.0.20
+
+sh build.sh build-firmware heltec_v4_companion_radio_usb_tcp
+sh build.sh build-firmware Heltec_v3_companion_radio_usb_tcp
+sh build.sh build-firmware heltec_v4_tft_companion_radio_usb_tcp_touch
 </code></pre>
-<p>Set the LoRa frequency. Example:  set freq 915.8</p>
-<pre><code>set tx {tx-power-dbm}
+<ul>
+<li>Builds go to <code>out/</code>. For ESP32 meshcomod <strong><code>companion_radio_usb_tcp*</code></strong> envs, <strong><code>build.sh</code> also runs <code>mergebin</code></strong> and copies <strong><code>…-merged.bin</code></strong> next to the app-only bin (same flow for OLED V4, V3, and TFT+touch V4).</li>
+<li>Each <code>build-firmware</code> run adds its bins to <code>out/</code> (the script does not clear <code>out/</code> for <code>build-firmware</code>).</li>
+</ul>
+<h3 id="companion-only-release">Companion-only release</h3>
+<p>You <strong>do not</strong> have to build or copy TCP repeater firmware for every companion release.</p>
+<ul>
+<li><strong>Skip</strong> repeater <strong><code>build.sh build-repeater-firmwares</code></strong> and <strong><code>scripts/copy-repeater-release-bins.sh</code></strong>.</li>
+<li><strong><code>prebuilt/heltec_v4_repeater_tcp.bin</code></strong> (and friends) stay as they were until the next repeater promotion.</li>
+<li><strong><code>prebuilt/releases/vX.Y.Z.W/</code></strong> may contain <strong>only</strong> companion binaries until a later repeater copy adds repeater files to that folder (or you ship repeater under a <strong>different</strong> <code>v*</code> — see <a href="../REPEATER_RELEASE_PROCEDURE/"><code>REPEATER_RELEASE_PROCEDURE.md</code></a>).</li>
+</ul>
+<p>Agent-oriented checklist: <strong><a href="../AGENTS.md"><code>AGENTS.md</code></a></strong>.</p>
+<hr />
+<h2 id="3-copy-release-binaries">3. Copy release binaries</h2>
+<pre><code class="language-bash">sh scripts/copy-release-bins.sh v1.14.0.20
 </code></pre>
-<p>Sets LoRa transmit power in dBm.</p>
-<pre><code>set name {name}
+<ul>
+<li>Copies the companion binaries from <code>out/</code> into:</li>
+<li><strong><code>prebuilt/</code></strong> (latest <strong>companion</strong> stable names only)</li>
+<li><strong><code>prebuilt/releases/companion/v1.14.0.20/</code></strong> (versioned)</li>
+<li>Script expects versioned filenames in <code>out/</code> (e.g. <code>heltec_v4_companion_radio_usb_tcp-v1.14.0.20-...bin</code>).</li>
+</ul>
+<p><strong>TCP repeater</strong> (optional <strong><code>repeater/r*…/</code></strong> folder, parallel train to companion <strong><code>v*</code></strong>): see <a href="../REPEATER_RELEASE_PROCEDURE/"><code>REPEATER_RELEASE_PROCEDURE.md</code></a> — <strong><code>REPEATER_FIRMWARE_VERSION=…-repeater-tcp</code></strong>, <strong><code>copy-repeater-release-bins.sh</code></strong>. Repeater and companion <strong>latest</strong> roots under <strong><code>prebuilt/</code></strong> are updated by <strong>different</strong> scripts.</p>
+<hr />
+<h2 id="4-update-docs">4. Update docs</h2>
+<ul>
+<li>
+<p><strong><code>prebuilt/releases/companion/v1.14.0.20/notes.md</code></strong><br />
+  Add release notes (highlights, fixes, build date).</p>
+</li>
+<li>
+<p><strong><code>RELEASES.md</code></strong><br />
+  Add a new section at the <strong>top</strong> (below “Release process”):</p>
+</li>
+<li>Version and date</li>
+<li>Highlights (bullet list)</li>
+<li>Table with links to the binaries in <code>prebuilt/releases/companion/v1.14.0.20/</code> (V4 OLED, V4 TFT+touch, V3 — merged + non-merged where applicable)</li>
+</ul>
+<p>Use the existing v1.14.0.19 block in <code>RELEASES.md</code> as the template (heading, <strong>Firmware version</strong>, <strong>Highlights</strong>, <strong>Prebuilt binaries</strong> table).</p>
+<p>Optional sanity check (after <strong><code>notes.md</code></strong> mentions binaries):</p>
+<pre><code class="language-bash">sh scripts/validate-prebuilt-release-folder.sh companion v1.14.0.20
 </code></pre>
-<p>Sets your advertisement name.</p>
-<pre><code>set lat {latitude}
-</code></pre>
-<p>Sets your advertisement map latitude. (decimal degrees)</p>
-<pre><code>set lon {longitude}
-</code></pre>
-<p>Sets your advertisement map longitude. (decimal degrees)</p>
-<pre><code>set dutycycle {percent}
-</code></pre>
-<p>Sets the transmit duty cycle limit (1-100%). Example: <code>set dutycycle 10</code> for 10%.</p>
-<pre><code>set af {air-time-factor}
-</code></pre>
-<p>Sets the transmit air-time-factor. Deprecated — use <code>set dutycycle</code> instead.</p>
-<pre><code>time {epoch-secs}
-</code></pre>
-<p>Set the device clock using UNIX epoch seconds. Example:  time 1738242833</p>
-<pre><code>advert
-</code></pre>
-<p>Sends an advertisement packet</p>
-<pre><code>clock
-</code></pre>
-<p>Displays current time per device's clock.</p>
-<pre><code>ver
-</code></pre>
-<p>Shows the device version and firmware build date.</p>
-<pre><code>card
-</code></pre>
-<p>Displays <em>your</em> 'business card', for other to manually <em>import</em></p>
-<pre><code>import {card}
-</code></pre>
-<p>Imports the given card to your contacts.</p>
-<pre><code>list {n}
-</code></pre>
-<p>List all contacts by most recent. (optional {n}, is the last n by advertisement date)</p>
-<pre><code>to
-</code></pre>
-<p>Shows the name of current recipient contact. (for subsequent 'send' commands)</p>
-<pre><code>to {name-prefix}
-</code></pre>
-<p>Sets the recipient to the <em>first</em> matching contact (in 'list') by the name prefix. (ie. you don't have to type whole name)</p>
-<pre><code>send {text}
-</code></pre>
-<p>Sends the text message (as DM) to current recipient.</p>
-<pre><code>reset path
-</code></pre>
-<p>Resets the path to current recipient, for new path discovery.</p>
-<pre><code>public {text}
-</code></pre>
-<p>Sends the text message to the built-in 'public' group channel</p>
+<hr />
+<h2 id="5-commit-and-push">5. Commit and push</h2>
+<ul>
+<li>Stage: prebuilts, <code>RELEASES.md</code>, <code>notes.md</code>, and any code (e.g. <code>MyMesh.h</code>).</li>
+<li>Commit with a clear message (e.g. <code>Release v1.14.0.20 – WSS fixes</code>).</li>
+<li>Push to <strong>allfather</strong>:<br />
+<code>git push allfather main</code></li>
+</ul>
+<hr />
+<h2 id="summary">Summary</h2>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Bump version in <code>examples/companion_radio/MyMesh.h</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>export FIRMWARE_VERSION=vX.Y.Z.W</code> then build V4 and V3 with <code>build.sh</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>sh scripts/copy-release-bins.sh vX.Y.Z.W</code></td>
+</tr>
+<tr>
+<td>4</td>
+<td>Add <code>prebuilt/releases/vX.Y.Z.W/notes.md</code> and new section in <code>RELEASES.md</code></td>
+</tr>
+<tr>
+<td>5</td>
+<td>Commit and <code>git push allfather main</code></td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong><code>prebuilt/</code></strong> = rolling “latest” per <strong>product</strong> (companion copy overwrites companion stable names; repeater copy overwrites repeater stable names — independent).</li>
+<li><strong><code>prebuilt/releases/&lt;version&gt;/</code></strong> = one folder per version (bins + <code>notes.md</code>); keep all for rollback. A folder may start <strong>companion-only</strong> and gain repeater bins later, or repeater may ship under a <strong>different</strong> <code>v*</code> than the newest companion.</li>
+</ul>
+<hr />
+<h2 id="repeater-tcp-prebuilts">Repeater TCP prebuilts</h2>
+<p>Repeater TCP prebuilts ship under the <strong>same <code>v1.14.1.x</code></strong> folders as companion (see <strong><a href="../REPEATER_RELEASE_PROCEDURE/"><code>REPEATER_RELEASE_PROCEDURE.md</code></a></strong> and meshcomod-client <strong><code>firmware_catalog.ts</code></strong>).</p>
+<hr />
+<h2 id="optional-github-actions-other-firmware">Optional: GitHub Actions (other firmware)</h2>
+<p>For <strong>companion / repeater / room-server</strong> firmware built by GitHub Actions, push a tag:</p>
+<ul>
+<li><code>companion-v1.0.0</code></li>
+<li><code>repeater-v1.0.0</code></li>
+<li><code>room-server-v1.0.0</code></li>
+</ul>
+<p>A draft GitHub Release is created; update the release notes and publish it. See <strong><code>RELEASE.md</code></strong> in the repo root.</p>
 
 
 
