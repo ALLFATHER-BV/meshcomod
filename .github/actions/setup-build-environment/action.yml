@@ -21,9 +21,15 @@ runs:
       run: |
         pip install --upgrade platformio
 
-    # a git tag of "room-server-v1.2.3" should set "v1.2.3" as GIT_TAG_VERSION
+    # Tags like companion-v1.14.0.35 must yield FIRMWARE_VERSION=v1.14.0.35 (not just the last segment).
     - name: Extract Version from Git Tag
       shell: bash
       run: |
         GIT_TAG_NAME="${GITHUB_REF#refs/tags/}"
-        echo "GIT_TAG_VERSION=${GIT_TAG_NAME##*-}" >> $GITHUB_ENV
+        case "$GIT_TAG_NAME" in
+          companion-*)    GIT_TAG_VERSION="${GIT_TAG_NAME#companion-}" ;;
+          repeater-*)     GIT_TAG_VERSION="${GIT_TAG_NAME#repeater-}" ;;
+          room-server-*)  GIT_TAG_VERSION="${GIT_TAG_NAME#room-server-}" ;;
+          *)              GIT_TAG_VERSION="${GIT_TAG_NAME##*-}" ;;
+        esac
+        echo "GIT_TAG_VERSION=$GIT_TAG_VERSION" >> "$GITHUB_ENV"

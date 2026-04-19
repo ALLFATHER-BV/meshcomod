@@ -26,19 +26,9 @@ jobs:
       matrix:
         environment:
           # ESP32-S3 (most common platform)
-          - Heltec_v3_companion_radio_ble
-          - Heltec_v3_repeater
-          - Heltec_v3_room_server
-          # nRF52
-          - RAK_4631_companion_radio_ble
-          - RAK_4631_repeater
-          - RAK_4631_room_server
-          # RP2040
-          - PicoW_repeater
-          # STM32
-          - wio-e5-mini_repeater
-          # ESP32-C6
-          - LilyGo_Tlora_C6_repeater_
+          - Heltec_v3_companion_radio_usb_tcp
+          - heltec_v4_companion_radio_usb_tcp
+          - heltec_v4_tft_companion_radio_usb_tcp_touch
 
     steps:
       - name: Clone Repo

@@ -1,13 +1,16 @@
-name: Build Repeater Firmwares
+# Repeater TCP binaries are normally built locally and committed under prebuilt/
+# (see docs/REPEATER_RELEASE_PROCEDURE.md). This workflow does not run on tag push.
+# Run manually from Actions only if you need CI-built artifacts.
 
-permissions:
-  contents: write
+name: Build Repeater Firmwares
 
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - 'repeater-*'
+    inputs:
+      repeater_version:
+        description: 'Same as REPEATER_FIRMWARE_VERSION, e.g. v1.14.1.0-repeater-tcp (or legacy repeater-1.0.2)'
+        required: true
+        type: string
 
 jobs:
 
@@ -23,7 +26,8 @@ jobs:
 
       - name: Build Firmwares
         env:
-          FIRMWARE_VERSION: ${{ env.GIT_TAG_VERSION }}
+          REPEATER_FIRMWARE_VERSION: ${{ github.event.inputs.repeater_version }}
+          DISABLE_DEBUG: '1'
         run: /usr/bin/env bash build.sh build-repeater-firmwares
 
       - name: Upload Workflow Artifacts
@@ -31,12 +35,3 @@ jobs:
         with:
           name: repeater-firmwares
           path: out
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/')
-        with:
-          name: Repeater Firmware ${{ env.GIT_TAG_VERSION }}
-          body: ""
-          draft: true
-          files: out/*
