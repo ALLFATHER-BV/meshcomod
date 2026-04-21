@@ -38,7 +38,7 @@ Versioned prebuilts are listed here so you can **roll back** if a newer release 
 
 **TCP repeater (superseded for “latest” rolling `prebuilt/`):** folder **[`r1.15.0.1`](prebuilt/releases/repeater/r1.15.0.1/)** — [notes](prebuilt/releases/repeater/r1.15.0.1/notes.md). **Current repeater TCP pin:** **[`r1.15.0.2`](prebuilt/releases/repeater/r1.15.0.2/)** below.
 
-**Room multitransport (superseded for rolling `prebuilt/`):** **[`r1.15.0.1`](prebuilt/releases/rooms/r1.15.0.1/)** — [notes](prebuilt/releases/rooms/r1.15.0.1/notes.md). **Current room multitransport pin:** **[`r1.15.0.3`](prebuilt/releases/rooms/r1.15.0.3/)** below.
+**Room multitransport (superseded for rolling `prebuilt/`):** **[`r1.15.0.1`](prebuilt/releases/rooms/r1.15.0.1/)** — [notes](prebuilt/releases/rooms/r1.15.0.1/notes.md). **Current room multitransport pin:** **[`r1.15.0.4`](prebuilt/releases/rooms/r1.15.0.4/)** below.
 
 **More details:** [`prebuilt/releases/companion/v1.15.0.1/notes.md`](prebuilt/releases/companion/v1.15.0.1/notes.md).
 
@@ -62,6 +62,28 @@ Versioned prebuilts are listed here so you can **roll back** if a newer release 
 | Heltec Wireless Paper (E213) | [Heltec_Wireless_Paper_repeater_tcp-merged.bin](prebuilt/releases/repeater/r1.15.0.2/Heltec_Wireless_Paper_repeater_tcp-merged.bin) | [Heltec_Wireless_Paper_repeater_tcp.bin](prebuilt/releases/repeater/r1.15.0.2/Heltec_Wireless_Paper_repeater_tcp.bin) |
 
 **More details:** [`prebuilt/releases/repeater/r1.15.0.2/notes.md`](prebuilt/releases/repeater/r1.15.0.2/notes.md).
+
+---
+
+## Room multitransport r1.15.0.4 — 2026-04-21
+
+**Release id:** **`r1.15.0.4`** — meshcomod **chat room server** with **USB + BLE + TCP + WebSocket** (`*_room_server_multitransport`). Rolling [`prebuilt/`](prebuilt/) room stable names match this copy.
+
+**Highlights:**
+- **Xiao S3 WIO SX1262 added:** New room multitransport binaries for **`Xiao_S3_WIO_room_server_multitransport`**.
+- **Release tooling updated:** room copy/validate scripts now include Xiao room bins.
+
+**Prebuilt binaries:**
+
+| Device | Merged (recommended) | Non-merged |
+|--------|----------------------|------------|
+| Heltec V4 (OLED) | [heltec_v4_room_server_multitransport-merged.bin](prebuilt/releases/rooms/r1.15.0.4/heltec_v4_room_server_multitransport-merged.bin) | [heltec_v4_room_server_multitransport.bin](prebuilt/releases/rooms/r1.15.0.4/heltec_v4_room_server_multitransport.bin) |
+| Heltec V4 TFT | [heltec_v4_tft_room_server_multitransport-merged.bin](prebuilt/releases/rooms/r1.15.0.4/heltec_v4_tft_room_server_multitransport-merged.bin) | [heltec_v4_tft_room_server_multitransport.bin](prebuilt/releases/rooms/r1.15.0.4/heltec_v4_tft_room_server_multitransport.bin) |
+| Heltec V3 | [Heltec_v3_room_server_multitransport-merged.bin](prebuilt/releases/rooms/r1.15.0.4/Heltec_v3_room_server_multitransport-merged.bin) | [Heltec_v3_room_server_multitransport.bin](prebuilt/releases/rooms/r1.15.0.4/Heltec_v3_room_server_multitransport.bin) |
+| Heltec Wireless Paper (E213) | [Heltec_Wireless_Paper_room_server_multitransport-merged.bin](prebuilt/releases/rooms/r1.15.0.4/Heltec_Wireless_Paper_room_server_multitransport-merged.bin) | [Heltec_Wireless_Paper_room_server_multitransport.bin](prebuilt/releases/rooms/r1.15.0.4/Heltec_Wireless_Paper_room_server_multitransport.bin) |
+| Seeed Xiao S3 WIO SX1262 | [Xiao_S3_WIO_room_server_multitransport-merged.bin](prebuilt/releases/rooms/r1.15.0.4/Xiao_S3_WIO_room_server_multitransport-merged.bin) | [Xiao_S3_WIO_room_server_multitransport.bin](prebuilt/releases/rooms/r1.15.0.4/Xiao_S3_WIO_room_server_multitransport.bin) |
+
+**More details:** [`prebuilt/releases/rooms/r1.15.0.4/notes.md`](prebuilt/releases/rooms/r1.15.0.4/notes.md).
 
 ---
 

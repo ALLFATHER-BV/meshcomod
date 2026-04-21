@@ -29,3 +29,7 @@ void radio_set_params(float freq, float bw, uint8_t sf, uint8_t cr);
 void radio_set_tx_power(int8_t dbm);
 mesh::LocalIdentity radio_new_identity();
 
+#ifdef ESP32
+extern "C" void set_boot_phase(int phase);
+#endif
+

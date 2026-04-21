@@ -75,6 +75,12 @@ if [ "$KIND" = "rooms" ]; then
       exit 1
     fi
   fi
+  if grep -qiE 'Xiao_S3_WIO_room_server_multitransport|Xiao.*room.*multitransport' "$NOTES"; then
+    if [ ! -f "${REL}/Xiao_S3_WIO_room_server_multitransport.bin" ]; then
+      echo "ERROR: $NOTES mentions Xiao S3 WIO room multitransport but ${REL}/Xiao_S3_WIO_room_server_multitransport.bin is missing." >&2
+      exit 1
+    fi
+  fi
 fi
 
 echo "OK: $REL matches notes.md claims (spot checks)."
