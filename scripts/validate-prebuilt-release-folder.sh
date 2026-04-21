@@ -53,10 +53,23 @@ if [ "$KIND" = "companion" ] && grep -qiF "Heltec_Wireless_Paper_companion_radio
   fi
 fi
 
+if [ "$KIND" = "companion" ] && grep -qiE "Xiao_S3_WIO_companion_radio_usb_tcp|Xiao.*companion" "$NOTES"; then
+  if [ ! -f "${REL}/Xiao_S3_WIO_companion_radio_usb_tcp.bin" ]; then
+    echo "ERROR: $NOTES references Xiao_S3_WIO_companion_radio_usb_tcp.bin but file is missing in $REL." >&2
+    exit 1
+  fi
+fi
+
 if [ "$KIND" = "repeater" ]; then
   if grep -qiE 'Heltec_Wireless_Paper_repeater_tcp|Paper.*repeater.tcp|Wireless Paper.*repeater' "$NOTES"; then
     if [ ! -f "${REL}/Heltec_Wireless_Paper_repeater_tcp.bin" ]; then
       echo "ERROR: $NOTES mentions Wireless Paper repeater TCP but ${REL}/Heltec_Wireless_Paper_repeater_tcp.bin is missing." >&2
+      exit 1
+    fi
+  fi
+  if grep -qiE 'Xiao_S3_WIO_repeater_tcp|Xiao.*repeater.tcp|Xiao.*repeater' "$NOTES"; then
+    if [ ! -f "${REL}/Xiao_S3_WIO_repeater_tcp.bin" ]; then
+      echo "ERROR: $NOTES mentions Xiao S3 WIO repeater TCP but ${REL}/Xiao_S3_WIO_repeater_tcp.bin is missing." >&2
       exit 1
     fi
   fi

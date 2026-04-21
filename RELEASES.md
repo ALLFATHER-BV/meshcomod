@@ -18,6 +18,28 @@ Versioned prebuilts are listed here so you can **roll back** if a newer release 
 
 ---
 
+## v1.15.0.2 — 2026-04-21
+
+**Firmware version:** v1.15.0.2 (meshcomod on upstream **MeshCore 1.15.0**).
+
+**Highlights:**
+- **Xiao S3 WIO SX1262:** New meshcomod companion target **`Xiao_S3_WIO_companion_radio_usb_tcp`** (headless USB + BLE + TCP + WebSocket).
+- **Companion matrix refreshed:** V4 OLED, V4 TFT+touch, V3, Wireless Paper, and Xiao in one pinned drop.
+
+**Prebuilt binaries:**
+
+| Device | Merged (recommended) | Non-merged |
+|--------|----------------------|------------|
+| Heltec V4 (OLED) | [heltec_v4_companion_radio_usb_tcp-merged.bin](prebuilt/releases/companion/v1.15.0.2/heltec_v4_companion_radio_usb_tcp-merged.bin) | [heltec_v4_companion_radio_usb_tcp.bin](prebuilt/releases/companion/v1.15.0.2/heltec_v4_companion_radio_usb_tcp.bin) |
+| Heltec V4 TFT + touch | [heltec_v4_tft_companion_radio_usb_tcp_touch-merged.bin](prebuilt/releases/companion/v1.15.0.2/heltec_v4_tft_companion_radio_usb_tcp_touch-merged.bin) | [heltec_v4_tft_companion_radio_usb_tcp_touch.bin](prebuilt/releases/companion/v1.15.0.2/heltec_v4_tft_companion_radio_usb_tcp_touch.bin) |
+| Heltec V3 | [Heltec_v3_companion_radio_usb_tcp-merged.bin](prebuilt/releases/companion/v1.15.0.2/Heltec_v3_companion_radio_usb_tcp-merged.bin) | [Heltec_v3_companion_radio_usb_tcp.bin](prebuilt/releases/companion/v1.15.0.2/Heltec_v3_companion_radio_usb_tcp.bin) |
+| Heltec Wireless Paper (E213) | [Heltec_Wireless_Paper_companion_radio_usb_tcp-merged.bin](prebuilt/releases/companion/v1.15.0.2/Heltec_Wireless_Paper_companion_radio_usb_tcp-merged.bin) | [Heltec_Wireless_Paper_companion_radio_usb_tcp.bin](prebuilt/releases/companion/v1.15.0.2/Heltec_Wireless_Paper_companion_radio_usb_tcp.bin) |
+| Seeed Xiao S3 WIO SX1262 | [Xiao_S3_WIO_companion_radio_usb_tcp-merged.bin](prebuilt/releases/companion/v1.15.0.2/Xiao_S3_WIO_companion_radio_usb_tcp-merged.bin) | [Xiao_S3_WIO_companion_radio_usb_tcp.bin](prebuilt/releases/companion/v1.15.0.2/Xiao_S3_WIO_companion_radio_usb_tcp.bin) |
+
+**More details:** [`prebuilt/releases/companion/v1.15.0.2/notes.md`](prebuilt/releases/companion/v1.15.0.2/notes.md).
+
+---
+
 ## v1.15.0.1 — 2026-04-19
 
 **Firmware version:** v1.15.0.1 (meshcomod on upstream **MeshCore 1.15.0**).
@@ -36,11 +58,33 @@ Versioned prebuilts are listed here so you can **roll back** if a newer release 
 | Heltec V3 | [Heltec_v3_companion_radio_usb_tcp-merged.bin](prebuilt/releases/companion/v1.15.0.1/Heltec_v3_companion_radio_usb_tcp-merged.bin) | [Heltec_v3_companion_radio_usb_tcp.bin](prebuilt/releases/companion/v1.15.0.1/Heltec_v3_companion_radio_usb_tcp.bin) |
 | Heltec Wireless Paper (E213) | [Heltec_Wireless_Paper_companion_radio_usb_tcp-merged.bin](prebuilt/releases/companion/v1.15.0.1/Heltec_Wireless_Paper_companion_radio_usb_tcp-merged.bin) | [Heltec_Wireless_Paper_companion_radio_usb_tcp.bin](prebuilt/releases/companion/v1.15.0.1/Heltec_Wireless_Paper_companion_radio_usb_tcp.bin) |
 
-**TCP repeater (superseded for “latest” rolling `prebuilt/`):** folder **[`r1.15.0.1`](prebuilt/releases/repeater/r1.15.0.1/)** — [notes](prebuilt/releases/repeater/r1.15.0.1/notes.md). **Current repeater TCP pin:** **[`r1.15.0.2`](prebuilt/releases/repeater/r1.15.0.2/)** below.
+**TCP repeater (superseded for “latest” rolling `prebuilt/`):** folder **[`r1.15.0.1`](prebuilt/releases/repeater/r1.15.0.1/)** — [notes](prebuilt/releases/repeater/r1.15.0.1/notes.md). **Current repeater TCP pin:** **[`r1.15.0.3`](prebuilt/releases/repeater/r1.15.0.3/)** below.
 
 **Room multitransport (superseded for rolling `prebuilt/`):** **[`r1.15.0.1`](prebuilt/releases/rooms/r1.15.0.1/)** — [notes](prebuilt/releases/rooms/r1.15.0.1/notes.md). **Current room multitransport pin:** **[`r1.15.0.4`](prebuilt/releases/rooms/r1.15.0.4/)** below.
 
 **More details:** [`prebuilt/releases/companion/v1.15.0.1/notes.md`](prebuilt/releases/companion/v1.15.0.1/notes.md).
+
+---
+
+## Repeater TCP r1.15.0.3 — 2026-04-21
+
+**Release id:** **`r1.15.0.3`** — Heltec + Xiao **Wi‑Fi / TCP+WebSocket** repeater images (`*_repeater_tcp`) on the 1.15 line. Rolling [`prebuilt/`](prebuilt/) repeater stable names match this copy.
+
+**Highlights:**
+- **Xiao S3 WIO SX1262 added:** `Xiao_S3_WIO_repeater_tcp` merged + app-only binaries are now pinned.
+- **Repeater matrix refreshed:** V4 OLED, V4 TFT+touch, V3, Wireless Paper, and Xiao in one release set.
+
+**Prebuilt binaries:**
+
+| Device | Merged (recommended) | Non-merged |
+|--------|----------------------|------------|
+| Heltec V4 (OLED) | [heltec_v4_repeater_tcp-merged.bin](prebuilt/releases/repeater/r1.15.0.3/heltec_v4_repeater_tcp-merged.bin) | [heltec_v4_repeater_tcp.bin](prebuilt/releases/repeater/r1.15.0.3/heltec_v4_repeater_tcp.bin) |
+| Heltec V4 TFT + touch | [heltec_v4_tft_repeater_tcp-merged.bin](prebuilt/releases/repeater/r1.15.0.3/heltec_v4_tft_repeater_tcp-merged.bin) | [heltec_v4_tft_repeater_tcp.bin](prebuilt/releases/repeater/r1.15.0.3/heltec_v4_tft_repeater_tcp.bin) |
+| Heltec V3 | [Heltec_v3_repeater_tcp-merged.bin](prebuilt/releases/repeater/r1.15.0.3/Heltec_v3_repeater_tcp-merged.bin) | [Heltec_v3_repeater_tcp.bin](prebuilt/releases/repeater/r1.15.0.3/Heltec_v3_repeater_tcp.bin) |
+| Heltec Wireless Paper (E213) | [Heltec_Wireless_Paper_repeater_tcp-merged.bin](prebuilt/releases/repeater/r1.15.0.3/Heltec_Wireless_Paper_repeater_tcp-merged.bin) | [Heltec_Wireless_Paper_repeater_tcp.bin](prebuilt/releases/repeater/r1.15.0.3/Heltec_Wireless_Paper_repeater_tcp.bin) |
+| Seeed Xiao S3 WIO SX1262 | [Xiao_S3_WIO_repeater_tcp-merged.bin](prebuilt/releases/repeater/r1.15.0.3/Xiao_S3_WIO_repeater_tcp-merged.bin) | [Xiao_S3_WIO_repeater_tcp.bin](prebuilt/releases/repeater/r1.15.0.3/Xiao_S3_WIO_repeater_tcp.bin) |
+
+**More details:** [`prebuilt/releases/repeater/r1.15.0.3/notes.md`](prebuilt/releases/repeater/r1.15.0.3/notes.md).
 
 ---
 

@@ -47,6 +47,8 @@ V3_PLAIN=$(ls -t out/Heltec_v3_companion_radio_usb_tcp-${VERSION}-*.bin 2>/dev/n
 V3_MERGED=$(ls -t out/Heltec_v3_companion_radio_usb_tcp-${VERSION}-*-merged.bin 2>/dev/null | head -1)
 PAPER_PLAIN=$(ls -t out/Heltec_Wireless_Paper_companion_radio_usb_tcp-${VERSION}-*.bin 2>/dev/null | grep -v merged | head -1)
 PAPER_MERGED=$(ls -t out/Heltec_Wireless_Paper_companion_radio_usb_tcp-${VERSION}-*-merged.bin 2>/dev/null | head -1)
+XIAO_PLAIN=$(ls -t out/Xiao_S3_WIO_companion_radio_usb_tcp-${VERSION}-*.bin 2>/dev/null | grep -v merged | head -1)
+XIAO_MERGED=$(ls -t out/Xiao_S3_WIO_companion_radio_usb_tcp-${VERSION}-*-merged.bin 2>/dev/null | head -1)
 
 copy_one "$V4_PLAIN"   "heltec_v4_companion_radio_usb_tcp.bin"
 copy_one_optional "$V4_MERGED"  "heltec_v4_companion_radio_usb_tcp-merged.bin"
@@ -56,5 +58,7 @@ copy_one "$V3_PLAIN"   "Heltec_v3_companion_radio_usb_tcp.bin"
 copy_one_optional "$V3_MERGED"  "Heltec_v3_companion_radio_usb_tcp-merged.bin"
 copy_one_optional "$PAPER_PLAIN" "Heltec_Wireless_Paper_companion_radio_usb_tcp.bin"
 copy_one_optional "$PAPER_MERGED" "Heltec_Wireless_Paper_companion_radio_usb_tcp-merged.bin"
+copy_one_optional "$XIAO_PLAIN" "Xiao_S3_WIO_companion_radio_usb_tcp.bin"
+copy_one_optional "$XIAO_MERGED" "Xiao_S3_WIO_companion_radio_usb_tcp-merged.bin"
 
 echo "Done. prebuilt/ and $RELDIR updated."
