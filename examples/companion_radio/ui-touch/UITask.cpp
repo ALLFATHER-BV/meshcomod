@@ -4562,16 +4562,15 @@ static void saveBluetoothCb(lv_event_t* e) {
     g_lv.task->showAlert("Bluetooth already off", 1200);
     return;
   }
-  if (!want_ble && !wifiConfigHasRuntime()) {
-    // Refuse — would leave no companion transport.
-    g_lv.task->showAlert("Save Wi-Fi creds first", 1600);
-    lv_obj_add_state(g_set_modal.wifi_sw, LV_STATE_CHECKED);
-    return;
-  }
   s_pending_ble_enable = want_ble;
-  showConfirm(want_ble
-                ? "Enable Bluetooth and reboot? Wi-Fi will be turned off."
-                : "Switch to Wi-Fi and reboot? Bluetooth will be turned off.",
+  // Switching to Wi-Fi with no creds yet is allowed: the radio comes up
+  // scannable (wifiConfigWantsWifi via the "Wi-Fi chosen" flag set in
+  // doApplyBluetooth), so the user can pick a network on-device — no need to
+  // type an SSID first. The confirm just tells them that's what'll happen.
+  const char* to_wifi = wifiConfigHasRuntime()
+      ? "Switch to Wi-Fi and reboot? Bluetooth will be turned off."
+      : "Switch to Wi-Fi and reboot? Bluetooth turns off; you can then scan and pick a network.";
+  showConfirm(want_ble ? "Enable Bluetooth and reboot? Wi-Fi will be turned off." : to_wifi,
               "Reboot", doApplyBluetooth);
 }
 #endif
@@ -4846,12 +4845,28 @@ static void openWifiScanPopup() {
   lv_obj_set_scrollbar_mode(s_wifi_scan_list, LV_SCROLLBAR_MODE_AUTO);
 }
 
+// Switch into Wi-Fi mode (reboot) so a scan can run — WITHOUT needing creds
+// first. Used when the user taps Scan while BLE is the active transport.
+// setRadioEnabled(true) marks Wi-Fi "chosen", so wantsWifi() brings the radio
+// up STA (scannable) on the next boot even with no SSID saved.
+#if defined(MULTI_TRANSPORT_COMPANION)
+static void doSwitchToWifiForScan() {
+  wifiConfigSetRadioEnabled(true);            // marks Wi-Fi chosen -> scannable boot
+  if (g_lv.task) g_lv.task->rebootDevice();   // persists chat history first
+}
+#endif
+
 // "Scan" button -> open the popup + queue a scan on the core-0 worker.
 static void wifiScanStartCb(lv_event_t* e) {
   if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
 #if defined(MULTI_TRANSPORT_COMPANION)
-  if (!wifiConfigGetRadioEnabled()) {
-    if (g_lv.task) g_lv.task->showAlert("Turn Wi-Fi on first", 1700);
+  if (!wifiConfigWantsWifi()) {
+    // BLE is the active transport — the radio is down, so we can't scan. Offer
+    // to switch to Wi-Fi (reboots; comes up scannable even with no creds) so
+    // the user doesn't have to type an SSID blind.
+    showConfirm("Wi-Fi is off (Bluetooth is on). Switch to Wi-Fi and reboot so "
+                "you can scan and pick a network?",
+                "Switch", doSwitchToWifiForScan);
     return;
   }
   hideKb();   // unbind the keyboard mirror so it can't later revert the picked SSID
@@ -10452,10 +10467,12 @@ static void tileFetchTaskFn(void* arg) {
       s_wifiscan_request = false;
       s_wifiscan_count = 0;
       // Never bring the Wi-Fi driver up from here when BLE owns the radio (fresh
-      // device: no saved creds / radio off at boot => Bluedroid holds the
-      // internal heap). WiFi.mode(STA)/esp_wifi_init would then OOM-panic
-      // (BLE-vs-Wi-Fi mutex, see main.cpp). Report "no networks" instead.
-      if (!(wifiConfigGetRadioEnabled() && wifiConfigHasRuntime())) {
+      // device on BLE => Bluedroid holds the internal heap). WiFi.mode(STA)/
+      // esp_wifi_init would then OOM-panic (BLE-vs-Wi-Fi mutex, see main.cpp).
+      // wantsWifi() mirrors the boot transport choice: true only when Wi-Fi is
+      // the active transport (incl. touch "Wi-Fi chosen, no creds yet" scan
+      // mode, where the radio booted up STA). Report "no networks" otherwise.
+      if (!wifiConfigWantsWifi()) {
         s_wifiscan_done = true;
         continue;
       }
@@ -15835,8 +15852,10 @@ static void setupWifiScanCb(lv_event_t* e) {
   // creds + radio-on, Bluedroid grabs the internal heap), so kicking a scan
   // would call esp_wifi_init under OOM → panic. Only scan when Wi-Fi is already
   // the live transport; otherwise tell the user to type the name (it connects
-  // after the finishing reboot, and they can scan later in Settings → Network).
-  if (!(wifiConfigGetRadioEnabled() && wifiConfigHasRuntime())) {
+  // after the finishing reboot, and they can scan later in Settings → Network,
+  // which offers a one-tap switch-to-Wi-Fi). We don't reboot-to-scan mid-wizard
+  // since name/region aren't saved yet.
+  if (!wifiConfigWantsWifi()) {
     if (g_lv.task)
       g_lv.task->showAlert("Type your network name — scanning works in Settings after setup", 3000);
     return;
@@ -15927,7 +15946,7 @@ static void setupShowStep(int step) {
     // Live scanning is only possible when Wi-Fi is already the active transport.
     // On a fresh device BLE owns the radio (heap mutex), so we hide Scan and let
     // the user type the SSID — it connects after the finishing reboot.
-    const bool can_scan = wifiConfigGetRadioEnabled() && wifiConfigHasRuntime();
+    const bool can_scan = wifiConfigWantsWifi();
     const int scan_w = 76, gap = 6;
     s_setup_ssid_ta = lv_textarea_create(s_setup_root);
     lv_obj_set_size(s_setup_ssid_ta, can_scan ? (sw - 24 - scan_w - gap) : (sw - 24), 34);
@@ -17620,7 +17639,7 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
     // enabled AND creds are saved (mirrors `want_wifi` in main.cpp setup()).
     // The control center uses this to know which transport can be toggled live
     // vs. needs a reboot to switch to.
-    s_boot_wifi_transport = wifiConfigGetRadioEnabled() && wifiConfigHasRuntime();
+    s_boot_wifi_transport = wifiConfigWantsWifi();
 #endif
     const bool ui_landscape = (s_ui_rotation == LV_DISP_ROT_90 ||
                                s_ui_rotation == LV_DISP_ROT_270);

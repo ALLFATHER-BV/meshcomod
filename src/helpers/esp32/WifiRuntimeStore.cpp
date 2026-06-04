@@ -10,6 +10,7 @@ static const char *WIFI_CONFIG_NAMESPACE = "meshcomod";
 static const char *WIFI_CONFIG_SSID_KEY = "wifi_ssid";
 static const char *WIFI_CONFIG_PWD_KEY = "wifi_pwd";
 static const char *WIFI_CONFIG_RADIO_EN_KEY = "wifi_radio_en";
+static const char *WIFI_CONFIG_WIFI_CHOSEN_KEY = "wifi_chosen";
 
 static Preferences s_prefs;
 static bool s_begun = false;
@@ -102,6 +103,12 @@ void wifiConfigSetRadioEnabled(bool enabled) {
   s_prefs.end();
   if (!s_prefs.begin(WIFI_CONFIG_NAMESPACE, false)) return;
   s_prefs.putUChar(WIFI_CONFIG_RADIO_EN_KEY, enabled ? 1 : 0);
+  // Enabling the radio is an explicit "use Wi-Fi" choice — remember it (sticky)
+  // so the touch build can bring Wi-Fi up to scan/configure even before any
+  // creds exist (see wifiConfigWantsWifi). Fresh devices never call this with
+  // the default-on pref, so they stay on BLE until the user actually picks
+  // Wi-Fi. Non-touch builds ignore the flag.
+  if (enabled) s_prefs.putUChar(WIFI_CONFIG_WIFI_CHOSEN_KEY, 1);
   s_prefs.end();
   s_begun = s_prefs.begin(WIFI_CONFIG_NAMESPACE, true);
 
@@ -110,6 +117,33 @@ void wifiConfigSetRadioEnabled(bool enabled) {
    * Calling WiFi.disconnect()+begin() from the LV event ctx was racing with
    * the main wifi loop and could leave the radio in WIFI_OFF mode. */
   s_wifi_apply_requested = true;
+}
+
+bool wifiConfigGetWifiChosen() {
+  if (!s_begun) wifiConfigBegin();
+  return s_prefs.getUChar(WIFI_CONFIG_WIFI_CHOSEN_KEY, 0) != 0;
+}
+
+void wifiConfigSetWifiChosen(bool chosen) {
+  if (!s_begun) wifiConfigBegin();
+  s_prefs.end();
+  if (!s_prefs.begin(WIFI_CONFIG_NAMESPACE, false)) return;
+  s_prefs.putUChar(WIFI_CONFIG_WIFI_CHOSEN_KEY, chosen ? 1 : 0);
+  s_prefs.end();
+  s_begun = s_prefs.begin(WIFI_CONFIG_NAMESPACE, true);
+}
+
+bool wifiConfigWantsWifi() {
+  // Radio off -> BLE (or no transport). Radio on + creds -> Wi-Fi (classic).
+  if (!wifiConfigGetRadioEnabled()) return false;
+  if (wifiConfigHasRuntime()) return true;
+#ifdef HAS_TOUCH_UI
+  // Touch: the user can pick Wi-Fi with no creds yet and scan on-device, so
+  // bring the radio up (STA, scannable) in that case too.
+  return wifiConfigGetWifiChosen();
+#else
+  return false;
+#endif
 }
 
 void wifiConfigRequestApply() {

@@ -277,8 +277,10 @@ void setup() {
    * leaving WiFi.getMode() at WIFI_MODE_NULL. So we mutex them: if the user
    * has saved WiFi credentials AND the radio is enabled, skip BLE init and
    * use WiFi exclusively. Otherwise init BLE. Toggle by saving/clearing creds
-   * + reboot (saveWifiCb auto-restarts). */
-  bool want_wifi = wifiConfigGetRadioEnabled() && wifiConfigHasRuntime();
+   * + reboot (saveWifiCb auto-restarts). On the touch build the user can also
+   * pick Wi-Fi with no creds yet (to scan/configure on-device) — wantsWifi()
+   * returns true for that case so the radio comes up scannable. */
+  bool want_wifi = wifiConfigWantsWifi();
 #if defined(BLE_PIN_CODE)
   if (!want_wifi) {
     serial_interface.beginBle(BLE_NAME_PREFIX, the_mesh.getNodePrefs()->node_name, the_mesh.getBLEPin());
@@ -338,8 +340,8 @@ void loop() {
    * would fail with ESP_ERR_NO_MEM after Bluedroid grabbed the internal heap,
    * and the resulting OOM cascade freezes LVGL. Only run the WiFi state
    * machine if creds are saved AND the radio pref is on, mirroring `want_wifi`
-   * in setup(). */
-  bool wifi_radio_en = wifiConfigGetRadioEnabled() && wifiConfigHasRuntime();
+   * in setup(). (Touch may also want Wi-Fi up with no creds, to scan.) */
+  bool wifi_radio_en = wifiConfigWantsWifi();
   if (!wifi_radio_inited) {
     wifi_radio_inited = true;
     wifi_radio_prev = wifi_radio_en;
