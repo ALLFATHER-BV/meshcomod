@@ -1,5 +1,9 @@
 #include "EnvironmentSensorManager.h"
 
+#if defined(HAS_TOUCH_UI) && defined(ESP32)
+#include <helpers/esp32/TouchPrefsStore.h>   // touchPrefsGetGpsBaud — user GPS-baud override
+#endif
+
 #if ENV_PIN_SDA && ENV_PIN_SCL
 #define TELEM_WIRE &Wire1  // Use Wire1 as the I2C bus for Environment Sensors
 #else
@@ -601,9 +605,17 @@ void EnvironmentSensorManager::initBasicGPS() {
   Serial1.setPins(PIN_GPS_TX, PIN_GPS_RX);
 
   #ifdef GPS_BAUD_RATE
-  Serial1.begin(GPS_BAUD_RATE);
+  const uint32_t k_gps_baud_default = GPS_BAUD_RATE;
   #else
-  Serial1.begin(9600);
+  const uint32_t k_gps_baud_default = 9600;
+  #endif
+  // Touch builds persist a user-selectable GPS baud (T-Deck Plus = 38400,
+  // T-Deck v1.0 = 9600) in NVS so it can be matched to the hardware without a
+  // rebuild. Non-touch builds just use the compile-time default.
+  #if defined(HAS_TOUCH_UI) && defined(ESP32)
+  Serial1.begin(touchPrefsGetGpsBaud(k_gps_baud_default));
+  #else
+  Serial1.begin(k_gps_baud_default);
   #endif
 
   // Try to detect if GPS is physically connected to determine if we should expose the setting
@@ -645,9 +657,17 @@ void EnvironmentSensorManager::rakGPSInit(){
   Serial1.setPins(PIN_GPS_TX, PIN_GPS_RX);
 
   #ifdef GPS_BAUD_RATE
-  Serial1.begin(GPS_BAUD_RATE);
+  const uint32_t k_gps_baud_default = GPS_BAUD_RATE;
   #else
-  Serial1.begin(9600);
+  const uint32_t k_gps_baud_default = 9600;
+  #endif
+  // Touch builds persist a user-selectable GPS baud (T-Deck Plus = 38400,
+  // T-Deck v1.0 = 9600) in NVS so it can be matched to the hardware without a
+  // rebuild. Non-touch builds just use the compile-time default.
+  #if defined(HAS_TOUCH_UI) && defined(ESP32)
+  Serial1.begin(touchPrefsGetGpsBaud(k_gps_baud_default));
+  #else
+  Serial1.begin(k_gps_baud_default);
   #endif
 
   //search for the correct IO standby pin depending on socket used

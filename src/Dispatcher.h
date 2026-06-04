@@ -115,11 +115,16 @@ typedef uint32_t  DispatcherAction;
 */
 class Dispatcher {
   Packet* outbound;  // current outbound packet
+  uint8_t outbound_raw[MAX_TRANS_UNIT];
+  int outbound_raw_len;
   unsigned long outbound_expiry, outbound_start, total_air_time, rx_air_time;
   unsigned long next_tx_time;
   unsigned long cad_busy_start;
   unsigned long radio_nonrx_start;
   unsigned long next_floor_calib_time, next_agc_reset_time;
+  uint32_t last_txt_enqueue_hash4;
+  unsigned long last_txt_enqueue_ms;
+  bool has_last_txt_enqueue_hash4;
   bool  prev_isrecv_mode;
   uint32_t n_sent_flood, n_sent_direct;
   uint32_t n_recv_flood, n_recv_direct;
@@ -140,10 +145,14 @@ protected:
     : _radio(&radio), _ms(&ms), _mgr(&mgr)
   {
     outbound = NULL;
+    outbound_raw_len = 0;
     total_air_time = rx_air_time = 0;
     next_tx_time = ms.getMillis();
     cad_busy_start = 0;
     next_floor_calib_time = next_agc_reset_time = 0;
+    has_last_txt_enqueue_hash4 = false;
+    last_txt_enqueue_hash4 = 0;
+    last_txt_enqueue_ms = 0;
     _err_flags = 0;
     radio_nonrx_start = 0;
     prev_isrecv_mode = true;

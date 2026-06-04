@@ -82,6 +82,12 @@ public:
   static int parseTextParts(char* text, const char* parts[], int max_num, char separator=',');
 
   static bool isHexChar(char c);
+
+  /**
+   * \brief  Self-test the self-contained AES-128 against a NIST test vector.
+   * \returns true if AES output matches the FIPS-197 published expected ciphertext.
+   */
+  static bool selfTestAES();
 };
 
 }

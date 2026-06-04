@@ -49,6 +49,13 @@ struct ConnectionInfo {
   uint32_t expected_ack;
 };
 
+struct TxtTxDebugInfo {
+  uint32_t uniq_ts = 0;
+  uint8_t uniq_attempt = 0;
+  uint8_t nonce = 0;
+  uint32_t packet_hash4 = 0;
+};
+
 #include "ChannelDetails.h"
 
 /**
@@ -58,7 +65,7 @@ class BaseChatMesh : public mesh::Mesh {
 
   friend class ContactsIterator;
 
-  ContactInfo contacts[MAX_CONTACTS];
+  ContactInfo* contacts = nullptr;   // MAX_CONTACTS slots, lazily allocated in PSRAM (see allocateContactSlot)
   int num_contacts;
   int sort_array[MAX_CONTACTS];
   int matching_peer_indexes[MAX_SEARCH_RESULTS];
@@ -70,8 +77,15 @@ class BaseChatMesh : public mesh::Mesh {
   mesh::Packet* _pendingLoopback;
   uint8_t temp_buf[MAX_TRANS_UNIT];
   ConnectionInfo connections[MAX_CONNECTIONS];
+  uint32_t last_txt_tx_hash4;
+  bool has_last_txt_tx_hash4;
+  uint8_t txt_nonce_counter;
+  /** Monotonic per-device send counter folded into plain TXT payload (after C-string + nonce) for unique ciphertext. */
+  uint32_t txt_send_seq;
+  /** Last timestamp used for plain TXT `uniq_ts` (replaces function-local static for reboot/RNG seeding). */
+  uint32_t _txt_last_ts;
 
-  mesh::Packet* composeMsgPacket(const ContactInfo& recipient, uint32_t timestamp, uint8_t attempt, const char *text, uint32_t& expected_ack);
+  mesh::Packet* composeMsgPacket(const ContactInfo& recipient, uint32_t timestamp, uint8_t attempt, const char *text, uint32_t& expected_ack, uint8_t* out_nonce = nullptr);
   void sendAckTo(const ContactInfo& dest, uint32_t ack_hash);
 
 protected:
@@ -86,6 +100,11 @@ protected:
     txt_send_timeout = 0;
     _pendingLoopback = NULL;
     memset(connections, 0, sizeof(connections));
+    last_txt_tx_hash4 = 0;
+    has_last_txt_tx_hash4 = false;
+    txt_nonce_counter = 1;
+    txt_send_seq = 0;
+    _txt_last_ts = 0;
   }
 
   void bootstrapRTCfromContacts();
@@ -147,8 +166,10 @@ protected:
 public:
   mesh::Packet* createSelfAdvert(const char* name);
   mesh::Packet* createSelfAdvert(const char* name, double lat, double lon);
-  int  sendMessage(const ContactInfo& recipient, uint32_t timestamp, uint8_t attempt, const char* text, uint32_t& expected_ack, uint32_t& est_timeout);
-  int  sendCommandData(const ContactInfo& recipient, uint32_t timestamp, uint8_t attempt, const char* text, uint32_t& est_timeout);
+  /** Touch Heltec: seed TXT uniqueness from RNG after `fast_rng.begin()` (call once from main). */
+  void initTxtTxUniquenessFromRng();
+  int  sendMessage(const ContactInfo& recipient, uint32_t timestamp, uint8_t attempt, const char* text, uint32_t& expected_ack, uint32_t& est_timeout, uint32_t* out_packet_hash4 = nullptr, TxtTxDebugInfo* out_dbg = nullptr);
+  int  sendCommandData(const ContactInfo& recipient, uint32_t timestamp, uint8_t attempt, const char* text, uint32_t& est_timeout, uint32_t* out_packet_hash4 = nullptr, TxtTxDebugInfo* out_dbg = nullptr);
   bool sendGroupMessage(uint32_t timestamp, mesh::GroupChannel& channel, const char* sender_name, const char* text, int text_len);
   bool sendGroupData(mesh::GroupChannel& channel, uint8_t* path, uint8_t path_len, uint16_t data_type, const uint8_t* data, int data_len);
   int  sendLogin(const ContactInfo& recipient, const char* password, uint32_t& est_timeout);
@@ -165,6 +186,11 @@ public:
   bool  removeContact(ContactInfo& contact);
   bool  addContact(const ContactInfo& contact);
   int getNumContacts() const { return num_contacts; }
+  bool getLastTxtTxHash4(uint32_t& out_hash4) const {
+    if (!has_last_txt_tx_hash4) return false;
+    out_hash4 = last_txt_tx_hash4;
+    return true;
+  }
   bool getContactByIdx(uint32_t idx, ContactInfo& contact);
   ContactsIterator startContactsIterator();
   ChannelDetails* addChannel(const char* name, const char* psk_base64);

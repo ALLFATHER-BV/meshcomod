@@ -4,6 +4,9 @@
 #include "TxtDataHelpers.h"
 #include "AdvertDataHelpers.h"
 #include <RTClib.h>
+#if defined(HAS_TOUCH_UI) && defined(ESP32)
+#include <helpers/esp32/TouchPrefsStore.h>   // touchPrefsSetGpsBaud — `set gps.baud` CLI command
+#endif
 
 #ifndef BRIDGE_MAX_BAUD
 #define BRIDGE_MAX_BAUD 115200
@@ -514,6 +517,19 @@ void CommonCLI::handleSetCmd(uint32_t sender_timestamp, char* command, char* rep
     _prefs->allow_read_only = memcmp(&config[16], "on", 2) == 0;
     savePrefs();
     strcpy(reply, "OK");
+#if defined(HAS_TOUCH_UI) && defined(ESP32)
+  } else if (memcmp(config, "gps.baud ", 9) == 0) {
+    // GPS serial baud override (touch builds): T-Deck Plus = 38400, v1.0 = 9600.
+    // Persisted in NVS (separate from NodePrefs) and applied at GPS init, so a
+    // reboot is needed. Accept the common GPS bauds only.
+    uint32_t b = (uint32_t)strtoul(&config[9], nullptr, 10);
+    if (b == 9600 || b == 19200 || b == 38400 || b == 57600 || b == 115200) {
+      touchPrefsSetGpsBaud(b);
+      sprintf(reply, "OK - GPS baud %lu, reboot to apply", (unsigned long)b);
+    } else {
+      strcpy(reply, "Error: baud must be 9600/19200/38400/57600/115200");
+    }
+#endif
   } else if (memcmp(config, "flood.advert.interval ", 22) == 0) {
     int hours = _atoi(&config[22]);
     if ((hours > 0 && hours < 3) || (hours > 168)) {

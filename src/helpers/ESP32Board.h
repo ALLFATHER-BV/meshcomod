@@ -3,10 +3,6 @@
 #include <MeshCore.h>
 #include <Arduino.h>
 
-#ifndef USER_BTN_PRESSED
-#define USER_BTN_PRESSED LOW
-#endif
-
 #if defined(ESP_PLATFORM)
 
 #include <rom/rtc.h>
@@ -126,11 +122,11 @@ public:
   }
 
   bool startOTAUpdate(const char* id, char reply[]) override;
-  bool startHttpOtaFromUrl(const char* url, char reply[]) override;
-  void prepareHttpOtaMinimalTransport(uint8_t wifi_path) override;
-  void restoreHttpOtaMinimalTransport() override;
-  void emitHttpOtaNetDiagnosticLines() override;
-  void pollHttpOtaReboot() override;
+  bool startHttpOtaFromUrl(const char* url, char reply[]);
+  void prepareHttpOtaMinimalTransport(uint8_t wifi_path);
+  void restoreHttpOtaMinimalTransport();
+  void emitHttpOtaNetDiagnosticLines();
+  void pollHttpOtaReboot();
 
   void setInhibitSleep(bool inhibit) {
     inhibit_sleep = inhibit;

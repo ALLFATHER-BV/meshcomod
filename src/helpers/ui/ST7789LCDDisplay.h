@@ -18,15 +18,22 @@ class ST7789LCDDisplay : public DisplayDriver {
 
   bool i2c_probe(TwoWire& wire, uint8_t addr);
 public:
+#if defined(HAS_TOUCH_UI)
+  static const int LOGICAL_WIDTH = 240;
+  static const int LOGICAL_HEIGHT = 320;
+#else
+  static const int LOGICAL_WIDTH = 128;
+  static const int LOGICAL_HEIGHT = 64;
+#endif
 #ifdef USE_PIN_TFT
-  ST7789LCDDisplay(RefCountedDigitalPin* peripher_power=NULL) : DisplayDriver(128, 64), 
+  ST7789LCDDisplay(RefCountedDigitalPin* peripher_power=NULL) : DisplayDriver(LOGICAL_WIDTH, LOGICAL_HEIGHT), 
       display(PIN_TFT_CS, PIN_TFT_DC, PIN_TFT_SDA, PIN_TFT_SCL, PIN_TFT_RST),
       _peripher_power(peripher_power)
   {
     _isOn = false;
   }
 #elif defined(LILYGO_TDECK) || defined(HELTEC_LORA_V4_TFT)
-  ST7789LCDDisplay(RefCountedDigitalPin* peripher_power=NULL) : DisplayDriver(128, 64),
+  ST7789LCDDisplay(RefCountedDigitalPin* peripher_power=NULL) : DisplayDriver(LOGICAL_WIDTH, LOGICAL_HEIGHT),
       displaySPI(HSPI),
       display(&displaySPI, PIN_TFT_CS, PIN_TFT_DC, PIN_TFT_RST),
       _peripher_power(peripher_power)
@@ -34,7 +41,7 @@ public:
     _isOn = false;
   }
 #else
-  ST7789LCDDisplay(RefCountedDigitalPin* peripher_power=NULL) : DisplayDriver(128, 64), 
+  ST7789LCDDisplay(RefCountedDigitalPin* peripher_power=NULL) : DisplayDriver(LOGICAL_WIDTH, LOGICAL_HEIGHT), 
       display(&SPI, PIN_TFT_CS, PIN_TFT_DC, PIN_TFT_RST),
       _peripher_power(peripher_power)
   {
@@ -56,5 +63,12 @@ public:
   void drawRect(int x, int y, int w, int h) override;
   void drawXbm(int x, int y, const uint8_t* bits, int w, int h) override;
   uint16_t getTextWidth(const char* str) override;
+  void writePixelsRGB565(int x, int y, int w, int h, const uint16_t* pixels);
   void endFrame() override;
+
+  /** Rotate the panel in hardware (Adafruit rotation code 0..3). Used by the
+   *  LVGL touch UI to render landscape natively (no per-pixel software
+   *  rotation). setAddrWindow honours the rotation, so writePixelsRGB565
+   *  coordinates follow the rotated frame. */
+  void setDisplayRotation(uint8_t r);
 };

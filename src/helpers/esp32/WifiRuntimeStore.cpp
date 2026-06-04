@@ -13,6 +13,7 @@ static const char *WIFI_CONFIG_RADIO_EN_KEY = "wifi_radio_en";
 
 static Preferences s_prefs;
 static bool s_begun = false;
+static volatile bool s_wifi_apply_requested = false;
 
 void wifiConfigBegin() {
   if (s_begun) return;
@@ -104,21 +105,21 @@ void wifiConfigSetRadioEnabled(bool enabled) {
   s_prefs.end();
   s_begun = s_prefs.begin(WIFI_CONFIG_NAMESPACE, true);
 
-  if (!enabled) {
-    WiFi.disconnect(true);
-    delay(50);
-    WiFi.mode(WIFI_OFF);
-    return;
-  }
-  WiFi.mode(WIFI_STA);
-  if (!wifiConfigHasRuntime()) return;
-  char ssid[WIFI_CONFIG_SSID_MAX];
-  char pwd[WIFI_CONFIG_PWD_MAX];
-  wifiConfigGetSsid(ssid, sizeof(ssid));
-  wifiConfigGetPwd(pwd, sizeof(pwd));
-  WiFi.disconnect();
-  delay(100);
-  WiFi.begin(ssid, pwd[0] ? pwd : nullptr);
+  /* Defer the actual WiFi.mode / disconnect / begin to the main loop so we
+   * never touch the WiFi state machine from within an LVGL event handler.
+   * Calling WiFi.disconnect()+begin() from the LV event ctx was racing with
+   * the main wifi loop and could leave the radio in WIFI_OFF mode. */
+  s_wifi_apply_requested = true;
+}
+
+void wifiConfigRequestApply() {
+  s_wifi_apply_requested = true;
+}
+
+bool wifiConfigConsumeApplyRequest() {
+  if (!s_wifi_apply_requested) return false;
+  s_wifi_apply_requested = false;
+  return true;
 }
 
 void wifiConfigApply() {

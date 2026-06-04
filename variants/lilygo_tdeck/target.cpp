@@ -12,6 +12,14 @@ TDeckBoard board;
 
 WRAPPER_CLASS radio_driver(radio, board);
 
+SPIClass* tdeckSharedSPI() {
+#if defined(P_LORA_SCLK)
+  return &spi;     // already begun (SCLK/MISO/MOSI) by radio.std_init
+#else
+  return nullptr;
+#endif
+}
+
 ESP32RTCClock fallback_clock;
 AutoDiscoverRTCClock rtc_clock(fallback_clock);
 MicroNMEALocationProvider gps(Serial1, &rtc_clock);

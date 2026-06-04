@@ -203,6 +203,11 @@ static bool meshcoreHttpOtaUrlAllowed(const char* u) {
   if (strncmp(u, "http://flasher.meshcomod.com/firmware-download/", 47) == 0) return true;
   if (strncmp(u, "https://repeater.meshcomod.com/firmware-download/", 50) == 0) return true;
   if (strncmp(u, "http://repeater.meshcomod.com/firmware-download/", 49) == 0) return true;
+  // app.meshcomod.com serves /firmware-download/ over PLAIN HTTP without a
+  // 301→HTTPS redirect (flasher./repeater. redirect to HTTPS, which the
+  // RAM-tight touch builds can't follow). This is the touch OTA source.
+  if (strncmp(u, "http://app.meshcomod.com/firmware-download/", 43) == 0) return true;
+  if (strncmp(u, "https://app.meshcomod.com/firmware-download/", 44) == 0) return true;
   return false;
 }
 
@@ -394,7 +399,9 @@ bool ESP32Board::startHttpOtaFromUrl(const char* url, char* reply) {
       (strncmp(url_trim, "https://flasher.meshcomod.com/firmware-download/", 48) == 0) ||
       (strncmp(url_trim, "http://flasher.meshcomod.com/firmware-download/", 47) == 0) ||
       (strncmp(url_trim, "https://repeater.meshcomod.com/firmware-download/", 50) == 0) ||
-      (strncmp(url_trim, "http://repeater.meshcomod.com/firmware-download/", 49) == 0);
+      (strncmp(url_trim, "http://repeater.meshcomod.com/firmware-download/", 49) == 0) ||
+      (strncmp(url_trim, "http://app.meshcomod.com/firmware-download/", 43) == 0) ||
+      (strncmp(url_trim, "https://app.meshcomod.com/firmware-download/", 44) == 0);
 
   if (meshcoreGithubRawToRawUsercontent(url_trim, ota_url_buf, sizeof(ota_url_buf))) {
     fetch_url = ota_url_buf;
@@ -427,21 +434,36 @@ bool ESP32Board::startHttpOtaFromUrl(const char* url, char* reply) {
   std::unique_ptr<WiFiClient> p_plain;
   std::unique_ptr<HTTPClient> p_https;
 
+  /* HEAP GUARD (RAM-tight companions, esp. the LVGL touch builds): a
+   * WiFiClientSecure reserves the mbedTLS context (~30+ KB internal heap) the
+   * moment it's constructed. After Wi-Fi associates these builds have only a
+   * few KB of internal heap free, so unconditionally allocating it OOM-crashes
+   * (silent reboot) — even when the actual download is plain HTTP. So only
+   * allocate the TLS client when an https:// URL will actually be fetched.
+   * `fetch_url` is the primary target; `proxy_fls_https` is an https fallback,
+   * which we also skip when the primary is plain HTTP. */
+  const bool primary_is_https = (strncmp(fetch_url, "https://", 8) == 0);
+  const bool need_tls = primary_is_https;     // only the TLS path needs the mbedTLS context
+  if (!need_tls) proxy_fls_https = nullptr;   // don't fall back to TLS when plain HTTP works
+
+  // Null-safe stop() for p_tls (it may never be allocated on the plain-HTTP path).
+  auto tlsStop = [&]() { if (p_tls) p_tls->stop(); };
+
   auto rebuildOtaHttpSession = [&]() {
     if (p_https) {
       p_https->end();
     }
-    if (p_tls) {
-      p_tls->stop();
-    }
+    tlsStop();
     if (p_plain) {
       p_plain->stop();
     }
     delay(100);
-    p_tls.reset(new WiFiClientSecure());
-    p_tls->setInsecure();
-    p_tls->setTimeout(90000);
-    p_tls->setHandshakeTimeout(30);
+    if (need_tls) {
+      p_tls.reset(new WiFiClientSecure());
+      p_tls->setInsecure();
+      p_tls->setTimeout(90000);
+      p_tls->setHandshakeTimeout(30);
+    }
     p_plain.reset(new WiFiClient());
     p_plain->setTimeout(90000);
     p_https.reset(new HTTPClient());
@@ -455,6 +477,7 @@ bool ESP32Board::startHttpOtaFromUrl(const char* url, char* reply) {
 
   auto emitTlsClientError = [&](const char* stage, const char* target_url, int http_code) {
     if (strncmp(target_url, "https://", 8) != 0) return;
+    if (!p_tls) return;   // plain-HTTP path never allocated the TLS client
     char tls_buf[128] = {0};
     int tls_err = p_tls->lastError(tls_buf, sizeof(tls_buf));
     if (tls_err == 0) return;
@@ -491,7 +514,7 @@ bool ESP32Board::startHttpOtaFromUrl(const char* url, char* reply) {
       bool want_tls = false;
       if (!meshcoreHttpOtaParseHttpUrl(target_url, hbuf, sizeof(hbuf), &port, ubuf, sizeof(ubuf), &want_tls)) {
         meshcoreRepeaterTcpOtaEmitLine("OTA: ERR http url parse");
-        p_tls->stop();
+        tlsStop();
         p_plain->stop();
         delay(15);
         return HTTPC_ERROR_CONNECTION_REFUSED;
@@ -504,7 +527,7 @@ bool ESP32Board::startHttpOtaFromUrl(const char* url, char* reply) {
     }
     if (!ok) {
       emitTlsClientError("begin fail", target_url, HTTPC_ERROR_CONNECTION_REFUSED);
-      p_tls->stop();
+      tlsStop();
       p_plain->stop();
       delay(15);
       return HTTPC_ERROR_CONNECTION_REFUSED;
@@ -539,7 +562,7 @@ bool ESP32Board::startHttpOtaFromUrl(const char* url, char* reply) {
       meshcoreRepeaterTcpOtaEmitLine(err_line);
       emitTlsClientError("connect diag", target_url, c);
       p_https->end();
-      p_tls->stop();
+      tlsStop();
       p_plain->stop();
       delay(15);
       c = beginAndGet(target_url, 2);
@@ -549,7 +572,7 @@ bool ESP32Board::startHttpOtaFromUrl(const char* url, char* reply) {
         meshcoreRepeaterTcpOtaEmitLine(err_line);
         emitTlsClientError("connect diag", target_url, c);
         p_https->end();
-        p_tls->stop();
+        tlsStop();
         p_plain->stop();
         delay(15);
         c = beginAndGet(target_url, 3);
@@ -557,7 +580,7 @@ bool ESP32Board::startHttpOtaFromUrl(const char* url, char* reply) {
     }
     if (c < 0) {
       p_https->end();
-      p_tls->stop();
+      tlsStop();
       p_plain->stop();
     }
     return c;
@@ -609,7 +632,7 @@ bool ESP32Board::startHttpOtaFromUrl(const char* url, char* reply) {
     }
     meshcoreRepeaterTcpOtaEmitLine(reply);
     p_https->end();
-    p_tls->stop();
+    tlsStop();
     p_plain->stop();
     httpOtaDisplayReset();
     return true;
@@ -621,7 +644,7 @@ bool ESP32Board::startHttpOtaFromUrl(const char* url, char* reply) {
     strcpy(reply, "ERR: no stream");
     meshcoreRepeaterTcpOtaEmitLine(reply);
     p_https->end();
-    p_tls->stop();
+    tlsStop();
     p_plain->stop();
     httpOtaDisplayReset();
     return true;
@@ -647,7 +670,7 @@ bool ESP32Board::startHttpOtaFromUrl(const char* url, char* reply) {
   if (strstr(ct_c, "text/html") != nullptr) {
     strcpy(reply, "ERR: server sent HTML not firmware");
     p_https->end();
-    p_tls->stop();
+    tlsStop();
     p_plain->stop();
     httpOtaDisplayReset();
     meshcoreRepeaterTcpOtaEmitLine("OTA: ERR html payload");
@@ -656,7 +679,7 @@ bool ESP32Board::startHttpOtaFromUrl(const char* url, char* reply) {
   if (clen > 0 && (size_t)clen > max_sketch) {
     snprintf(reply, 128, "ERR: image %u > OTA %u", (unsigned)clen, (unsigned)max_sketch);
     p_https->end();
-    p_tls->stop();
+    tlsStop();
     p_plain->stop();
     httpOtaDisplayReset();
     meshcoreRepeaterTcpOtaEmitLine("OTA: ERR image too large");
@@ -690,7 +713,7 @@ bool ESP32Board::startHttpOtaFromUrl(const char* url, char* reply) {
   if (sig_len >= 1 && sig[0] == '<') {
     strcpy(reply, "ERR: body looks HTML not firmware");
     p_https->end();
-    p_tls->stop();
+    tlsStop();
     p_plain->stop();
     httpOtaDisplayReset();
     meshcoreRepeaterTcpOtaEmitLine("OTA: ERR html signature");
@@ -699,7 +722,7 @@ bool ESP32Board::startHttpOtaFromUrl(const char* url, char* reply) {
   if (clen > 0 && sig_len > (size_t)clen) {
     strcpy(reply, "ERR: body shorter than header");
     p_https->end();
-    p_tls->stop();
+    tlsStop();
     p_plain->stop();
     httpOtaDisplayReset();
     meshcoreRepeaterTcpOtaEmitLine("OTA: ERR clen/signature");
@@ -710,7 +733,7 @@ bool ESP32Board::startHttpOtaFromUrl(const char* url, char* reply) {
   if (!Update.begin(begin_size)) {
     snprintf(reply, 128, "ERR: %s", Update.errorString());
     p_https->end();
-    p_tls->stop();
+    tlsStop();
     p_plain->stop();
     httpOtaDisplayReset();
     return true;
@@ -726,7 +749,7 @@ bool ESP32Board::startHttpOtaFromUrl(const char* url, char* reply) {
       snprintf(reply, 128, "ERR: write %s", Update.errorString());
       Update.abort();
       p_https->end();
-      p_tls->stop();
+      tlsStop();
       p_plain->stop();
       httpOtaDisplayReset();
       meshcoreRepeaterTcpOtaEmitLine("OTA: ERR flash write");
@@ -747,7 +770,7 @@ bool ESP32Board::startHttpOtaFromUrl(const char* url, char* reply) {
     if (millis() - t0 > 180000UL) {
       Update.abort();
       p_https->end();
-      p_tls->stop();
+      tlsStop();
       p_plain->stop();
       httpOtaDisplayReset();
       strcpy(reply, "ERR: timeout");
@@ -777,7 +800,7 @@ bool ESP32Board::startHttpOtaFromUrl(const char* url, char* reply) {
       snprintf(reply, 128, "ERR: write %s", Update.errorString());
       Update.abort();
       p_https->end();
-      p_tls->stop();
+      tlsStop();
       p_plain->stop();
       httpOtaDisplayReset();
       meshcoreRepeaterTcpOtaEmitLine("OTA: ERR flash write");
@@ -795,7 +818,7 @@ bool ESP32Board::startHttpOtaFromUrl(const char* url, char* reply) {
     snprintf(reply, 128, "ERR: truncated got %u need %d", (unsigned)total_written, clen);
     Update.abort();
     p_https->end();
-    p_tls->stop();
+    tlsStop();
     p_plain->stop();
     httpOtaDisplayReset();
     meshcoreRepeaterTcpOtaEmitLine("OTA: ERR truncated body");
@@ -805,7 +828,7 @@ bool ESP32Board::startHttpOtaFromUrl(const char* url, char* reply) {
     snprintf(reply, 128, "ERR: size mismatch %u/%d", (unsigned)total_written, clen);
     Update.abort();
     p_https->end();
-    p_tls->stop();
+    tlsStop();
     p_plain->stop();
     httpOtaDisplayReset();
     meshcoreRepeaterTcpOtaEmitLine("OTA: ERR size mismatch");

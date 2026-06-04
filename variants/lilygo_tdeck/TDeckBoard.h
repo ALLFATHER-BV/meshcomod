@@ -47,16 +47,19 @@ public:
   }
 
   uint16_t getBattMilliVolts() {
-    #if defined(PIN_VBAT_READ) && defined(ADC_MULTIPLIER)
+    #if defined(PIN_VBAT_READ)
+      // Use analogReadMilliVolts (eFuse-calibrated) rather than
+      // analogRead()*Vref/4096. The ESP32-S3 ADC is markedly non-linear and
+      // under-reads near the top of its range, so the old linear formula made a
+      // full 4.2 V cell read ~3.78 V (≈53 %). The calibrated path corrects that
+      // across the whole range. PIN_VBAT_READ (GPIO4) sits behind a 2:1 divider,
+      // so the battery voltage is twice the pin voltage.
       analogReadResolution(12);
-
-      uint32_t raw = 0;
+      uint32_t sum = 0;
       for (int i = 0; i < BATTERY_SAMPLES; i++) {
-        raw += analogRead(PIN_VBAT_READ);
+        sum += analogReadMilliVolts(PIN_VBAT_READ);
       }
-
-      raw = raw / BATTERY_SAMPLES;
-      return (ADC_MULTIPLIER * raw) / 4096;
+      return (uint16_t)(2 * (sum / BATTERY_SAMPLES));
     #else
       return 0;
     #endif

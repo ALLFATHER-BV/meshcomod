@@ -3,6 +3,10 @@
 #if MESH_PACKET_LOGGING
   #include <Arduino.h>
 #endif
+#if defined(ESP32_PLATFORM) && defined(HAS_HELTEC_V4_CAP_TOUCH) && defined(UI_LVGL)
+  #include <helpers/MeshTouchTxTrace.h>
+  #define MESHCORE_DIAG_TX_TRACE 1
+#endif
 
 #include <math.h>
 
@@ -113,6 +117,7 @@ void Dispatcher::loop() {
       }
       releasePacket(outbound);  // return to pool
       outbound = NULL;
+      outbound_raw_len = 0;
     } else if (millisHasNowPassed(outbound_expiry)) {
       MESH_DEBUG_PRINTLN("%s Dispatcher::loop(): WARNING: outbound packed send timed out!", getLogDateTime());
 
@@ -121,6 +126,7 @@ void Dispatcher::loop() {
 
       releasePacket(outbound);  // return to pool
       outbound = NULL;
+      outbound_raw_len = 0;
     } else {
       return;  // can't do any more radio activity until send is complete or timed out
     }
@@ -306,26 +312,26 @@ void Dispatcher::checkSend() {
   outbound = _mgr->getNextOutbound(_ms->getMillis());
   if (outbound) {
     int len = 0;
-    uint8_t raw[MAX_TRANS_UNIT];
 
-    raw[len++] = outbound->header;
+    outbound_raw[len++] = outbound->header;
     if (outbound->hasTransportCodes()) {
-      memcpy(&raw[len], &outbound->transport_codes[0], 2); len += 2;
-      memcpy(&raw[len], &outbound->transport_codes[1], 2); len += 2;
+      memcpy(&outbound_raw[len], &outbound->transport_codes[0], 2); len += 2;
+      memcpy(&outbound_raw[len], &outbound->transport_codes[1], 2); len += 2;
     }
-    raw[len++] = outbound->path_len;
-    len += Packet::writePath(&raw[len], outbound->path, outbound->path_len);
+    outbound_raw[len++] = outbound->path_len;
+    len += Packet::writePath(&outbound_raw[len], outbound->path, outbound->path_len);
 
     if (len + outbound->payload_len > MAX_TRANS_UNIT) {
       MESH_DEBUG_PRINTLN("%s Dispatcher::checkSend(): FATAL: Invalid packet queued... too long, len=%d", getLogDateTime(), len + outbound->payload_len);
       _mgr->free(outbound);
       outbound = NULL;
     } else {
-      memcpy(&raw[len], outbound->payload, outbound->payload_len); len += outbound->payload_len;
+      memcpy(&outbound_raw[len], outbound->payload, outbound->payload_len); len += outbound->payload_len;
+      outbound_raw_len = len;
 
       uint32_t max_airtime = _radio->getEstAirtimeFor(len)*3/2;
       outbound_start = _ms->getMillis();
-      bool success = _radio->startSendRaw(raw, len);
+      bool success = _radio->startSendRaw(outbound_raw, len);
       if (!success) {
         MESH_DEBUG_PRINTLN("%s Dispatcher::loop(): ERROR: send start failed!", getLogDateTime());
 
@@ -333,6 +339,7 @@ void Dispatcher::checkSend() {
   
         releasePacket(outbound);  // return to pool
         outbound = NULL;
+        outbound_raw_len = 0;
         return;
       }
       outbound_expiry = futureMillis(max_airtime);
@@ -372,6 +379,24 @@ void Dispatcher::sendPacket(Packet* packet, uint8_t priority, uint32_t delay_mil
     MESH_DEBUG_PRINTLN("%s Dispatcher::sendPacket(): ERROR: invalid packet... path_len=%d, payload_len=%d", getLogDateTime(), (uint32_t) packet->path_len, (uint32_t) packet->payload_len);
     _mgr->free(packet);
   } else {
+    if (packet->getPayloadType() == PAYLOAD_TYPE_TXT_MSG) {
+      uint8_t hash[MAX_HASH_SIZE];
+      uint32_t hash4 = 0;
+      packet->calculatePacketHash(hash);
+      memcpy(&hash4, hash, sizeof(hash4));
+      unsigned long now = _ms->getMillis();
+      // Guard against stale replay loops re-queueing the same text packet hash repeatedly.
+      if (has_last_txt_enqueue_hash4 &&
+          hash4 == last_txt_enqueue_hash4 &&
+          (long)(now - last_txt_enqueue_ms) >= 0 &&
+          (unsigned long)(now - last_txt_enqueue_ms) < 15000UL) {
+        _mgr->free(packet);
+        return;
+      }
+      has_last_txt_enqueue_hash4 = true;
+      last_txt_enqueue_hash4 = hash4;
+      last_txt_enqueue_ms = now;
+    }
     _mgr->queueOutbound(packet, priority, futureMillis(delay_millis));
   }
 }

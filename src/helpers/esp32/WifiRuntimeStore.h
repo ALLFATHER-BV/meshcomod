@@ -20,4 +20,10 @@ void wifiConfigApply();
 bool wifiConfigGetRadioEnabled();
 void wifiConfigSetRadioEnabled(bool enabled);
 
+/* Request an immediate (re)apply of current Wi-Fi settings from the main loop.
+ * Use after changing SSID/PWD or after Set* writes from another task/context —
+ * avoids calling WiFi.disconnect/begin from an LVGL event handler. */
+void wifiConfigRequestApply();
+bool wifiConfigConsumeApplyRequest();
+
 #endif

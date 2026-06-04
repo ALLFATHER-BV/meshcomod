@@ -4,12 +4,20 @@
   #define DISPLAY_ROTATION 3
 #endif
 
-#ifndef DISPLAY_SCALE_X
-  #define DISPLAY_SCALE_X 2.5f // 320 / 128
-#endif
-
-#ifndef DISPLAY_SCALE_Y
-  #define DISPLAY_SCALE_Y 3.75f // 240 / 64
+#if defined(HAS_TOUCH_UI)
+  #ifndef DISPLAY_SCALE_X
+    #define DISPLAY_SCALE_X 1.0f
+  #endif
+  #ifndef DISPLAY_SCALE_Y
+    #define DISPLAY_SCALE_Y 1.0f
+  #endif
+#else
+  #ifndef DISPLAY_SCALE_X
+    #define DISPLAY_SCALE_X 2.5f // 320 / 128
+  #endif
+  #ifndef DISPLAY_SCALE_Y
+    #define DISPLAY_SCALE_Y 3.75f // 240 / 64
+  #endif
 #endif
 
 #define DISPLAY_WIDTH 240
@@ -41,8 +49,13 @@ bool ST7789LCDDisplay::begin() {
 
     display.init(DISPLAY_WIDTH, DISPLAY_HEIGHT);
     display.setRotation(DISPLAY_ROTATION);
+    setLogicalSize((int)(display.width() / DISPLAY_SCALE_X), (int)(display.height() / DISPLAY_SCALE_Y));
 
-    display.setSPISpeed(40e6);
+    // ST7789 datasheet allows write SPI up to 80 MHz. Adafruit_SPITFT on the
+    // ESP32-S3 hardware SPI bus runs fine at this speed on the Heltec V4 TFT
+    // layout, and halves the per-flush wire time vs the previous 40 MHz —
+    // directly reduces LVGL's blocking time per dirty region.
+    display.setSPISpeed(80e6);
 
     display.fillScreen(ST77XX_BLACK);
     display.setTextColor(ST77XX_WHITE);
@@ -81,10 +94,8 @@ void ST7789LCDDisplay::clear() {
 }
 
 void ST7789LCDDisplay::startFrame(Color bkg) {
+  (void)bkg;
   display.fillScreen(ST77XX_BLACK);
-  display.setTextColor(ST77XX_WHITE);
-  display.setTextSize(1 * DISPLAY_SCALE_X); // This one affects size of Please wait... message
-  display.cp437(true); // Use full 256 char 'Code Page 437' font
 }
 
 void ST7789LCDDisplay::setTextSize(int sz) {
@@ -146,9 +157,9 @@ void ST7789LCDDisplay::drawXbm(int x, int y, const uint8_t* bits, int w, int h) 
       bool pixelOn = byte & (0x80 >> (i & 7));
 
       if (pixelOn) {
-        for (int dy = 0; dy < DISPLAY_SCALE_X; dy++) {
+        for (int dy = 0; dy < DISPLAY_SCALE_Y; dy++) {
           for (int dx = 0; dx < DISPLAY_SCALE_X; dx++) {
-            display.drawPixel(x * DISPLAY_SCALE_X + i * DISPLAY_SCALE_X + dx, y * DISPLAY_SCALE_Y + j * DISPLAY_SCALE_X + dy, _color);
+            display.drawPixel(x * DISPLAY_SCALE_X + i * DISPLAY_SCALE_X + dx, y * DISPLAY_SCALE_Y + j * DISPLAY_SCALE_Y + dy, _color);
           }
         }
       }
@@ -164,6 +175,22 @@ uint16_t ST7789LCDDisplay::getTextWidth(const char* str) {
   return w / DISPLAY_SCALE_X;
 }
 
+void ST7789LCDDisplay::writePixelsRGB565(int x, int y, int w, int h, const uint16_t* pixels) {
+  if (!_isOn || !pixels || w <= 0 || h <= 0) return;
+  display.startWrite();
+  display.setAddrWindow(x, y, w, h);
+  display.writePixels(const_cast<uint16_t*>(pixels), (uint32_t)(w * h), true, false);
+  display.endWrite();
+}
+
 void ST7789LCDDisplay::endFrame() {
   // display.display();
+}
+
+void ST7789LCDDisplay::setDisplayRotation(uint8_t r) {
+  display.setRotation(r);
+  // Keep the logical (text-API) size in sync so drawTextCentered etc. center
+  // correctly after a rotation — mirrors what begin() does.
+  setLogicalSize((int)(display.width() / DISPLAY_SCALE_X),
+                 (int)(display.height() / DISPLAY_SCALE_Y));
 }

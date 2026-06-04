@@ -3,6 +3,11 @@
 #include <Arduino.h> // needed for PlatformIO
 #include <Mesh.h>
 #include <string.h>
+#include <time.h>     // gmtime_r for the "clock" CLI command
+#ifdef ESP32
+#include <esp_system.h>          // esp_restart for the "bootloader" CLI command
+#include <soc/rtc_cntl_reg.h>    // RTC_CNTL_OPTION1_REG / FORCE_DOWNLOAD_BOOT
+#endif
 #include <helpers/AdvertDataHelpers.h>
 #include <helpers/HttpOtaDisplayState.h>
 #include <helpers/RepeaterTcpOtaEmit.h>
@@ -68,7 +73,7 @@ static int s_companion_ota_pinned_reply_target = -1;
 #define CMD_SEND_BINARY_REQ           50
 #define CMD_FACTORY_RESET             51
 #define CMD_SEND_PATH_DISCOVERY_REQ   52
-#define CMD_SET_FLOOD_SCOPE_KEY       54   // v8+
+#define CMD_SET_FLOOD_SCOPE           54   // v8+
 #define CMD_SEND_CONTROL_DATA         55   // v8+
 #define CMD_GET_STATS                 56   // v8+, second byte is stats type
 #define CMD_SEND_ANON_REQ             57
@@ -222,6 +227,12 @@ struct MeshcomodCmdCacheEntry {
 static MeshcomodCmdCacheEntry s_meshcomod_cmd_cache[MESHCOMOD_CMD_CACHE_SIZE] = {};
 static int s_meshcomod_cmd_cache_next = 0;
 static uint32_t s_meshcomod_last_reply_ts = 0;
+static uint32_t s_last_cmd_txt_ts = 0;
+static uint8_t s_last_cmd_txt_pub6[6] = {0};
+static uint32_t s_last_cmd_txt_body_crc = 0;
+static uint32_t s_last_cmd_txt_ack = 0;
+static uint32_t s_last_cmd_txt_est_timeout = 0;
+static uint32_t s_last_cmd_txt_seen_ms = 0;
 
 enum MeshcomodPendingAction {
   MESHCOMOD_PENDING_NONE = 0,
@@ -347,8 +358,18 @@ bool MyMesh::isMeshcomodRecipient(const uint8_t* pub_key_prefix_6) const {
   return pub_key_prefix_6 && memcmp(pub_key_prefix_6, MESHCOMOD_PUB_KEY_PREFIX, 6) == 0;
 }
 
+// On-device terminal sink: when the Terminal UI is open it registers a callback
+// here so command replies (and async ones like "wifi scan") also land in the
+// terminal log, not just the companion serial frames.
+static void (*s_terminal_sink)(const char*) = nullptr;
+void MyMesh::setTerminalSink(void (*cb)(const char*)) { s_terminal_sink = cb; }
+void MyMesh::runLocalCli(const char* cmd) {
+  if (cmd && *cmd) handleMeshcomodCommand(cmd, (int)strlen(cmd));
+}
+
 void MyMesh::pushMeshcomodReply(const char* text, bool immediate_current) {
   if (!text) return;
+  if (s_terminal_sink) s_terminal_sink(text);
   int total_len = (int)strlen(text);
   if (total_len <= 0) return;
 
@@ -451,6 +472,98 @@ bool MyMesh::handleMeshcomodCommand(const char* text, int text_len) {
 
   if (strncasecmp(p, "help", 4) == 0 && (p[4] == '\0' || p[4] == ' ' || p[4] == '\t')) {
     pushMeshcomodReply(kMeshcomodHelpMsg);
+    return true;
+  }
+
+  // ---- Native MeshCore CLI commands (on-device terminal) ----
+  auto isCmd = [](const char* s, const char* name) -> bool {
+    size_t n = strlen(name);
+    return strncasecmp(s, name, n) == 0 && (s[n] == '\0' || s[n] == ' ' || s[n] == '\t');
+  };
+
+  if (isCmd(p, "ver") || isCmd(p, "version")) {
+    char r[96];
+    snprintf(r, sizeof r, "Meshcomod %s\nbuild %s  (code %d)",
+             FIRMWARE_VERSION, FIRMWARE_BUILD_DATE, FIRMWARE_VER_CODE);
+    pushMeshcomodReply(r);
+    return true;
+  }
+  if (isCmd(p, "clock") || isCmd(p, "time")) {
+    time_t tt = (time_t)getRTCClock()->getCurrentTime();
+    struct tm tmv; gmtime_r(&tt, &tmv);
+    char r[64];
+    snprintf(r, sizeof r, "clock: %04d-%02d-%02d %02d:%02d:%02d UTC",
+             tmv.tm_year + 1900, tmv.tm_mon + 1, tmv.tm_mday, tmv.tm_hour, tmv.tm_min, tmv.tm_sec);
+    pushMeshcomodReply(r);
+    return true;
+  }
+  if (isCmd(p, "advert.zerohop")) {
+    pushMeshcomodReply(sendAdvert(false) ? "advert sent (zero-hop)" : "advert failed");
+    return true;
+  }
+  if (isCmd(p, "advert")) {
+    pushMeshcomodReply(sendAdvert(true) ? "advert sent (flood)" : "advert failed");
+    return true;
+  }
+  if (isCmd(p, "reboot")) {
+    pushMeshcomodReply("rebooting...");
+    delay(150);
+    board.reboot();
+    return true;   // not reached
+  }
+  if (isCmd(p, "bootloader") || isCmd(p, "dfu")) {
+#ifdef ESP32
+    // Force the ROM into serial/USB download mode on the next reset, so the
+    // board can be flashed without the (flaky) trackball+reset combo. The
+    // FORCE_DOWNLOAD_BOOT bit lives in the RTC domain and survives the restart.
+    pushMeshcomodReply("rebooting into download mode (screen goes dark)...");
+    delay(200);
+#ifdef PIN_TFT_LEDA_CTL
+    if (PIN_TFT_LEDA_CTL >= 0) {        // blank the backlight = clear "in download mode" signal
+      pinMode(PIN_TFT_LEDA_CTL, OUTPUT);
+      digitalWrite(PIN_TFT_LEDA_CTL, LOW);
+    }
+#endif
+    // Read-modify-write ONLY the force-download bit. A full REG_WRITE zeroes the
+    // rest of RTC_CNTL_OPTION1 and wedges the RTC so esp_restart() hangs instead
+    // of resetting (that was the earlier "freeze"). board.reboot() == esp_restart,
+    // the proven reset path on this board; the RTC bit survives it.
+    uint32_t opt1 = REG_READ(RTC_CNTL_OPTION1_REG);
+    REG_WRITE(RTC_CNTL_OPTION1_REG, opt1 | RTC_CNTL_FORCE_DOWNLOAD_BOOT);
+    board.reboot();
+#else
+    pushMeshcomodReply("bootloader: ESP32-only");
+#endif
+    return true;   // not reached on ESP32
+  }
+  if (isCmd(p, "get")) {
+    NodePrefs* pr = getNodePrefs();
+    char r[256];
+    snprintf(r, sizeof r,
+             "name: %s\nfreq: %.3f MHz\nbw: %.1f kHz\nsf: %u\ncr: %u\ntx: %d dBm\nlat: %.5f\nlon: %.5f",
+             pr->node_name, pr->freq, pr->bw, (unsigned)pr->sf, (unsigned)pr->cr,
+             (int)pr->tx_power_dbm, sensors.node_lat, sensors.node_lon);
+    pushMeshcomodReply(r);
+    return true;
+  }
+  if (isCmd(p, "set")) {
+    const char* q = p + 3;
+    while (*q == ' ' || *q == '\t') q++;
+    char param[16]; int pi = 0;
+    while (*q && *q != ' ' && *q != '\t' && pi < (int)sizeof(param) - 1) param[pi++] = *q++;
+    param[pi] = '\0';
+    while (*q == ' ' || *q == '\t') q++;   // q -> value
+    NodePrefs* pr = getNodePrefs();
+    bool ok = true;
+    if      (strcasecmp(param, "name") == 0) { StrHelper::strncpy(pr->node_name, q, sizeof(pr->node_name) - 1); }
+    else if (strcasecmp(param, "freq") == 0) { pr->freq = (float)atof(q); }
+    else if (strcasecmp(param, "bw")   == 0) { pr->bw   = (float)atof(q); }
+    else if (strcasecmp(param, "sf")   == 0) { pr->sf   = (uint8_t)atoi(q); }
+    else if (strcasecmp(param, "cr")   == 0) { pr->cr   = (uint8_t)atoi(q); }
+    else if (strcasecmp(param, "tx")   == 0) { pr->tx_power_dbm = (int8_t)atoi(q); }
+    else ok = false;
+    if (ok) { savePrefs(); pushMeshcomodReply("ok (radio changes apply after reboot)"); }
+    else    { pushMeshcomodReply("set <name|freq|bw|sf|cr|tx> <value>"); }
     return true;
   }
 
@@ -888,8 +1001,7 @@ void MyMesh::updateContactFromFrame(ContactInfo &contact, uint32_t& last_mod, co
 }
 
 bool MyMesh::Frame::isChannelMsg() const {
-  return buf[0] == RESP_CODE_CHANNEL_MSG_RECV || buf[0] == RESP_CODE_CHANNEL_MSG_RECV_V3 ||
-         buf[0] == RESP_CODE_CHANNEL_DATA_RECV;
+  return buf[0] == RESP_CODE_CHANNEL_MSG_RECV || buf[0] == RESP_CODE_CHANNEL_MSG_RECV_V3;
 }
 
 void MyMesh::addToOfflineQueue(const uint8_t frame[], int len) {
@@ -1205,6 +1317,67 @@ uint8_t MyMesh::getAutoAddMaxHops() const {
 }
 
 void MyMesh::logRxRaw(float snr, float rssi, const uint8_t raw[], int len) {
+#if defined(DISPLAY_CLASS)
+  // Diagnostic: log EVERY received frame so we can prove what reaches the
+  // radio. Header byte layout is
+  //   [hasXportCodes:1][reserved:1][payload_type:4][route_type:2]
+  // so payload_type = (raw[0]>>2)&0x0F and route_type = raw[0]&0x03.
+  if (_ui && len > 0) {
+    const uint8_t ptype = (raw[0] >> 2) & 0x0F;
+    const uint8_t route = raw[0] & 0x03;
+    const char* tname = "???";
+    switch (ptype) {
+      case 0x00: tname = "REQ"; break;
+      case 0x01: tname = "RSP"; break;
+      case 0x02: tname = "TXT"; break;
+      case 0x03: tname = "ACK"; break;
+      case 0x04: tname = "ADV"; break;
+      case 0x05: tname = "GTX"; break;
+      case 0x06: tname = "GDT"; break;
+      case 0x07: tname = "ANR"; break;
+      case 0x08: tname = "PTH"; break;
+      case 0x09: tname = "TRC"; break;
+      case 0x0A: tname = "MUL"; break;
+      case 0x0B: tname = "CTL"; break;
+      case 0x0F: tname = "RAW"; break;
+    }
+    // Show dest_hash byte (first payload byte after the path) so we can
+    // see whether the packet is addressed to us. self_id.pub_key[0] is
+    // what isHashMatch compares against — if dest doesn't equal that,
+    // the dispatcher silently drops the packet at the "is this for us?"
+    // gate without ever calling onPeerDataRecv.
+    const uint8_t self_b0 = self_id.pub_key[0];
+    uint8_t dest = 0xFF;
+    // Header is byte 0; transport codes (if present) are 1-4; path_len is
+    // next; then path bytes; then payload. We just want the first byte of
+    // the payload as dest_hash for TXT/RSP/ACK style packets.
+    const bool has_xport = (raw[0] & 0x80) != 0;
+    int payload_start = 1 + (has_xport ? 4 : 0);
+    if (payload_start < len) {
+      uint8_t path_byte = raw[payload_start];
+      uint8_t path_count = path_byte & 0x3F;
+      uint8_t hash_size = ((path_byte >> 6) & 0x03) + 1;
+      int payload_off = payload_start + 1 + path_count * hash_size;
+      if (payload_off < len) dest = raw[payload_off];
+    }
+    char dbg[80];
+    // ADV/GTX/GDT/ACK don't have a dest_hash — show "--" instead so the
+    // operator isn't tricked into reading the first ack_crc byte as if
+    // it were addressing.
+    bool has_dest_hash = (ptype == 0x00 || ptype == 0x01 || ptype == 0x02 ||
+                          ptype == 0x07 || ptype == 0x08);
+    if (has_dest_hash) {
+      snprintf(dbg, sizeof(dbg), "RX %s r=%u dst=%02x me=%02x L=%d s=%d",
+               tname, (unsigned)route, (unsigned)dest, (unsigned)self_b0,
+               len, (int)rssi);
+    } else {
+      snprintf(dbg, sizeof(dbg), "RX %s r=%u me=%02x L=%d s=%d",
+               tname, (unsigned)route, (unsigned)self_b0,
+               len, (int)rssi);
+    }
+    _ui->appendDiag(dbg);
+  }
+#endif
   if (len + 3 <= MAX_FRAME_SIZE) {
     int i = 0;
     out_frame[i++] = PUSH_CODE_LOG_RX_DATA;
@@ -1226,15 +1399,20 @@ bool MyMesh::isAutoAddEnabled() const {
 }
 
 bool MyMesh::shouldAutoAddContactType(uint8_t contact_type) const {
+  // Person-to-person ("Chat") peers are always auto-added regardless of the
+  // user's manual-add preference: otherwise a stranger DM-ing the device can
+  // never get decoded (the receiver needs the sender's pub key, which only
+  // arrives via their advert) and the chat would silently never appear.
+  // Repeater / room / sensor adverts still respect the user's prefs because
+  // those clutter the contact list more aggressively.
+  if (contact_type == ADV_TYPE_CHAT) return true;
+
   if ((_prefs.manual_add_contacts & 1) == 0) {
     return true;
   }
 
   uint8_t type_bit = 0;
   switch (contact_type) {
-    case ADV_TYPE_CHAT:
-      type_bit = AUTO_ADD_CHAT;
-      break;
     case ADV_TYPE_REPEATER:
       type_bit = AUTO_ADD_REPEATER;
       break;
@@ -1285,6 +1463,13 @@ void MyMesh::onDiscoveredContact(ContactInfo &contact, bool is_new, uint8_t path
     if (_ui) _ui->notify(UIEventType::newContactMessage);
 #endif
   }
+#ifdef DISPLAY_CLASS
+  // Mirror to the touch UI's Discovered store so the user can browse pending
+  // adverts and manually add nodes to contacts[] (used when auto-add is off
+  // or contacts[] is full). `is_new=true` here means the contact is NOT yet
+  // in contacts[]; `is_new=false` means it's a refresh of an existing one.
+  if (_ui) _ui->discoveredContact(contact, is_new, path_len);
+#endif
 
   // add inbound-path to mem cache
   if (path && path_len <= sizeof(AdvertPath::path)) {  // check path is valid
@@ -1334,6 +1519,17 @@ void MyMesh::onContactPathUpdated(const ContactInfo &contact) {
 }
 
 ContactInfo*  MyMesh::processAck(const uint8_t *data) {
+#if defined(DISPLAY_CLASS)
+  // Diag: log every processAck call so we can see whether the ACK matching
+  // pipeline gets reached after the radio surface dispatches an ACK frame.
+  if (_ui) {
+    uint32_t in_ack = 0;
+    memcpy(&in_ack, data, 4);
+    char dbg[64];
+    snprintf(dbg, sizeof(dbg), "procACK %08lx", (unsigned long)in_ack);
+    _ui->appendDiag(dbg);
+  }
+#endif
   // see if matches any in a table
   for (int i = 0; i < EXPECTED_ACK_TABLE_SIZE; i++) {
     if (memcmp(data, &expected_ack_table[i].ack, 4) == 0) { // got an ACK from recipient
@@ -1342,6 +1538,15 @@ ContactInfo*  MyMesh::processAck(const uint8_t *data) {
       uint32_t trip_time = _ms->getMillis() - expected_ack_table[i].msg_sent;
       memcpy(&out_frame[5], &trip_time, 4);
       _serial->writeFrameToAll(out_frame, 9);
+
+#ifdef DISPLAY_CLASS
+      // Tell the touch UI so the outgoing bubble flips to DELIVERED.
+      if (_ui) {
+        uint32_t ack4 = 0;
+        memcpy(&ack4, data, 4);
+        _ui->onMessageAcked(ack4);
+      }
+#endif
 
       // NOTE: the same ACK can be received multiple times!
       expected_ack_table[i].ack = 0; // clear expected hash, now that we have received ACK
@@ -1390,10 +1595,28 @@ void MyMesh::queueMessage(const ContactInfo &from, uint8_t txt_type, mesh::Packe
   // we only want to show text messages on display, not cli data
   bool should_display = txt_type == TXT_TYPE_PLAIN || txt_type == TXT_TYPE_SIGNED_PLAIN;
   if (should_display && _ui) {
-    _ui->newMsg(path_len, from.name, text, history_count);
-    if (!_serial->isConnected()) {
-      _ui->notify(UIEventType::contactMessage);
-    }
+    /* notify BEFORE newMsgFromPub: UITask::newMsg keys on g_last_event to
+     * decide channel-thread vs DM-thread. Previously this fired only when
+     * serial was disconnected, which meant after a channel message arrived
+     * over TCP/BLE g_last_event stayed at `channelMessage` and the next DM
+     * was routed into the channel thread (or vice versa). */
+    _ui->notify(UIEventType::contactMessage);
+    // Pass RX metadata so the touch UI can surface it via the bubble's
+    // long-press Info sheet. SNR comes off the packet itself (most accurate
+    // per-message); RSSI is the radio's last-RSSI, which is current since
+    // the packet handler runs inline with reception.
+    const int8_t snr_q4 = (int8_t)(pkt->getSNR() * 4);
+    const int8_t rssi   = (int8_t)(_radio->getLastRSSI());
+    const bool   is_flood = pkt->isRouteFlood();
+    _ui->newMsgFromPubWithMeta(path_len, is_flood, from.id.pub_key, from.name,
+                               text, history_count, snr_q4, rssi);
+  }
+  // CLI command replies don't belong in the chat thread but the touch UI
+  // *does* want them — they're the response to whatever was typed into the
+  // admin console. Surfaces via a dedicated hook so the console can append
+  // the line without polluting the chat history.
+  if (txt_type == TXT_TYPE_CLI_DATA && _ui) {
+    _ui->onAdminCommandReply(from, text);
   }
 #endif
 }
@@ -1422,19 +1645,27 @@ void MyMesh::sendFloodScoped(const TransportKey& scope, mesh::Packet* pkt, uint3
 
 void MyMesh::sendFloodScoped(const ContactInfo& recipient, mesh::Packet* pkt, uint32_t delay_millis) {
   // TODO: dynamic send_scope, depending on recipient and current 'home' Region
-  TransportKey default_scope;
-  memcpy(&default_scope.key, _prefs.default_scope_key, sizeof(default_scope.key));
-
-  auto scope = send_scope.isNull() ? &default_scope : &send_scope;
-  sendFloodScoped(*scope, pkt, delay_millis);
+  uint8_t phs = (uint8_t)(_prefs.path_hash_mode + 1);
+  if (send_scope.isNull()) {
+    sendFlood(pkt, delay_millis, phs);
+  } else {
+    uint16_t codes[2];
+    codes[0] = send_scope.calcTransportCode(pkt);
+    codes[1] = 0;  // REVISIT: set to 'home' Region, for sender/return region?
+    sendFlood(pkt, codes, delay_millis, phs);
+  }
 }
 void MyMesh::sendFloodScoped(const mesh::GroupChannel& channel, mesh::Packet* pkt, uint32_t delay_millis) {
   // TODO: have per-channel send_scope
-  TransportKey default_scope;
-  memcpy(&default_scope.key, _prefs.default_scope_key, sizeof(default_scope.key));
-
-  auto scope = send_scope.isNull() ? &default_scope : &send_scope;
-  sendFloodScoped(*scope, pkt, delay_millis);
+  uint8_t phs = (uint8_t)(_prefs.path_hash_mode + 1);
+  if (send_scope.isNull()) {
+    sendFlood(pkt, delay_millis, phs);
+  } else {
+    uint16_t codes[2];
+    codes[0] = send_scope.calcTransportCode(pkt);
+    codes[1] = 0;  // REVISIT: set to 'home' Region, for sender/return region?
+    sendFlood(pkt, codes, delay_millis, phs);
+  }
 }
 
 void MyMesh::onMessageRecv(const ContactInfo &from, mesh::Packet *pkt, uint32_t sender_timestamp,
@@ -1492,10 +1723,6 @@ void MyMesh::onChannelMessageRecv(const mesh::GroupChannel &channel, mesh::Packe
     uint8_t frame[1];
     frame[0] = PUSH_CODE_MSG_WAITING; // send push 'tickle'
     _serial->writeFrameToAll(frame, 1);
-  } else {
-#ifdef DISPLAY_CLASS
-    if (_ui) _ui->notify(UIEventType::channelMessage);
-#endif
   }
 #ifdef DISPLAY_CLASS
   // Get the channel name from the channel index
@@ -1504,43 +1731,19 @@ void MyMesh::onChannelMessageRecv(const mesh::GroupChannel &channel, mesh::Packe
   if (getChannel(channel_idx, channel_details)) {
     channel_name = channel_details.name;
   }
-  if (_ui) _ui->newMsg(path_len, channel_name, text, history_count);
+  /* notify BEFORE newMsgFromPub: UITask::newMsg keys on the last UIEventType
+   * to decide whether the message lands in a channel thread or a DM thread.
+   * Used to only fire when the serial client was disconnected, which meant
+   * channel messages got appended as DMs whenever TCP/BLE was up. */
+  if (_ui) _ui->notify(UIEventType::channelMessage);
+  if (_ui) {
+    const int8_t snr_q4 = (int8_t)(pkt->getSNR() * 4);
+    const int8_t rssi   = (int8_t)(_radio->getLastRSSI());
+    const bool   is_flood = pkt->isRouteFlood();
+    _ui->newMsgFromPubWithMeta(path_len, is_flood, nullptr, channel_name,
+                               text, history_count, snr_q4, rssi);
+  }
 #endif
-}
-
-void MyMesh::onChannelDataRecv(const mesh::GroupChannel &channel, mesh::Packet *pkt, uint16_t data_type,
-                               const uint8_t *data, size_t data_len) {
-  if (data_len > MAX_CHANNEL_DATA_LENGTH) {
-    MESH_DEBUG_PRINTLN("onChannelDataRecv: dropping payload_len=%d exceeds frame limit=%d",
-                       (uint32_t)data_len, (uint32_t)MAX_CHANNEL_DATA_LENGTH);
-    return;
-  }
-
-  int i = 0;
-  out_frame[i++] = RESP_CODE_CHANNEL_DATA_RECV;
-  out_frame[i++] = (int8_t)(pkt->getSNR() * 4);
-  out_frame[i++] = 0; // reserved1
-  out_frame[i++] = 0; // reserved2
-
-  uint8_t channel_idx = findChannelIdx(channel);
-  out_frame[i++] = channel_idx;
-  out_frame[i++] = pkt->isRouteFlood() ? pkt->path_len : 0xFF;
-  out_frame[i++] = (uint8_t)(data_type & 0xFF);
-  out_frame[i++] = (uint8_t)(data_type >> 8);
-  out_frame[i++] = (uint8_t)data_len;
-
-  int copy_len = (int)data_len;
-  if (copy_len > 0) {
-    memcpy(&out_frame[i], data, copy_len);
-    i += copy_len;
-  }
-  addToOfflineQueue(out_frame, i);
-
-  if (_serial->isConnected()) {
-    uint8_t frame[1];
-    frame[0] = PUSH_CODE_MSG_WAITING; // send push 'tickle'
-    _serial->writeFrame(frame, 1);
-  }
 }
 
 uint8_t MyMesh::onContactRequest(const ContactInfo &contact, uint32_t sender_timestamp, const uint8_t *data,
@@ -1591,16 +1794,48 @@ void MyMesh::onContactResponse(const ContactInfo &contact, const uint8_t *data, 
   uint32_t tag;
   memcpy(&tag, data, 4);
 
+  /* Touch-UI ping match: when the touch UI fired a status request via
+   * sendStatusPingForUI, deliver the reply payload to it. Done before the
+   * companion-serial pending_status branch so a UI-only ping doesn't write
+   * a STATUS_RESPONSE frame to a serial client that didn't ask for it. */
+#ifdef DISPLAY_CLASS
+  // Match by *tag* (the 4-byte timestamp the responder echoes from our
+  // request), not just by pubkey. The chained guest-login response uses
+  // the repeater's own clock at data[0..3], so without a tag check it
+  // would race ahead of the real STATUS/TELEMETRY reply and get
+  // misrouted as if it were the answer. Tag is set when we send the REQ.
+  if (_ui && _ui_pending_status && _ui_pending_tag != 0 && len > 4 &&
+      memcmp(&_ui_pending_status, contact.id.pub_key, 4) == 0 &&
+      tag == _ui_pending_tag) {
+    UiReqKind kind = _ui_pending_kind;
+    _ui_pending_status = 0;
+    _ui_pending_kind = UiReqKind::None;
+    _ui_pending_tag = 0;
+    if (kind == UiReqKind::Telemetry) {
+      // CayenneLPP payload — let the UI decode the LPP channels.
+      _ui->onTelemetryReply(contact, &data[4], (size_t)(len - 4));
+    } else {
+      // STATUS or unknown — let the UI fall through its RepeaterStats /
+      // JSON parser path.
+      _ui->onPingReply(contact, &data[4], (size_t)(len - 4));
+    }
+    return;
+  }
+#endif
+
   if (pending_login && memcmp(&pending_login, contact.id.pub_key, 4) == 0) { // check for login response
     // yes, is response to pending sendLogin()
     pending_login = 0;
 
     int i = 0;
+    bool ok = false;
+    uint8_t perms = 0;
     if (memcmp(&data[4], "OK", 2) == 0) { // legacy Repeater login OK response
       out_frame[i++] = PUSH_CODE_LOGIN_SUCCESS;
       out_frame[i++] = 0; // legacy: is_admin = false
       memcpy(&out_frame[i], contact.id.pub_key, 6);
       i += 6;                                     // pub_key_prefix
+      ok = true;
     } else if (data[4] == RESP_SERVER_LOGIN_OK) { // new login response
       uint16_t keep_alive_secs = ((uint16_t)data[5]) * 16;
       if (keep_alive_secs > 0) {
@@ -1614,6 +1849,8 @@ void MyMesh::onContactResponse(const ContactInfo &contact, const uint8_t *data, 
       i += 4; // NEW: include server timestamp
       out_frame[i++] = data[7]; // NEW (v7): ACL permissions
       out_frame[i++] = data[12]; // FIRMWARE_VER_LEVEL
+      ok = true;
+      perms = data[6];
     } else {
       out_frame[i++] = PUSH_CODE_LOGIN_FAIL;
       out_frame[i++] = 0; // reserved
@@ -1621,6 +1858,12 @@ void MyMesh::onContactResponse(const ContactInfo &contact, const uint8_t *data, 
       i += 6; // pub_key_prefix
     }
     _serial->writeFrame(out_frame, i);
+#ifdef DISPLAY_CLASS
+    // Notify the touch UI so the admin console can flip from "logging in…"
+    // to the prompt (success) or show "wrong password" (fail). Same data
+    // the companion app sees via PUSH_CODE_LOGIN_SUCCESS/_FAIL.
+    if (_ui) _ui->onAdminLoginResult(contact, ok, perms);
+#endif
   } else if (len > 4 && // check for status response
              pending_status &&
              memcmp(&pending_status, contact.id.pub_key, 4) == 0 // legacy matching scheme
@@ -1737,6 +1980,29 @@ void MyMesh::onRawDataRecv(mesh::Packet *packet) {
 void MyMesh::onTraceRecv(mesh::Packet *packet, uint32_t tag, uint32_t auth_code, uint8_t flags,
                          const uint8_t *path_snrs, const uint8_t *path_hashes, uint8_t path_len) {
   uint8_t path_sz = flags & 0x03;  // NEW v1.11+
+#if defined(DISPLAY_CLASS)
+  // If this trace's tag matches the most recent UI-initiated ping, surface
+  // the bidirectional SNRs directly to the touch UI instead of (or in
+  // addition to) sending the companion-protocol push frame. path_len is
+  // the *byte* length of path_hashes; the number of SNR readings is
+  // (path_len >> path_sz). For a 0-hop ping the path has a single entry
+  // (the neighbor's hash) and we get a single SNR: their RX of us. Our RX
+  // of their retransmission comes from packet->getSNR().
+  if (_ui && tag != 0 && tag == _ui_trace_ping_tag) {
+    _ui_trace_ping_tag = 0;
+    const uint8_t snr_count = (path_sz >= 4) ? 0 : (uint8_t)(path_len >> path_sz);
+    int8_t their_snr = (snr_count > 0) ? (int8_t)path_snrs[0] : (int8_t)0;
+    int8_t our_snr = (int8_t)(packet->getSNR() * 4);
+    const int8_t* extra = (snr_count > 1) ? (const int8_t*)&path_snrs[1] : nullptr;
+    uint8_t extra_hops = (snr_count > 1) ? (uint8_t)(snr_count - 1) : 0;
+    _ui->onTracePingResult(tag, their_snr, our_snr, extra_hops, extra);
+    // Don't also push to companion: a UI ping shouldn't leak as if the
+    // companion app asked for it. (Companion-initiated traces use a tag
+    // that won't collide because we generate _ui_trace_ping_tag with the
+    // RNG and clear it after one match.)
+    return;
+  }
+#endif
   if (12 + path_len + (path_len >> path_sz) + 1 > sizeof(out_frame)) {
     MESH_DEBUG_PRINTLN("onTraceRecv(), path_len is too long: %d", (uint32_t)path_len);
     return;
@@ -1790,6 +2056,7 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   proto_num_clients = 0;
   app_target_ver = 0;
   clearPendingReqs();
+  _ui_pending_status = 0;
   next_ack_idx = 0;
   sign_data = NULL;
   dirty_contacts_expiry = 0;
@@ -1840,24 +2107,13 @@ void MyMesh::begin(bool has_display) {
   strcpy(_prefs.node_name, pub_key_hex);
 #endif
 
-  // if build provides default-scope, init with that
-#ifdef DEFAULT_FLOOD_SCOPE_NAME
-  strcpy(_prefs.default_scope_name, DEFAULT_FLOOD_SCOPE_NAME);
-  {
-    TransportKeyStore temp;
-    TransportKey key;
-    temp.getAutoKeyFor(0, "#" DEFAULT_FLOOD_SCOPE_NAME, key);
-    memcpy(_prefs.default_scope_key, key.key, sizeof(key.key));
-  }
-#endif
-
   // load persisted prefs
   _store->loadPrefs(_prefs, sensors.node_lat, sensors.node_lon);
 
   // sanitise bad pref values
   _prefs.rx_delay_base = constrain(_prefs.rx_delay_base, 0, 20.0f);
   _prefs.airtime_factor = constrain(_prefs.airtime_factor, 0, 9.0f);
-  _prefs.freq = constrain(_prefs.freq, 150.0f, 2500.0f);
+  _prefs.freq = constrain(_prefs.freq, 400.0f, 2500.0f);
   _prefs.bw = constrain(_prefs.bw, 7.8f, 500.0f);
   _prefs.sf = constrain(_prefs.sf, 5, 12);
   _prefs.cr = constrain(_prefs.cr, 5, 8);
@@ -1901,6 +2157,30 @@ void MyMesh::begin(bool has_display) {
   radio_driver.setRxBoostedGainMode(_prefs.rx_boosted_gain != 0);
   MESH_DEBUG_PRINTLN("RX Boosted Gain Mode: %s",
                      radio_driver.getRxBoostedGainMode() ? "Enabled" : "Disabled");
+#endif
+#if defined(DISPLAY_CLASS)
+  // Boot diag: identity prefix + radio config so we can confirm the touch
+  // firmware's pubkey is stable across flashes (replies are addressed to
+  // the first byte of our pub_key, so any drift = no inbound) and that
+  // freq/SF/BW match the stock firmware we're comparing against.
+  if (_ui) {
+    char dbg[80];
+    snprintf(dbg, sizeof(dbg),
+             "ID %02x%02x%02x%02x %.3fMHz sf%u bw%.1f",
+             (unsigned)self_id.pub_key[0], (unsigned)self_id.pub_key[1],
+             (unsigned)self_id.pub_key[2], (unsigned)self_id.pub_key[3],
+             (double)_prefs.freq, (unsigned)_prefs.sf, (double)_prefs.bw);
+    _ui->appendDiag(dbg);
+  }
+#endif
+
+#if defined(ENABLE_ADVERT_ON_BOOT) && ENABLE_ADVERT_ON_BOOT == 1
+  // Schedule a flood advert ~6s after boot so peers with auto-add ON learn
+  // our current pubkey. Critical for touch firmware where SPIFFS may have
+  // been wiped during a flash, leaving prior contacts with a stale pubkey
+  // and silently dropping our DMs.
+  _boot_advert_due_ms = _ms->getMillis() + 6000UL;
+  _boot_advert_done   = false;
 #endif
 }
 
@@ -2061,17 +2341,72 @@ void MyMesh::handleCmdFrame(size_t len) {
       text[tlen] = 0; // ensure null
       int result;
       uint32_t expected_ack;
+      bool skip_radio_send = false;
+      if (txt_type == TXT_TYPE_PLAIN) {
+        uint32_t body_crc = 0;
+        mesh::Utils::sha256((uint8_t*)&body_crc, 4, (const uint8_t*)text, tlen);
+        uint32_t now_ms = millis();
+        if (msg_timestamp != 0 &&
+            msg_timestamp == s_last_cmd_txt_ts &&
+            memcmp(pub_key_prefix, s_last_cmd_txt_pub6, sizeof(s_last_cmd_txt_pub6)) == 0 &&
+            body_crc == s_last_cmd_txt_body_crc &&
+            (uint32_t)(now_ms - s_last_cmd_txt_seen_ms) < 30000UL) {
+          // Transport/client retry of same command frame: ack locally but avoid re-transmitting stale packet.
+          skip_radio_send = true;
+          expected_ack = s_last_cmd_txt_ack;
+          est_timeout = s_last_cmd_txt_est_timeout;
+          result = MSG_SEND_SENT_FLOOD;
+        } else {
+          s_last_cmd_txt_ts = msg_timestamp;
+          memcpy(s_last_cmd_txt_pub6, pub_key_prefix, sizeof(s_last_cmd_txt_pub6));
+          s_last_cmd_txt_body_crc = body_crc;
+          s_last_cmd_txt_seen_ms = now_ms;
+        }
+      }
       if (txt_type == TXT_TYPE_CLI_DATA) {
         msg_timestamp = getRTCClock()->getCurrentTimeUnique(); // Use node's RTC instead of app timestamp to avoid tripping replay protection
-        result = sendCommandData(*recipient, msg_timestamp, attempt, text, est_timeout);
+        TxtTxDebugInfo dbg{};
+        result = sendCommandData(*recipient, msg_timestamp, attempt, text, est_timeout, nullptr, &dbg);
         expected_ack = 0; // no Ack expected
-      } else {
-        result = sendMessage(*recipient, msg_timestamp, attempt, text, expected_ack, est_timeout);
+        if (_ui) {
+          char line[160];
+          snprintf(line, sizeof(line), "TX CMD src=CMD_SEND_TXT_MSG kind=CLI ts=%lu att=%u r=%d h=%08lX core_ts=%lu core_att=%u",
+                   static_cast<unsigned long>(msg_timestamp),
+                   static_cast<unsigned>(attempt),
+                   result,
+                   static_cast<unsigned long>(dbg.packet_hash4),
+                   static_cast<unsigned long>(dbg.uniq_ts),
+                   static_cast<unsigned>(dbg.uniq_attempt));
+          _ui->appendDiag(line);
+        }
+      } else if (!skip_radio_send) {
+        // Force node-side unique timestamp for plain sends as well.
+        // Some clients may resend/reuse app timestamps, which can cause repeated packet hashes
+        // and replay-like suppression on receivers.
+        msg_timestamp = getRTCClock()->getCurrentTimeUnique();
+        uint32_t tx_hash4 = 0;
+        TxtTxDebugInfo dbg{};
+        result = sendMessage(*recipient, msg_timestamp, attempt, text, expected_ack, est_timeout, &tx_hash4, &dbg);
+        if (_ui) {
+          char line[192];
+          snprintf(line, sizeof(line), "TX CMD src=CMD_SEND_TXT_MSG kind=PLAIN ts=%lu att=%u r=%d ack=%lu h=%08lX core_ts=%lu core_att=%u n=%u",
+                   static_cast<unsigned long>(msg_timestamp), static_cast<unsigned>(attempt), result,
+                   static_cast<unsigned long>(expected_ack),
+                   static_cast<unsigned long>(tx_hash4),
+                   static_cast<unsigned long>(dbg.uniq_ts),
+                   static_cast<unsigned>(dbg.uniq_attempt),
+                   static_cast<unsigned>(dbg.nonce));
+          _ui->appendDiag(line);
+        }
       }
       // TODO: add expected ACK to table
       if (result == MSG_SEND_FAILED) {
         writeErrFrame(ERR_CODE_TABLE_FULL);
       } else {
+        if (txt_type == TXT_TYPE_PLAIN && !skip_radio_send) {
+          s_last_cmd_txt_ack = expected_ack;
+          s_last_cmd_txt_est_timeout = est_timeout;
+        }
         if (expected_ack) {
           expected_ack_table[next_ack_idx].msg_sent = _ms->getMillis(); // add to circular table
           expected_ack_table[next_ack_idx].ack = expected_ack;
@@ -2094,7 +2429,7 @@ void MyMesh::handleCmdFrame(size_t len) {
                         : ERR_CODE_UNSUPPORTED_CMD); // unknown recipient, or unsuported TXT_TYPE_*
     }
     }
-  } else if (cmd_frame[0] == CMD_SEND_CHANNEL_TXT_MSG) { // send GroupChannel text msg
+  } else if (cmd_frame[0] == CMD_SEND_CHANNEL_TXT_MSG) { // send GroupChannel msg
     int i = 1;
     uint8_t txt_type = cmd_frame[i++]; // should be TXT_TYPE_PLAIN
     uint8_t channel_idx = cmd_frame[i++];
@@ -2266,6 +2601,11 @@ void MyMesh::handleCmdFrame(size_t len) {
       contact.sync_since = 0;
       if (addContact(contact)) {
         dirty_contacts_expiry = futureMillis(LAZY_CONTACTS_WRITE_DELAY);
+#ifdef DISPLAY_CLASS
+        // Tell the touch UI to refresh its thread list immediately so the new
+        // contact's DM shows up in Chats without waiting for the periodic poll.
+        if (_ui) _ui->onThreadsChanged();
+#endif
         writeOKFrame();
       } else {
         writeErrFrame(ERR_CODE_TABLE_FULL);
@@ -2277,6 +2617,11 @@ void MyMesh::handleCmdFrame(size_t len) {
     if (recipient && removeContact(*recipient)) {
       _store->deleteBlobByKey(pub_key, PUB_KEY_SIZE);
       dirty_contacts_expiry = futureMillis(LAZY_CONTACTS_WRITE_DELAY);
+#ifdef DISPLAY_CLASS
+      // Removing a contact drops its DM thread from the Chats list — ping
+      // the UI so it picks the change up immediately.
+      if (_ui) _ui->onThreadsChanged();
+#endif
       writeOKFrame();
     } else {
       writeErrFrame(ERR_CODE_NOT_FOUND); // not found, or unable to remove
@@ -2333,6 +2678,11 @@ void MyMesh::handleCmdFrame(size_t len) {
     }
   } else if (cmd_frame[0] == CMD_IMPORT_CONTACT && len > 2 + 32 + 64) {
     if (importContact(&cmd_frame[1], len - 1)) {
+#ifdef DISPLAY_CLASS
+      // Imported contact = a new DM thread. Ping the UI so it picks it up
+      // immediately instead of after the next 4 s mesh-refresh tick.
+      if (_ui) _ui->onThreadsChanged();
+#endif
       writeOKFrame();
     } else {
       writeErrFrame(ERR_CODE_ILLEGAL_ARG);
@@ -2429,7 +2779,7 @@ void MyMesh::handleCmdFrame(size_t len) {
 
     if (repeat && !isValidClientRepeatFreq(freq)) {
       writeErrFrame(ERR_CODE_ILLEGAL_ARG);
-    } else if (freq >= 150000 && freq <= 2500000 && sf >= 5 && sf <= 12 && cr >= 5 && cr <= 8 && bw >= 7000 &&
+    } else if (freq >= 300000 && freq <= 2500000 && sf >= 5 && sf <= 12 && cr >= 5 && cr <= 8 && bw >= 7000 &&
         bw <= 500000) {
       _prefs.sf = sf;
       _prefs.cr = cr;
@@ -2785,6 +3135,11 @@ void MyMesh::handleCmdFrame(size_t len) {
     memcpy(channel.channel.secret, &cmd_frame[2 + 32], 16); // NOTE: only 128-bit supported
     if (setChannel(channel_idx, channel)) {
       saveChannels();
+#ifdef DISPLAY_CLASS
+      /* Tell the touch UI to refresh its thread list immediately so the new
+       * channel shows up without waiting for the periodic refresh. */
+      if (_ui) _ui->onThreadsChanged();
+#endif
       writeOKFrame();
     } else {
       writeErrFrame(ERR_CODE_NOT_FOUND); // bad channel_idx
@@ -2824,7 +3179,7 @@ void MyMesh::handleCmdFrame(size_t len) {
   } else if (cmd_frame[0] == CMD_SEND_TRACE_PATH && len > 10 && len - 10 < MAX_PACKET_PAYLOAD-5) {
     uint8_t path_len = len - 10;
     uint8_t flags = cmd_frame[9];
-    uint8_t path_sz = flags & 0x03;  // NEW v1.11+
+    uint8_t path_sz = flags & 0x03;  // NEW v1.11+ 
     if ((path_len >> path_sz) > MAX_PATH_SIZE || (path_len % (1 << path_sz)) != 0) { // make sure is multiple of path_sz
       writeErrFrame(ERR_CODE_ILLEGAL_ARG);
     } else {
@@ -2985,39 +3340,13 @@ void MyMesh::handleCmdFrame(size_t len) {
     } else {
       writeErrFrame(ERR_CODE_FILE_IO_ERROR);
     }
-  } else if (cmd_frame[0] == CMD_SET_FLOOD_SCOPE_KEY && len >= 2 && cmd_frame[1] == 0) {
+  } else if (cmd_frame[0] == CMD_SET_FLOOD_SCOPE && len >= 2 && cmd_frame[1] == 0) {
     if (len >= 2 + 16) {
       memcpy(send_scope.key, &cmd_frame[2], sizeof(send_scope.key));  // set curr scope TransportKey
     } else {
       memset(send_scope.key, 0, sizeof(send_scope.key));  // set scope to null
     }
     writeOKFrame();
-  } else if (cmd_frame[0] == CMD_SET_DEFAULT_FLOOD_SCOPE && len >= 1) {
-    if (len >= 1+31+16) {
-      int n = strlen((char *) &cmd_frame[1]);
-      if (n > 0 && n < 31) {
-        strcpy(_prefs.default_scope_name, (char *) &cmd_frame[1]);
-        memcpy(_prefs.default_scope_key, &cmd_frame[1+31], 16);
-        savePrefs();
-        writeOKFrame();
-      } else {
-        writeErrFrame(ERR_CODE_ILLEGAL_ARG);
-      }
-    } else {
-      memset(_prefs.default_scope_name, 0, sizeof(_prefs.default_scope_name));  // set default scope to null
-      memset(_prefs.default_scope_key, 0, sizeof(_prefs.default_scope_key));
-      savePrefs();
-      writeOKFrame();
-    }
-  } else if (cmd_frame[0] == CMD_GET_DEFAULT_FLOOD_SCOPE) {
-    out_frame[0] = RESP_CODE_DEFAULT_FLOOD_SCOPE;
-    if (strlen(_prefs.default_scope_name) > 0) {
-      memcpy(&out_frame[1], _prefs.default_scope_name, 31);
-      memcpy(&out_frame[1+31], _prefs.default_scope_key, 16);
-      _serial->writeFrame(out_frame, 1+31+16);
-    } else {
-      _serial->writeFrame(out_frame, 1);   // no name or key means null
-    }
   } else if (cmd_frame[0] == CMD_SEND_CONTROL_DATA && len >= 2 && (cmd_frame[1] & 0x80) != 0) {
     auto resp = createControlData(&cmd_frame[1], len - 1);
     if (resp) {
@@ -3317,7 +3646,7 @@ void MyMesh::checkCLIRescueCmd() {
 
       // get path from command e.g: "cat /contacts3"
       const char *path = &cli_command[4];
-
+      
       bool is_fs2 = false;
       if (memcmp(path, "UserData/", 9) == 0) {
         path += 8; // skip "UserData"
@@ -3486,6 +3815,28 @@ void MyMesh::loop() {
     dirty_contacts_expiry = 0;
   }
 
+#if defined(ENABLE_ADVERT_ON_BOOT) && ENABLE_ADVERT_ON_BOOT == 1
+  // Fire the one-shot boot advert when the scheduled time passes. Flood so
+  // it reaches peers across repeaters, refreshing any stale pubkey for us
+  // in their contact lists (with auto-add on). Without this, DMs from us
+  // silently MAC-fail at peers that still have a prior identity.
+  if (!_boot_advert_done && _boot_advert_due_ms != 0 &&
+      _ms->getMillis() >= _boot_advert_due_ms) {
+    _boot_advert_done = true;
+    bool ok = sendAdvert(true);
+#ifdef DISPLAY_CLASS
+    if (_ui) {
+      char dbg[64];
+      snprintf(dbg, sizeof(dbg), "TX self-advert flood %s",
+               ok ? "ok" : "FAIL");
+      _ui->appendDiag(dbg);
+    }
+#else
+    (void)ok;
+#endif
+  }
+#endif
+
 #ifdef DISPLAY_CLASS
   if (_ui) _ui->setHasConnection(_serial->isConnected());
 #endif
@@ -3522,16 +3873,22 @@ void meshcoreRepeaterTcpOtaEmitLine(const char* line) {
 #endif
 
 bool MyMesh::advert() {
+  return sendAdvert(false);   // backward-compat: original advert() was zero-hop
+}
+
+bool MyMesh::sendAdvert(bool flood) {
   mesh::Packet* pkt;
   if (_prefs.advert_loc_policy == ADVERT_LOC_NONE) {
     pkt = createSelfAdvert(_prefs.node_name);
   } else {
     pkt = createSelfAdvert(_prefs.node_name, sensors.node_lat, sensors.node_lon);
   }
-  if (pkt) {
-    sendZeroHop(pkt);
-    return true;
+  if (!pkt) return false;
+  if (flood) {
+    // path_hash_size = path_hash_mode + 1 (matches the CMD_SEND_ADVERT path).
+    sendFlood(pkt, 0, (uint8_t)(_prefs.path_hash_mode + 1));
   } else {
-    return false;
+    sendZeroHop(pkt);
   }
+  return true;
 }

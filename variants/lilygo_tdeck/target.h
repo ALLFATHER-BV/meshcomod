@@ -24,6 +24,11 @@ extern EnvironmentSensorManager sensors;
   extern MomentaryButton user_btn;
 #endif
 
+// Shared SPI bus instance (SCLK40/MISO38/MOSI41), already begun for the LoRa
+// radio. The microSD slot (CS=39) reuses this so it doesn't fight the radio for
+// the bus. Returns nullptr if the build has no LoRa SPI pins.
+SPIClass* tdeckSharedSPI();
+
 bool radio_init();
 uint32_t radio_get_rng_seed();
 void radio_set_params(float freq, float bw, uint8_t sf, uint8_t cr);

@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+TARGET_ENV="heltec_v4_tft_companion_radio_usb_tcp_touch"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WORKTREE_DIR="${MESHCOMOD_BUILD_WORKTREE:-/tmp/meshcomod-touch-build}"
+
+if [[ -z "${FIRMWARE_VERSION:-}" ]]; then
+  FIRMWARE_VERSION="v$(date -u +%Y.%m.%d-%H%M%S)"
+fi
+
+echo "Using build tag: ${FIRMWARE_VERSION}"
+echo "Building ${TARGET_ENV} (app-only + merged)..."
+
+if ! git -C "${ROOT_DIR}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  echo "Error: ${ROOT_DIR} is not a git repository." >&2
+  exit 1
+fi
+
+rm -rf "${WORKTREE_DIR}"
+git -C "${ROOT_DIR}" worktree add --detach "${WORKTREE_DIR}" HEAD >/dev/null
+cleanup() {
+  git -C "${ROOT_DIR}" worktree remove --force "${WORKTREE_DIR}" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+
+# Include local, uncommitted changes in the detached worktree build.
+if ! git -C "${ROOT_DIR}" diff --quiet HEAD --; then
+  git -C "${ROOT_DIR}" diff --binary HEAD -- | git -C "${WORKTREE_DIR}" apply --whitespace=nowarn
+fi
+
+# Also copy untracked files (if any) so local additions are part of the build.
+while IFS= read -r -d '' rel_path; do
+  mkdir -p "${WORKTREE_DIR}/$(dirname "${rel_path}")"
+  cp "${ROOT_DIR}/${rel_path}" "${WORKTREE_DIR}/${rel_path}"
+done < <(git -C "${ROOT_DIR}" ls-files --others --exclude-standard -z)
+
+BUILD_SHA="$(git -C "${WORKTREE_DIR}" rev-parse --short HEAD)"
+(
+  cd "${WORKTREE_DIR}"
+  FIRMWARE_VERSION="${FIRMWARE_VERSION}" sh build.sh build-firmware "${TARGET_ENV}"
+)
+
+mkdir -p "${ROOT_DIR}/out"
+APP_SRC="${WORKTREE_DIR}/out/${TARGET_ENV}-${FIRMWARE_VERSION}-${BUILD_SHA}.bin"
+MERGED_SRC="${WORKTREE_DIR}/out/${TARGET_ENV}-${FIRMWARE_VERSION}-${BUILD_SHA}-merged.bin"
+APP_DST="${ROOT_DIR}/out/${TARGET_ENV}-${FIRMWARE_VERSION}-${BUILD_SHA}.bin"
+MERGED_DST="${ROOT_DIR}/out/${TARGET_ENV}-${FIRMWARE_VERSION}-${BUILD_SHA}-merged.bin"
+
+if [[ ! -f "${APP_SRC}" ]]; then
+  echo "Missing app artifact: ${APP_SRC}" >&2
+  exit 1
+fi
+if [[ ! -f "${MERGED_SRC}" ]]; then
+  echo "Missing merged artifact: ${MERGED_SRC}" >&2
+  exit 1
+fi
+
+cp "${APP_SRC}" "${APP_DST}"
+cp "${MERGED_SRC}" "${MERGED_DST}"
+echo "Wrote ${APP_DST}"
+echo "Wrote ${MERGED_DST}"
+echo "Done. Artifacts are in out/."

@@ -1,0 +1,587 @@
+#include "TouchPrefsStore.h"
+
+#if defined(ESP32)
+
+#include "WifiRuntimeStore.h"
+
+#include <Preferences.h>
+
+static const char* TOUCH_NS = "touch";
+static const char* KEY_SCR_TO = "scr_to_s";
+static const char* KEY_DC_SHOW = "dc_show";
+static const uint16_t DEFAULT_SCREEN_TIMEOUT_S = 20;
+static const bool DEFAULT_DC_SHOW = true;
+
+static Preferences s_prefs;
+static bool s_begun = false;
+
+void touchPrefsBegin() {
+  if (s_begun) return;
+  s_begun = s_prefs.begin(TOUCH_NS, true);
+  if (!s_begun) {
+    /* Namespace may not exist yet — open RW once to create it, then reopen RO. */
+    if (s_prefs.begin(TOUCH_NS, false)) {
+      s_prefs.end();
+      s_begun = s_prefs.begin(TOUCH_NS, true);
+    }
+  }
+}
+
+uint16_t touchPrefsGetScreenTimeoutSecs() {
+  if (!s_begun) touchPrefsBegin();
+  return s_prefs.getUShort(KEY_SCR_TO, DEFAULT_SCREEN_TIMEOUT_S);
+}
+
+bool touchPrefsSetScreenTimeoutSecs(uint16_t seconds) {
+  if (!s_begun) touchPrefsBegin();
+  s_prefs.end();
+  if (!s_prefs.begin(TOUCH_NS, false)) return false;
+  bool ok = s_prefs.putUShort(KEY_SCR_TO, seconds) > 0;
+  s_prefs.end();
+  s_begun = s_prefs.begin(TOUCH_NS, true);
+  return ok;
+}
+
+static const char* KEY_BRIGHTNESS = "bright";
+static const uint8_t DEFAULT_BRIGHTNESS = 100;
+
+uint8_t touchPrefsGetBrightness() {
+  if (!s_begun) touchPrefsBegin();
+  uint8_t v = s_prefs.getUChar(KEY_BRIGHTNESS, DEFAULT_BRIGHTNESS);
+  if (v < 5)   v = 5;
+  if (v > 100) v = 100;
+  return v;
+}
+
+bool touchPrefsSetBrightness(uint8_t pct) {
+  if (pct < 5)   pct = 5;
+  if (pct > 100) pct = 100;
+  if (!s_begun) touchPrefsBegin();
+  s_prefs.end();
+  if (!s_prefs.begin(TOUCH_NS, false)) return false;
+  bool ok = s_prefs.putUChar(KEY_BRIGHTNESS, pct) > 0;
+  s_prefs.end();
+  s_begun = s_prefs.begin(TOUCH_NS, true);
+  return ok;
+}
+
+static const char* KEY_KB_BL = "kb_bl";
+static const uint8_t DEFAULT_KB_BL = 2;   // auto
+
+uint8_t touchPrefsGetKbBacklight() {
+  if (!s_begun) touchPrefsBegin();
+  uint8_t v = s_prefs.getUChar(KEY_KB_BL, DEFAULT_KB_BL);
+  return v > 2 ? DEFAULT_KB_BL : v;
+}
+
+bool touchPrefsSetKbBacklight(uint8_t mode) {
+  if (mode > 2) mode = DEFAULT_KB_BL;
+  if (!s_begun) touchPrefsBegin();
+  s_prefs.end();
+  if (!s_prefs.begin(TOUCH_NS, false)) return false;
+  bool ok = s_prefs.putUChar(KEY_KB_BL, mode) > 0;
+  s_prefs.end();
+  s_begun = s_prefs.begin(TOUCH_NS, true);
+  return ok;
+}
+
+static const char* KEY_TILE_SRV = "tile_srv";
+static const char* DEFAULT_TILE_SERVER = "http://tiles.meshcomod.com";
+
+int touchPrefsGetTileServer(char* out, int out_cap) {
+  if (!out || out_cap <= 0) return 0;
+  out[0] = '\0';
+  if (!s_begun) touchPrefsBegin();
+  String v = s_prefs.getString(KEY_TILE_SRV, String(DEFAULT_TILE_SERVER));
+  int n = (int)v.length();
+  if (n > out_cap - 1) n = out_cap - 1;
+  if (n > TOUCH_TILE_SERVER_MAXLEN - 1) n = TOUCH_TILE_SERVER_MAXLEN - 1;
+  memcpy(out, v.c_str(), (size_t)n);
+  out[n] = '\0';
+  return n;
+}
+
+bool touchPrefsSetTileServer(const char* url) {
+  if (!url) return false;
+  if (!s_begun) touchPrefsBegin();
+  s_prefs.end();
+  if (!s_prefs.begin(TOUCH_NS, false)) return false;
+  bool ok = s_prefs.putString(KEY_TILE_SRV, url) > 0;
+  s_prefs.end();
+  s_begun = s_prefs.begin(TOUCH_NS, true);
+  return ok;
+}
+
+static const char* KEY_LOCK_WALL = "lk_wall";
+static const char* DEFAULT_LOCK_WALL = "/lock/placeholder.jpg";
+
+int touchPrefsGetLockWallpaper(char* out, int out_cap) {
+  if (!out || out_cap <= 0) return 0;
+  out[0] = '\0';
+  if (!s_begun) touchPrefsBegin();
+  String v = s_prefs.getString(KEY_LOCK_WALL, String(DEFAULT_LOCK_WALL));
+  int n = (int)v.length();
+  if (n > out_cap - 1) n = out_cap - 1;
+  if (n > TOUCH_LOCK_WALLPAPER_MAXLEN - 1) n = TOUCH_LOCK_WALLPAPER_MAXLEN - 1;
+  memcpy(out, v.c_str(), (size_t)n);
+  out[n] = '\0';
+  return n;
+}
+
+bool touchPrefsSetLockWallpaper(const char* path) {
+  if (!path) return false;
+  if (!s_begun) touchPrefsBegin();
+  s_prefs.end();
+  if (!s_prefs.begin(TOUCH_NS, false)) return false;
+  bool ok = s_prefs.putString(KEY_LOCK_WALL, path) > 0;
+  s_prefs.end();
+  s_begun = s_prefs.begin(TOUCH_NS, true);
+  return ok;
+}
+
+static const char* KEY_TIME_OFFS = "time_offs";
+
+int touchPrefsGetTimeOffsetHours() {
+  if (!s_begun) touchPrefsBegin();
+  int v = (int)s_prefs.getChar(KEY_TIME_OFFS, 0);
+  if (v < -23) v = -23;
+  if (v >  23) v =  23;
+  return v;
+}
+bool touchPrefsSetTimeOffsetHours(int hours) {
+  if (hours < -23) hours = -23;
+  if (hours >  23) hours =  23;
+  if (!s_begun) touchPrefsBegin();
+  s_prefs.end();
+  if (!s_prefs.begin(TOUCH_NS, false)) return false;
+  bool ok = s_prefs.putChar(KEY_TIME_OFFS, (int8_t)hours) > 0;
+  s_prefs.end();
+  s_begun = s_prefs.begin(TOUCH_NS, true);
+  return ok;
+}
+void touchPrefsBuildLocalTz(char* out, int out_cap) {
+  if (!out || out_cap <= 0) return;
+  // CET base is UTC+1 (POSIX std offset -1). The displayed local time is
+  // UTC + (1 + userOffset), so the POSIX std-offset field is -(1 + userOffset).
+  // CEST (summer) auto-adds 1h via the DST rule. offset 0 == "CET-1CEST,...".
+  int off = touchPrefsGetTimeOffsetHours();
+  snprintf(out, out_cap, "CET%dCEST,M3.5.0,M10.5.0/3", -(1 + off));
+}
+
+static const char* KEY_LOCK_COLOR = "lk_col";
+static const uint32_t DEFAULT_LOCK_COLOR = 0xE6F2FFu;   // soft white
+
+uint32_t touchPrefsGetLockTextColor() {
+  if (!s_begun) touchPrefsBegin();
+  return s_prefs.getUInt(KEY_LOCK_COLOR, DEFAULT_LOCK_COLOR) & 0xFFFFFFu;
+}
+
+bool touchPrefsSetLockTextColor(uint32_t rgb) {
+  if (!s_begun) touchPrefsBegin();
+  s_prefs.end();
+  if (!s_prefs.begin(TOUCH_NS, false)) return false;
+  bool ok = s_prefs.putUInt(KEY_LOCK_COLOR, rgb & 0xFFFFFFu) > 0;
+  s_prefs.end();
+  s_begun = s_prefs.begin(TOUCH_NS, true);
+  return ok;
+}
+
+// Quick-reply macros. Stored as NVS strings keyed "qr0".."qr5".
+// Default factory set on first read so the picker isn't useless out of the
+// box and the user has examples to edit.
+// Factory defaults skew tactical / radio-comms style — mesh radios get used
+// for field ops a lot more than for "calling now" social texting, so seed
+// the picker with phrases that actually pull weight on the air. ASCII-only
+// so they render identically with or without the extras font fallback.
+static const char* k_qr_defaults[TOUCH_QUICK_REPLY_COUNT] = {
+  "copy",          // generic acknowledgment
+  "wilco",         // will comply
+  "stand by",      // wait one
+  "moving to RP",  // en route to rally point
+  "ETA 5 min",     // arrival estimate
+  "RTB",           // returning to base
+};
+
+static void qrKeyFor(int idx, char out[8]) {
+  out[0] = 'q'; out[1] = 'r';
+  out[2] = (char)('0' + (idx & 0x07));
+  out[3] = '\0';
+}
+
+int touchPrefsGetQuickReply(int idx, char* out, int out_cap) {
+  if (!out || out_cap <= 0) return 0;
+  out[0] = '\0';
+  if (idx < 0 || idx >= TOUCH_QUICK_REPLY_COUNT) return 0;
+  if (!s_begun) touchPrefsBegin();
+  char key[8];
+  qrKeyFor(idx, key);
+  String v = s_prefs.getString(key, String(k_qr_defaults[idx]));
+  int n = (int)v.length();
+  if (n > out_cap - 1) n = out_cap - 1;
+  if (n > TOUCH_QUICK_REPLY_MAXLEN - 1) n = TOUCH_QUICK_REPLY_MAXLEN - 1;
+  memcpy(out, v.c_str(), (size_t)n);
+  out[n] = '\0';
+  return n;
+}
+
+bool touchPrefsGetDutyMeterShown() {
+  if (!s_begun) touchPrefsBegin();
+  return s_prefs.getBool(KEY_DC_SHOW, DEFAULT_DC_SHOW);
+}
+
+bool touchPrefsSetDutyMeterShown(bool show) {
+  if (!s_begun) touchPrefsBegin();
+  s_prefs.end();
+  if (!s_prefs.begin(TOUCH_NS, false)) return false;
+  bool ok = s_prefs.putBool(KEY_DC_SHOW, show);
+  s_prefs.end();
+  s_begun = s_prefs.begin(TOUCH_NS, true);
+  return ok;
+}
+
+static const char* KEY_USE_MILES = "use_miles";
+
+bool touchPrefsGetUseMiles() {
+  if (!s_begun) touchPrefsBegin();
+  return s_prefs.getBool(KEY_USE_MILES, false);   // default = km
+}
+
+bool touchPrefsSetUseMiles(bool use_miles) {
+  if (!s_begun) touchPrefsBegin();
+  s_prefs.end();
+  if (!s_prefs.begin(TOUCH_NS, false)) return false;
+  bool ok = s_prefs.putBool(KEY_USE_MILES, use_miles);
+  s_prefs.end();
+  s_begun = s_prefs.begin(TOUCH_NS, true);
+  return ok;
+}
+
+static const char* KEY_UI_ROTATION = "uirot";
+
+uint8_t touchPrefsGetUiRotation() {
+  if (!s_begun) touchPrefsBegin();
+  uint8_t r = s_prefs.getUChar(KEY_UI_ROTATION, 0);   // default = portrait
+  return (r <= 3) ? r : 0;
+}
+
+bool touchPrefsSetUiRotation(uint8_t rot) {
+  if (rot > 3) rot = 0;
+  if (!s_begun) touchPrefsBegin();
+  s_prefs.end();
+  if (!s_prefs.begin(TOUCH_NS, false)) return false;
+  bool ok = s_prefs.putUChar(KEY_UI_ROTATION, rot);
+  s_prefs.end();
+  s_begun = s_prefs.begin(TOUCH_NS, true);
+  return ok;
+}
+
+// Wi-Fi profile slots ----------------------------------------------------
+//
+// NVS keys: "wsl_<idx>_l" (label), "wsl_<idx>_s" (ssid), "wsl_<idx>_p" (pwd).
+// 3 slots × 3 strings = 9 small entries; well under the 12 KB NVS default.
+
+static void wifiSlotKey(int idx, char kind, char out[12]) {
+  // wsl<idx><kind>  → "wsl0l", "wsl1s", "wsl2p", ...
+  int p = 0;
+  out[p++] = 'w'; out[p++] = 's'; out[p++] = 'l';
+  out[p++] = (char)('0' + (idx & 0x07));
+  out[p++] = kind;
+  out[p]   = '\0';
+}
+
+bool touchPrefsGetWifiSlot(int idx, char* label, int label_cap,
+                           char* ssid, int ssid_cap,
+                           char* pwd, int pwd_cap) {
+  if (idx < 0 || idx >= TOUCH_WIFI_SLOT_COUNT) return false;
+  if (label && label_cap > 0) label[0] = '\0';
+  if (ssid  && ssid_cap  > 0) ssid[0]  = '\0';
+  if (pwd   && pwd_cap   > 0) pwd[0]   = '\0';
+  if (!s_begun) touchPrefsBegin();
+  char k[12];
+  if (label && label_cap > 0) {
+    wifiSlotKey(idx, 'l', k);
+    String v = s_prefs.getString(k, "");
+    int n = (int)v.length();
+    if (n > label_cap - 1) n = label_cap - 1;
+    if (n > 0) memcpy(label, v.c_str(), (size_t)n);
+    label[n] = '\0';
+  }
+  if (ssid && ssid_cap > 0) {
+    wifiSlotKey(idx, 's', k);
+    String v = s_prefs.getString(k, "");
+    int n = (int)v.length();
+    if (n > ssid_cap - 1) n = ssid_cap - 1;
+    if (n > 0) memcpy(ssid, v.c_str(), (size_t)n);
+    ssid[n] = '\0';
+  }
+  if (pwd && pwd_cap > 0) {
+    wifiSlotKey(idx, 'p', k);
+    String v = s_prefs.getString(k, "");
+    int n = (int)v.length();
+    if (n > pwd_cap - 1) n = pwd_cap - 1;
+    if (n > 0) memcpy(pwd, v.c_str(), (size_t)n);
+    pwd[n] = '\0';
+  }
+  return true;
+}
+
+bool touchPrefsSetWifiSlot(int idx, const char* label,
+                           const char* ssid, const char* pwd) {
+  if (idx < 0 || idx >= TOUCH_WIFI_SLOT_COUNT) return false;
+  if (!s_begun) touchPrefsBegin();
+  s_prefs.end();
+  if (!s_prefs.begin(TOUCH_NS, false)) return false;
+  char k[12];
+  wifiSlotKey(idx, 'l', k); s_prefs.putString(k, label ? label : "");
+  wifiSlotKey(idx, 's', k); s_prefs.putString(k, ssid  ? ssid  : "");
+  wifiSlotKey(idx, 'p', k); s_prefs.putString(k, pwd   ? pwd   : "");
+  s_prefs.end();
+  s_begun = s_prefs.begin(TOUCH_NS, true);
+  return true;
+}
+
+// Favorites blob (raw bytes: N * 6-byte pub_key prefixes, packed) ----------
+static const char* KEY_FAV = "fav";
+
+static int favReadAll(uint8_t out[TOUCH_FAVORITES_MAX * TOUCH_FAVORITE_KEY_BYTES]) {
+  if (!s_begun) touchPrefsBegin();
+  size_t n = s_prefs.getBytes(KEY_FAV, out, TOUCH_FAVORITES_MAX * TOUCH_FAVORITE_KEY_BYTES);
+  if (n == 0 || n > (size_t)(TOUCH_FAVORITES_MAX * TOUCH_FAVORITE_KEY_BYTES)) return 0;
+  // Round down to a whole number of entries — guards against NVS returning
+  // a half-written blob from a power-cut mid-write.
+  return (int)(n / TOUCH_FAVORITE_KEY_BYTES);
+}
+
+static bool favWriteAll(const uint8_t* buf, int count) {
+  s_prefs.end();
+  if (!s_prefs.begin(TOUCH_NS, false)) return false;
+  bool ok;
+  if (count <= 0) {
+    s_prefs.remove(KEY_FAV);
+    ok = true;
+  } else {
+    ok = s_prefs.putBytes(KEY_FAV, buf, (size_t)(count * TOUCH_FAVORITE_KEY_BYTES)) > 0;
+  }
+  s_prefs.end();
+  s_begun = s_prefs.begin(TOUCH_NS, true);
+  return ok;
+}
+
+bool touchPrefsIsFavorite(const uint8_t* pub_key6) {
+  if (!pub_key6) return false;
+  uint8_t buf[TOUCH_FAVORITES_MAX * TOUCH_FAVORITE_KEY_BYTES];
+  int n = favReadAll(buf);
+  for (int i = 0; i < n; ++i) {
+    if (memcmp(&buf[i * TOUCH_FAVORITE_KEY_BYTES], pub_key6, TOUCH_FAVORITE_KEY_BYTES) == 0) return true;
+  }
+  return false;
+}
+
+int touchPrefsCopyFavorites(uint8_t* out_buf) {
+  if (!out_buf) return 0;
+  return favReadAll(out_buf);
+}
+
+bool touchPrefsFavoritesSnapshotContains(const uint8_t* snapshot, int count,
+                                          const uint8_t* pub_key6) {
+  if (!snapshot || !pub_key6 || count <= 0) return false;
+  for (int i = 0; i < count; ++i) {
+    if (memcmp(&snapshot[i * TOUCH_FAVORITE_KEY_BYTES], pub_key6,
+               TOUCH_FAVORITE_KEY_BYTES) == 0) return true;
+  }
+  return false;
+}
+
+bool touchPrefsSetFavorite(const uint8_t* pub_key6, bool fav) {
+  if (!pub_key6) return false;
+  uint8_t buf[TOUCH_FAVORITES_MAX * TOUCH_FAVORITE_KEY_BYTES];
+  int n = favReadAll(buf);
+  int found = -1;
+  for (int i = 0; i < n; ++i) {
+    if (memcmp(&buf[i * TOUCH_FAVORITE_KEY_BYTES], pub_key6, TOUCH_FAVORITE_KEY_BYTES) == 0) {
+      found = i; break;
+    }
+  }
+  if (fav) {
+    if (found >= 0) return true;
+    if (n >= TOUCH_FAVORITES_MAX) return false;   // cap reached, silently refuse
+    memcpy(&buf[n * TOUCH_FAVORITE_KEY_BYTES], pub_key6, TOUCH_FAVORITE_KEY_BYTES);
+    ++n;
+    favWriteAll(buf, n);
+    return true;
+  } else {
+    if (found < 0) return false;
+    // Shift remaining entries down to keep the blob packed.
+    for (int i = found; i < n - 1; ++i) {
+      memcpy(&buf[i * TOUCH_FAVORITE_KEY_BYTES],
+             &buf[(i + 1) * TOUCH_FAVORITE_KEY_BYTES],
+             TOUCH_FAVORITE_KEY_BYTES);
+    }
+    --n;
+    favWriteAll(buf, n);
+    return false;
+  }
+}
+
+// Remembered repeater admin passwords --------------------------------------
+//
+// Layout: single NVS blob "rpw" of up to TOUCH_REPEATER_PW_MAX records,
+// each record = [6-byte pubkey prefix][16-byte null-terminated password].
+// Empty/cleared records are removed (the blob is repacked) so reading the
+// blob length tells you exactly how many entries exist.
+static const char* KEY_RPW = "rpw";
+constexpr int RPW_REC_BYTES = TOUCH_REPEATER_PW_KEY_LEN + TOUCH_REPEATER_PW_LEN;  // 6 + 16 = 22
+
+static int rpwReadAll(uint8_t out[TOUCH_REPEATER_PW_MAX * RPW_REC_BYTES]) {
+  if (!s_begun) touchPrefsBegin();
+  size_t n = s_prefs.getBytes(KEY_RPW, out, TOUCH_REPEATER_PW_MAX * RPW_REC_BYTES);
+  if (n == 0 || n > (size_t)(TOUCH_REPEATER_PW_MAX * RPW_REC_BYTES)) return 0;
+  return (int)(n / RPW_REC_BYTES);
+}
+
+static bool rpwWriteAll(const uint8_t* buf, int count) {
+  s_prefs.end();
+  if (!s_prefs.begin(TOUCH_NS, false)) return false;
+  bool ok;
+  if (count <= 0) {
+    s_prefs.remove(KEY_RPW);
+    ok = true;
+  } else {
+    ok = s_prefs.putBytes(KEY_RPW, buf, (size_t)(count * RPW_REC_BYTES)) > 0;
+  }
+  s_prefs.end();
+  s_begun = s_prefs.begin(TOUCH_NS, true);
+  return ok;
+}
+
+int touchPrefsGetRepeaterPassword(const uint8_t* pub_key6, char* out, int out_cap) {
+  if (!out || out_cap <= 0) return 0;
+  out[0] = '\0';
+  if (!pub_key6) return 0;
+  uint8_t buf[TOUCH_REPEATER_PW_MAX * RPW_REC_BYTES];
+  int n = rpwReadAll(buf);
+  for (int i = 0; i < n; ++i) {
+    const uint8_t* rec = &buf[i * RPW_REC_BYTES];
+    if (memcmp(rec, pub_key6, TOUCH_REPEATER_PW_KEY_LEN) == 0) {
+      const char* pw = (const char*)(rec + TOUCH_REPEATER_PW_KEY_LEN);
+      int plen = 0;
+      while (plen < TOUCH_REPEATER_PW_LEN - 1 && pw[plen] != '\0') ++plen;
+      if (plen > out_cap - 1) plen = out_cap - 1;
+      memcpy(out, pw, (size_t)plen);
+      out[plen] = '\0';
+      return plen;
+    }
+  }
+  return 0;
+}
+
+bool touchPrefsSetRepeaterPassword(const uint8_t* pub_key6, const char* password) {
+  if (!pub_key6) return false;
+  uint8_t buf[TOUCH_REPEATER_PW_MAX * RPW_REC_BYTES];
+  int n = rpwReadAll(buf);
+  int found = -1;
+  for (int i = 0; i < n; ++i) {
+    if (memcmp(&buf[i * RPW_REC_BYTES], pub_key6, TOUCH_REPEATER_PW_KEY_LEN) == 0) {
+      found = i; break;
+    }
+  }
+  // Treat null/empty password as a remove request — saves NVS bytes and
+  // avoids confusing "remembered but empty" cases.
+  bool remove = !password || password[0] == '\0';
+  if (remove) {
+    if (found < 0) return true;
+    for (int i = found; i < n - 1; ++i) {
+      memcpy(&buf[i * RPW_REC_BYTES], &buf[(i + 1) * RPW_REC_BYTES], RPW_REC_BYTES);
+    }
+    --n;
+    return rpwWriteAll(buf, n);
+  }
+  // Add or overwrite. Cap reached → silently refuse.
+  int slot = found;
+  if (slot < 0) {
+    if (n >= TOUCH_REPEATER_PW_MAX) return false;
+    slot = n++;
+  }
+  uint8_t* rec = &buf[slot * RPW_REC_BYTES];
+  memcpy(rec, pub_key6, TOUCH_REPEATER_PW_KEY_LEN);
+  // Pad password slot with zeros, then copy up to PW_LEN-1 chars.
+  memset(rec + TOUCH_REPEATER_PW_KEY_LEN, 0, TOUCH_REPEATER_PW_LEN);
+  int plen = (int)strlen(password);
+  if (plen > TOUCH_REPEATER_PW_LEN - 1) plen = TOUCH_REPEATER_PW_LEN - 1;
+  memcpy(rec + TOUCH_REPEATER_PW_KEY_LEN, password, (size_t)plen);
+  return rpwWriteAll(buf, n);
+}
+
+bool touchPrefsActivateWifiSlot(int idx) {
+  char label[TOUCH_WIFI_LABEL_MAX];
+  char ssid[WIFI_CONFIG_SSID_MAX];
+  char pwd[WIFI_CONFIG_PWD_MAX];
+  if (!touchPrefsGetWifiSlot(idx, label, sizeof(label),
+                             ssid, sizeof(ssid), pwd, sizeof(pwd))) {
+    return false;
+  }
+  if (ssid[0] == '\0') return false;   // refuse to activate an empty slot
+  if (!wifiConfigSetSsid(ssid)) return false;
+  if (!wifiConfigSetPwd(pwd))   return false;
+  wifiConfigSetRadioEnabled(true);
+  wifiConfigRequestApply();
+  return true;
+}
+
+bool touchPrefsSetQuickReply(int idx, const char* text) {
+  if (idx < 0 || idx >= TOUCH_QUICK_REPLY_COUNT) return false;
+  if (!s_begun) touchPrefsBegin();
+  // Open RW. Truncate to TOUCH_QUICK_REPLY_MAXLEN-1 to bound NVS usage.
+  s_prefs.end();
+  if (!s_prefs.begin(TOUCH_NS, false)) return false;
+  char key[8];
+  qrKeyFor(idx, key);
+  char buf[TOUCH_QUICK_REPLY_MAXLEN];
+  buf[0] = '\0';
+  if (text) {
+    int n = (int)strlen(text);
+    if (n > TOUCH_QUICK_REPLY_MAXLEN - 1) n = TOUCH_QUICK_REPLY_MAXLEN - 1;
+    memcpy(buf, text, (size_t)n);
+    buf[n] = '\0';
+  }
+  bool ok = s_prefs.putString(key, buf) > 0 || (buf[0] == '\0');
+  s_prefs.end();
+  s_begun = s_prefs.begin(TOUCH_NS, true);
+  return ok;
+}
+
+static const char* KEY_SETUP_DONE = "setup_ok";
+
+bool touchPrefsGetSetupDone() {
+  if (!s_begun) touchPrefsBegin();
+  return s_prefs.getBool(KEY_SETUP_DONE, false);
+}
+
+bool touchPrefsSetSetupDone(bool done) {
+  if (!s_begun) touchPrefsBegin();
+  s_prefs.end();
+  if (!s_prefs.begin(TOUCH_NS, false)) return false;
+  bool ok = s_prefs.putBool(KEY_SETUP_DONE, done);
+  s_prefs.end();
+  s_begun = s_prefs.begin(TOUCH_NS, true);
+  return ok;
+}
+
+static const char* KEY_GPS_BAUD = "gps_baud";
+
+uint32_t touchPrefsGetGpsBaud(uint32_t fallback) {
+  if (!s_begun) touchPrefsBegin();
+  return s_prefs.getUInt(KEY_GPS_BAUD, fallback);
+}
+
+bool touchPrefsSetGpsBaud(uint32_t baud) {
+  if (!s_begun) touchPrefsBegin();
+  s_prefs.end();
+  if (!s_prefs.begin(TOUCH_NS, false)) return false;
+  bool ok = s_prefs.putUInt(KEY_GPS_BAUD, baud) > 0;
+  s_prefs.end();
+  s_begun = s_prefs.begin(TOUCH_NS, true);
+  return ok;
+}
+
+#endif

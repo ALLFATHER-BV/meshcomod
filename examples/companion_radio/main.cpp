@@ -1,6 +1,13 @@
 #include <Arduino.h>   // needed for PlatformIO
 #include <Mesh.h>
 #include "MyMesh.h"
+#if defined(ESP32_PLATFORM) && defined(HAS_TOUCH_UI)
+#include <Preferences.h>
+#include <esp_system.h>
+#include <helpers/TouchDiagTrace.h>
+#include <helpers/MeshTouchTxTrace.h>
+#include <helpers/esp32/TouchPrefsStore.h>   // touchPrefsGetUiRotation for the boot wordmark
+#endif
 
 // Believe it or not, this std C function is busted on some platforms!
 static uint32_t _atoi(const char* sp) {
@@ -31,6 +38,7 @@ static uint32_t _atoi(const char* sp) {
   DataStore store(LittleFS, rtc_clock);
 #elif defined(ESP32)
   #include <SPIFFS.h>
+  extern "C" void set_boot_phase(int phase);
   namespace { struct MainBootTrace { MainBootTrace() { set_boot_phase(2); } } _main_boot_trace; }
   DataStore store(SPIFFS, rtc_clock);
   #if defined(WIFI_SSID) || defined(MULTI_TRANSPORT_COMPANION)
@@ -119,6 +127,7 @@ volatile int g_boot_phase = 0;
 extern "C" void set_boot_phase(int phase) { g_boot_phase = phase; }
 #endif
 
+
 void halt() {
   while (1) ;
 }
@@ -127,6 +136,13 @@ void setup() {
   Serial.begin(115200);
   delay(200);
   Serial.println("[BOOT] setup start");
+  {
+    bool aes_ok = mesh::Utils::selfTestAES();
+    Serial.printf("[BOOT] AES self-test: %s\n", aes_ok ? "PASS" : "FAIL");
+  #if defined(ESP32_PLATFORM) && defined(HAS_TOUCH_UI)
+    mesh_touch_tx_tracef("AES_SELFTEST: %s", aes_ok ? "PASS" : "FAIL");
+  #endif
+  }
 
   board.begin();
   Serial.println("[BOOT] board ok");
@@ -135,11 +151,22 @@ void setup() {
   DisplayDriver* disp = NULL;
   if (display.begin()) {
     disp = &display;
+#if defined(ESP32_PLATFORM) && defined(HAS_TOUCH_UI)
+    // Rotate the panel to the saved UI orientation BEFORE painting the boot
+    // wordmark, so it's upright in landscape too (UITask applies the same
+    // hardware rotation later for the LVGL UI). ROT_90->1, ROT_270->3.
+    {
+      uint8_t r = touchPrefsGetUiRotation();
+      if (r == 1)      display.setDisplayRotation(1);
+      else if (r == 3) display.setDisplayRotation(3);
+    }
+#endif
     disp->startFrame();
-  #ifdef ST7789
+    // Centered MESHCOMOD title so the pre-LVGL boot window looks like the
+    // product, not a debug screen. Size 2 fits comfortably in 240 px (size 3
+    // wraps the trailing "D" because the Adafruit GFX font has no kerning).
     disp->setTextSize(2);
-  #endif
-    disp->drawTextCentered(disp->width() / 2, 28, "Loading...");
+    disp->drawTextCentered(disp->width() / 2, disp->height() / 2 - 8, "MESHCOMOD");
     disp->endFrame();
   }
 #endif
@@ -148,6 +175,23 @@ void setup() {
   Serial.println("[BOOT] radio ok");
 
   fast_rng.begin(radio_get_rng_seed());
+
+#if defined(ESP32_PLATFORM) && defined(HAS_TOUCH_UI)
+  {
+    Preferences prefs;
+    if (prefs.begin("mcboot", false)) {
+      uint32_t bn = prefs.getUInt("n", 0);
+      ++bn;
+      prefs.putUInt("n", bn);
+      prefs.end();
+      meshcomod_touch_set_boot_stats(bn, static_cast<uint8_t>(esp_reset_reason()));
+      Serial.printf("[BOOT] touch_boot_n=%lu reason=%u\n",
+                    static_cast<unsigned long>(bn),
+                    static_cast<unsigned>(esp_reset_reason()));
+    }
+    the_mesh.initTxtTxUniquenessFromRng();
+  }
+#endif
 
 #if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
   InternalFS.begin();
@@ -224,13 +268,27 @@ void setup() {
 
 #ifdef MULTI_TRANSPORT_COMPANION
   board.setInhibitSleep(true);
-  // Defer WiFi until first loop() so setup() always completes (display + USB come up even if WiFi would crash/hang)
   serial_interface.begin(Serial, TCP_PORT, WS_PORT);
   Serial.println("[BOOT] serial_interface ok");
   serial_interface.setBroadcastResponses(true);  // RX log, channel messages, etc. go to all clients (USB + TCP + WS [+ BLE]), not only last sender
+  /* Pick BLE vs WiFi at boot. The ESP32-S3 doesn't have enough internal heap
+   * (esp_wifi_init needs ~50KB for DMA buffers) to run Bluedroid BLE +
+   * LVGL/TFT + WiFi all at once — esp_wifi_init silently returns ESP_ERR_NO_MEM,
+   * leaving WiFi.getMode() at WIFI_MODE_NULL. So we mutex them: if the user
+   * has saved WiFi credentials AND the radio is enabled, skip BLE init and
+   * use WiFi exclusively. Otherwise init BLE. Toggle by saving/clearing creds
+   * + reboot (saveWifiCb auto-restarts). */
+  bool want_wifi = wifiConfigGetRadioEnabled() && wifiConfigHasRuntime();
 #if defined(BLE_PIN_CODE)
-  serial_interface.beginBle(BLE_NAME_PREFIX, the_mesh.getNodePrefs()->node_name, the_mesh.getBLEPin());
+  if (!want_wifi) {
+    serial_interface.beginBle(BLE_NAME_PREFIX, the_mesh.getNodePrefs()->node_name, the_mesh.getBLEPin());
+  }
 #endif
+  if (want_wifi) {
+    WiFi.mode(WIFI_STA);
+    WiFi.setAutoReconnect(false);
+    WiFi.persistent(false);
+  }
 #elif defined(WIFI_SSID)
   board.setInhibitSleep(true);   // prevent sleep when WiFi is active
   if (wifiConfigHasRuntime()) {
@@ -259,10 +317,6 @@ void setup() {
 
   sensors.begin();
 
-#if ENV_INCLUDE_GPS == 1
-  the_mesh.applyGpsPrefs();
-#endif
-
 #ifdef DISPLAY_CLASS
   ui_task.begin(disp, &sensors, the_mesh.getNodePrefs());  // still want to pass this in as dependency, as prefs might be moved
 #endif
@@ -279,7 +333,13 @@ void loop() {
   static const uint32_t WIFI_RETRY_INTERVAL_MS = 10000;
   static bool wifi_radio_prev = true;
   static bool wifi_radio_inited = false;
-  bool wifi_radio_en = wifiConfigGetRadioEnabled();
+  /* BLE-vs-WiFi mutex (chosen at setup based on saved creds + radio_en pref):
+   * if BLE was initialized, do NOT attempt to bring WiFi up here — esp_wifi_init
+   * would fail with ESP_ERR_NO_MEM after Bluedroid grabbed the internal heap,
+   * and the resulting OOM cascade freezes LVGL. Only run the WiFi state
+   * machine if creds are saved AND the radio pref is on, mirroring `want_wifi`
+   * in setup(). */
+  bool wifi_radio_en = wifiConfigGetRadioEnabled() && wifiConfigHasRuntime();
   if (!wifi_radio_inited) {
     wifi_radio_inited = true;
     wifi_radio_prev = wifi_radio_en;
@@ -292,53 +352,100 @@ void loop() {
     }
     wifi_started = false;
   }
+  /* UI may have changed SSID/PWD and asked for a re-apply. Trigger re-begin
+   * by forcing wifi_started=false; on next iter the block below will WiFi.begin
+   * with the freshly-saved credentials. Also handles toggling radio_en off
+   * from the UI (the transition above already covered the on case). */
+  if (wifiConfigConsumeApplyRequest()) {
+    /* Only touch WiFi state if it was actually started this session. When
+     * BLE is the active transport (no creds saved), WiFi was never inited
+     * and calling WiFi.disconnect()/mode(WIFI_OFF) would trigger esp_wifi_init
+     * under low heap → crash. Setting wifi_started=false here is harmless;
+     * setup() will re-pick BLE-vs-WiFi on the auto-reboot from saveWifiCb. */
+    if (wifi_started) {
+      if (!wifi_radio_en) {
+        WiFi.disconnect(true);
+        delay(50);
+        WiFi.mode(WIFI_OFF);
+      } else {
+        WiFi.disconnect(false, false);
+        delay(50);
+      }
+    }
+    wifi_started = false;
+    last_wifi_retry_ms = 0;
+  }
   if (wifi_radio_en) {
     if (!wifi_started) {
       wifi_started = true;
+      WiFi.mode(WIFI_STA);
       if (wifiConfigHasRuntime()) {
         char ssid[WIFI_CONFIG_SSID_MAX];
         char pwd[WIFI_CONFIG_PWD_MAX];
         wifiConfigGetSsid(ssid, sizeof(ssid));
         wifiConfigGetPwd(pwd, sizeof(pwd));
         if (strlen(ssid) > 0) {
-          WiFi.mode(WIFI_STA);
           WiFi.begin(ssid, pwd[0] ? pwd : nullptr);
           last_wifi_retry_ms = millis();
-        } else {
-          WiFi.mode(WIFI_STA);
-          WiFi.begin("", "");  // no credentials: still start WiFi/tcpip stack so startTcpServer() does not assert (Invalid mbox)
         }
-      } else if (strlen(WIFI_SSID) > 0) {
-        WiFi.mode(WIFI_STA);
-        WiFi.begin(WIFI_SSID, WIFI_PWD);
-        last_wifi_retry_ms = millis();
-      } else {
-        WiFi.mode(WIFI_STA);
-        WiFi.begin("", "");  // no credentials: still start WiFi/tcpip stack so startTcpServer() does not assert (Invalid mbox)
       }
     }
     // Automatic WiFi recovery for TCP mode: retry connection periodically if link drops.
-    if (WiFi.status() != WL_CONNECTED) {
+    if (wifiConfigHasRuntime() && WiFi.status() != WL_CONNECTED) {
       uint32_t now = millis();
       if ((uint32_t)(now - last_wifi_retry_ms) >= WIFI_RETRY_INTERVAL_MS) {
         last_wifi_retry_ms = now;
-        if (wifiConfigHasRuntime()) {
-          char ssid[WIFI_CONFIG_SSID_MAX];
-          char pwd[WIFI_CONFIG_PWD_MAX];
-          wifiConfigGetSsid(ssid, sizeof(ssid));
-          wifiConfigGetPwd(pwd, sizeof(pwd));
-          if (strlen(ssid) > 0) {
-            WiFi.begin(ssid, pwd[0] ? pwd : nullptr);
-          }
-        } else if (strlen(WIFI_SSID) > 0) {
-          WiFi.begin(WIFI_SSID, WIFI_PWD);
+        char ssid[WIFI_CONFIG_SSID_MAX];
+        char pwd[WIFI_CONFIG_PWD_MAX];
+        wifiConfigGetSsid(ssid, sizeof(ssid));
+        wifiConfigGetPwd(pwd, sizeof(pwd));
+        if (strlen(ssid) > 0) {
+          WiFi.begin(ssid, pwd[0] ? pwd : nullptr);
         }
       }
+    }
+    /* SNTP: kick off when Wi-Fi associates; once system time syncs, push it
+     * into the mesh RTC so timestamps on messages are accurate. */
+    static bool sntp_kicked = false;
+    static bool sntp_pushed = false;
+    static uint32_t sntp_kick_ms = 0;
+    if (WiFi.status() == WL_CONNECTED) {
+      if (!sntp_kicked) {
+        /* Brussels timezone with DST rules baked in (POSIX "CET-1CEST,...").
+         * On touch builds the base is shifted by the user's manual hour offset
+         * (Settings -> Device -> Time offset) so localtime() matches what they
+         * set. configTzTime only affects localtime() display; the mesh RTC
+         * still stores UTC seconds (protocol-facing). */
+        char _tz[48];
+#if defined(HAS_TOUCH_UI)
+        touchPrefsBuildLocalTz(_tz, sizeof _tz);
+#else
+        strncpy(_tz, "CET-1CEST,M3.5.0,M10.5.0/3", sizeof _tz);
+        _tz[sizeof _tz - 1] = '\0';
+#endif
+        configTzTime(_tz, "pool.ntp.org", "time.google.com");
+        sntp_kicked = true;
+        sntp_kick_ms = millis();
+      } else if (!sntp_pushed && (uint32_t)(millis() - sntp_kick_ms) >= 1500) {
+        time_t t = time(nullptr);
+        if (t > 1700000000) {
+          /* Mesh RTC stores UTC seconds (protocol-facing); display layer
+           * converts to local via localtime_r() using the TZ from configTzTime. */
+          rtc_clock.setCurrentTime((uint32_t)t);
+          sntp_pushed = true;
+        }
+      }
+    } else {
+      // Link dropped: allow re-sync on next reconnect.
+      if (sntp_kicked && !sntp_pushed) sntp_kicked = false;
     }
   }
   // Defer TCP and WebSocket until after splash dismisses so the_mesh.loop() never blocks on accept() before ui_task.loop() runs.
   static const uint32_t TCP_DEFER_MS = 5000;   // 5 s: don't start TCP/WS until version screen has dismissed
-  if (millis() > TCP_DEFER_MS) {
+  /* Only start TCP / WS when WiFi was actually brought up. In BLE-only mode
+   * (no saved creds) the lwIP stack is never initialized — calling
+   * WiFiServer::begin() crashes with a tcpip_adapter assert. */
+  if (millis() > TCP_DEFER_MS && wifi_started) {
     serial_interface.startTcpServer(WiFi.status() == WL_CONNECTED);
     serial_interface.tickWebSocketHandshake();
   }
@@ -346,6 +453,8 @@ void loop() {
   the_mesh.loop();
   sensors.loop();
   rtc_clock.tick();
+
+
 #if defined(ESP32_PLATFORM)
   board.pollHttpOtaReboot();
 #endif

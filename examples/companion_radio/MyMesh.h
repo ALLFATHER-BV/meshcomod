@@ -2,6 +2,8 @@
 
 #include <Arduino.h>
 #include <Mesh.h>
+#include <helpers/AdvertDataHelpers.h>
+#include <helpers/MeshTouchTxTrace.h>
 #include "AbstractUITask.h"
 
 /*------------ Frame Protocol --------------*/
@@ -108,12 +110,41 @@ public:
   NodePrefs *getNodePrefs();
   uint32_t getBLEPin();
 
+  // Live device info accessors (used by the touch Settings → Device modal to
+  // mirror the web client's "Device (live)" panel — public key prefix, channel
+  // count, etc.). self_id and num_channels live in `protected:` of the base
+  // classes, so we expose narrow getters here.
+  const uint8_t *getSelfPubKey() const { return self_id.pub_key; }
+  // Channel count by iterating slots — `num_channels` is private in the base.
+  // A channel slot is in-use when its name is non-empty (matches the lookup
+  // pattern used elsewhere in the firmware).
+  int getNumChannels() {
+#ifdef MAX_GROUP_CHANNELS
+    int n = 0;
+    for (int i = 0; i < MAX_GROUP_CHANNELS; ++i) {
+      ChannelDetails cd{};
+      if (getChannel(i, cd) && cd.name[0] != '\0') ++n;
+    }
+    return n;
+#else
+    return 0;
+#endif
+  }
+
   void loop();
   void handleCmdFrame(size_t len);
   bool advert();
+  /** Send advert with explicit routing: true = flood (multi-hop), false = zero-hop.
+   *  `advert()` (zero-hop) is kept for backward compatibility. */
+  bool sendAdvert(bool flood);
   void enterCLIRescue();
 
   int  getRecentlyHeard(AdvertPath dest[], int max_num);
+
+  // On-device terminal: register an output sink (nullptr = off) and run a local
+  // CLI command. Replies flow through pushMeshcomodReply -> the sink.
+  static void setTerminalSink(void (*cb)(const char* line));
+  void runLocalCli(const char* cmd);
 
 #if defined(ESP32) && (defined(WIFI_SSID) || defined(MULTI_TRANSPORT_COMPANION))
   /** HTTP OTA: one UTF-8 line as PUSH_CODE_BINARY_RESPONSE (ESP32Board → meshcoreRepeaterTcpOtaEmitLine). */
@@ -136,6 +167,7 @@ protected:
   bool isMeshcomodRecipient(const uint8_t* pub_key_prefix_6) const;
   bool handleMeshcomodCommand(const char* text, int text_len);
   void pushMeshcomodReply(const char* text, bool immediate_current = false);
+
   void sendFloodScoped(const ContactInfo& recipient, mesh::Packet* pkt, uint32_t delay_millis=0) override;
   void sendFloodScoped(const mesh::GroupChannel& channel, mesh::Packet* pkt, uint32_t delay_millis=0) override;
 
@@ -160,8 +192,6 @@ protected:
                            const uint8_t *sender_prefix, const char *text) override;
   void onChannelMessageRecv(const mesh::GroupChannel &channel, mesh::Packet *pkt, uint32_t timestamp,
                             const char *text) override;
-  void onChannelDataRecv(const mesh::GroupChannel &channel, mesh::Packet *pkt, uint16_t data_type,
-                         const uint8_t *data, size_t data_len) override;
 
   uint8_t onContactRequest(const ContactInfo &contact, uint32_t sender_timestamp, const uint8_t *data,
                            uint8_t len, uint8_t *reply) override;
@@ -186,18 +216,264 @@ protected:
   }
 
 public:
+  /** Which kind of touch-UI request is currently in flight, so the response
+   *  matcher in onContactResponse routes to the right callback. */
+  enum class UiReqKind : uint8_t { None = 0, Status = 1, Telemetry = 2 };
+
+  /** Fire a REQ_TYPE_GET_STATUS from the touch UI side. Result is delivered
+   *  via AbstractUITask::onPingReply when the reply arrives.
+   *  Returns the MSG_SEND_* result code. */
+  int sendStatusPingForUI(ContactInfo& recipient) {
+    uint32_t tag = 0, est = 0;
+    /* Clear any stale serial-side status pending so the legacy match doesn't
+     * eat our reply before the UI hook sees it. */
+    pending_status = 0;
+    int r = sendRequest(recipient, REQ_TYPE_GET_STATUS, tag, est);
+    if (r == MSG_SEND_SENT_FLOOD || r == MSG_SEND_SENT_DIRECT) {
+      memcpy(&_ui_pending_status, recipient.id.pub_key, 4);
+      _ui_pending_kind = UiReqKind::Status;
+      _ui_pending_tag  = tag;   // request tag, reflected by the repeater
+    }
+    return r;
+  }
+
+  /** Same as sendStatusPingForUI, but sends an unauthenticated guest LOGIN
+   *  first. Repeaters need the sender to be in their ACL before they will
+   *  decrypt a PAYLOAD_TYPE_REQ; the ACL is only populated by handleLoginReq.
+   *  An empty-password sendLogin matches repeaters whose guest_password is
+   *  blank (the typical out-of-box default) and adds us as a guest. The
+   *  dispatcher serializes outbound TX, so the LOGIN ANON_REQ reaches the
+   *  destination before the STATUS REQ that follows.
+   *  No-op if the LOGIN packet pool is empty; falls through to send the
+   *  STATUS REQ anyway so a repeater that already knows us still replies. */
+  int sendStatusPingWithGuestLoginForUI(ContactInfo& recipient) {
+    uint32_t login_est = 0;
+    sendLogin(recipient, "", login_est);
+    return sendStatusPingForUI(recipient);
+  }
+
+  /** Same chained-login flavour for telemetry — repeaters and sensors also
+   *  require ACL membership for REQ_TYPE_GET_TELEMETRY_DATA. */
+  int sendTelemetryRequestWithGuestLoginForUI(ContactInfo& recipient) {
+    uint32_t login_est = 0;
+    sendLogin(recipient, "", login_est);
+    return sendTelemetryRequestForUI(recipient);
+  }
+
+  /** Admin login for the touch UI repeater admin console.
+   *  Sends a sendLogin with the given password (empty = guest), records
+   *  pending_login so onContactResponse's existing login branch can route
+   *  the response. The same branch now also fires
+   *  AbstractUITask::onAdminLoginResult so the UI can flip from "logging
+   *  in…" to "logged in" (or "failed"). */
+  int uiSendAdminLogin(ContactInfo& recipient, const char* password) {
+    uint32_t est = 0;
+    int r = sendLogin(recipient, password ? password : "", est);
+    if (r == MSG_SEND_SENT_FLOOD || r == MSG_SEND_SENT_DIRECT) {
+      memcpy(&pending_login, recipient.id.pub_key, 4);
+    }
+    return r;
+  }
+
+  /** Send a CLI command line to a previously-logged-in repeater / room
+   *  server. The reply lands in AbstractUITask::onAdminCommandReply via
+   *  queueMessage when the server returns a TXT_TYPE_CLI_DATA frame.
+   *  No-op if recipient isn't in our contacts; returns MSG_SEND_FAILED. */
+  int uiSendAdminCommand(ContactInfo& recipient, const char* text) {
+    if (!text || !text[0]) return MSG_SEND_FAILED;
+    uint32_t est = 0;
+    uint32_t ts = getRTCClock()->getCurrentTimeUnique();
+    return sendCommandData(recipient, ts, 0, text, est);
+  }
+  /** Cancel UI ping pending state (used by timeout). */
+  void cancelUIPingPending() {
+    _ui_pending_status = 0;
+    _ui_pending_kind   = UiReqKind::None;
+    _ui_pending_tag    = 0;
+  }
+  /** True if a UI ping is still waiting on a reply. */
+  bool hasUIPingPending() const { return _ui_pending_status != 0; }
+
+  /** Register an expected ACK hash that came out of a touch-UI sendMessage
+   *  call, so MyMesh::processAck can match the inbound ACK and dispatch
+   *  onMessageAcked back to the UI. The companion-serial CMD_SEND_TXT_MSG
+   *  handler already does this for app-originated messages; the touch UI
+   *  reaches sendMessage directly and skipped this until now. */
+  void uiRegisterExpectedAck(uint32_t expected_ack, const uint8_t pub_key[32]) {
+    if (expected_ack == 0) return;
+    ContactInfo* c = lookupContactByPubKey(pub_key, PUB_KEY_SIZE);
+    if (!c) return;
+    expected_ack_table[next_ack_idx].msg_sent = _ms->getMillis();
+    expected_ack_table[next_ack_idx].ack = expected_ack;
+    expected_ack_table[next_ack_idx].contact = c;
+    // EXPECTED_ACK_TABLE_SIZE is #defined further down in this header next
+    // to the table itself; hard-code 8 here so this inline helper compiles
+    // wherever it's used.
+    next_ack_idx = (next_ack_idx + 1) % 8;
+  }
+
+  /** Send a 0-hop trace ping to a single neighbor (typically a repeater).
+   *  Returns the trace tag we chose (non-zero on success) so the UI can
+   *  match the onTracePingResult callback. The trace path is just the
+   *  neighbor's hash; when they retransmit, our radio picks it up and the
+   *  dispatcher fires onTraceRecv at us with the SNRs in both directions.
+   *  Returns 0 on failure. */
+  uint32_t uiSendTracePing(const uint8_t pub_key[32]) {
+    if (!pub_key) return 0;
+    uint8_t hash_sz = (uint8_t)(_prefs.path_hash_mode + 1);
+    if (hash_sz == 0 || hash_sz > 4) hash_sz = 1;
+    uint8_t flags = (uint8_t)(_prefs.path_hash_mode & 0x03);
+    uint32_t tag = 0;
+    getRNG()->random((uint8_t*)&tag, sizeof(tag));
+    if (tag == 0) tag = 1;
+    // Stash so onTraceRecv can route the right callback to the UI.
+    _ui_trace_ping_tag = tag;
+    mesh::Packet* pkt = createTrace(tag, 0, flags);
+    if (!pkt) { _ui_trace_ping_tag = 0; return 0; }
+    sendDirect(pkt, pub_key, hash_sz);
+    return tag;
+  }
+
+  /** Send a FULL-ROUTE trace toward `c` along its entire known path, so every
+   *  repeater on the way appends its RX-SNR (vs uiSendTracePing, which only
+   *  probes the immediate neighbour). The result arrives via the same
+   *  onTracePingResult callback, but with one SNR reading per hop. Falls back
+   *  to a single-hop trace when the path to `c` is unknown (flood-routed
+   *  contact — there's no fixed path to walk). Returns the tag, 0 on failure. */
+  uint32_t uiSendTraceRoute(const ContactInfo& c) {
+    uint8_t flags = (uint8_t)(_prefs.path_hash_mode & 0x03);
+    uint32_t tag = 0;
+    getRNG()->random((uint8_t*)&tag, sizeof(tag));
+    if (tag == 0) tag = 1;
+    _ui_trace_ping_tag = tag;
+    mesh::Packet* pkt = createTrace(tag, 0, flags);
+    if (!pkt) { _ui_trace_ping_tag = 0; return 0; }
+    if (c.out_path_len != OUT_PATH_UNKNOWN && c.out_path_len > 0) {
+      sendDirect(pkt, c.out_path, c.out_path_len);   // walk the full route
+    } else {
+      uint8_t hash_sz = (uint8_t)(_prefs.path_hash_mode + 1);
+      if (hash_sz == 0 || hash_sz > 4) hash_sz = 1;
+      sendDirect(pkt, c.id.pub_key, hash_sz);         // unknown path → single hop
+    }
+    return tag;
+  }
+
+  /** Request CayenneLPP telemetry from a remote contact. Reply is delivered
+   *  via AbstractUITask::onTelemetryReply with the raw LPP payload after the
+   *  4-byte timestamp header. Falls back to onPingReply if the UI didn't
+   *  override the telemetry hook.
+   *  Returns the MSG_SEND_* result code. */
+  int sendTelemetryRequestForUI(ContactInfo& recipient) {
+    uint32_t tag = 0, est = 0;
+    pending_telemetry = 0;
+    int r = sendRequest(recipient, REQ_TYPE_GET_TELEMETRY_DATA, tag, est);
+    if (r == MSG_SEND_SENT_FLOOD || r == MSG_SEND_SENT_DIRECT) {
+      memcpy(&_ui_pending_status, recipient.id.pub_key, 4);
+      _ui_pending_kind = UiReqKind::Telemetry;
+      _ui_pending_tag  = tag;   // request tag, reflected by the repeater
+    }
+    return r;
+  }
+
+private:
+
+public:
   void savePrefs() { _store->savePrefs(_prefs, sensors.node_lat, sensors.node_lon); }
 
-#if ENV_INCLUDE_GPS == 1
-  void applyGpsPrefs() {
-    sensors.setSettingValue("gps", _prefs.gps_enabled ? "1" : "0");
-    if (_prefs.gps_interval > 0) {
-      char interval_str[12];  // Max: 24 hours = 86400 seconds (5 digits + null)
-      sprintf(interval_str, "%u", _prefs.gps_interval);
-      sensors.setSettingValue("gps_interval", interval_str);
+  /** Find the first unused channel slot, or -1 if the table is full. A slot
+   *  is considered free when its name is empty (matches getNumChannels). */
+  int findFirstEmptyChannelSlot() {
+#ifdef MAX_GROUP_CHANNELS
+    for (int i = 0; i < MAX_GROUP_CHANNELS; ++i) {
+      ChannelDetails cd{};
+      if (!getChannel(i, cd) || cd.name[0] == '\0') return i;
     }
-  }
 #endif
+    return -1;
+  }
+
+  /** UI-side equivalent of the CMD_SET_CHANNEL serial handler in handleCmdFrame.
+   *  Writes channel `idx` with `name` (up to 31 chars) and a 16-byte secret,
+   *  persists it to NVS and pokes the UI to refresh its thread list.
+   *  Returns false if `idx` is out of range or setChannel rejects the slot. */
+  bool uiAddOrUpdateChannel(int idx, const char* name, const uint8_t secret16[16]) {
+    if (idx < 0) return false;
+    ChannelDetails channel{};
+    StrHelper::strncpy(channel.name, name, sizeof(channel.name));
+    memset(channel.channel.secret, 0, sizeof(channel.channel.secret));
+    memcpy(channel.channel.secret, secret16, 16);
+    if (!setChannel(idx, channel)) return false;
+    saveChannels();
+    if (_ui) _ui->onThreadsChanged();
+    return true;
+  }
+
+  /** Wipe the cached return path for a contact so the next outgoing message
+   *  re-floods instead of routing through a stale hop list. Returns false
+   *  when the contact isn't in the table any more. */
+  bool uiResetContactPath(const uint8_t pub_key[32]) {
+    ContactInfo* slot = lookupContactByPubKey(pub_key, PUB_KEY_SIZE);
+    if (!slot) return false;
+    slot->out_path_len = OUT_PATH_UNKNOWN;
+    memset(slot->out_path, 0, sizeof(slot->out_path));
+    saveContacts();
+    return true;
+  }
+
+  /** Manually add a chat-type peer to contacts[] from a raw 32-byte pubkey
+   *  + display name. Used by the Contacts tab "+" → "Add by pubkey" flow
+   *  when we want to talk to someone whose advert we haven't received yet.
+   *  Returns false if the pubkey is already a contact, the name is empty,
+   *  or the contact table is full. */
+  bool uiAddManualContact(const uint8_t pub_key[32], const char* name) {
+    if (!name || !name[0]) return false;
+    if (lookupContactByPubKey(pub_key, PUB_KEY_SIZE) != nullptr) return false;
+    ContactInfo ci{};
+    memcpy(ci.id.pub_key, pub_key, PUB_KEY_SIZE);
+    ci.type         = ADV_TYPE_CHAT;
+    ci.out_path_len = OUT_PATH_UNKNOWN;
+    ci.last_advert_timestamp = 0;          // unknown — we never heard them
+    ci.lastmod      = getRTCClock()->getCurrentTime();
+    StrHelper::strncpy(ci.name, name, sizeof(ci.name));
+    if (!addContact(ci)) return false;
+    saveContacts();
+    if (_ui) _ui->onThreadsChanged();
+    return true;
+  }
+
+  /** Clear channel slot `idx` (zero name + secret), persist, and ping the UI
+   *  so the chats list drops the entry. Returns false if the index is out of
+   *  range. Used by the long-press → Delete action on the chats list. */
+  bool uiDeleteChannel(int idx) {
+#ifdef MAX_GROUP_CHANNELS
+    if (idx < 0 || idx >= MAX_GROUP_CHANNELS) return false;
+    ChannelDetails empty{};
+    if (!setChannel(idx, empty)) return false;
+    saveChannels();
+    if (_ui) _ui->onThreadsChanged();
+    return true;
+#else
+    (void)idx;
+    return false;
+#endif
+  }
+
+  /** Idempotently re-add the default "Public" channel (PSK matches
+   *  MyMesh.cpp's PUBLIC_GROUP_PSK). Returns true if the channel is present
+   *  after the call, false if no slot was available. */
+  bool uiJoinPublicChannel() {
+#ifdef MAX_GROUP_CHANNELS
+    for (int i = 0; i < MAX_GROUP_CHANNELS; ++i) {
+      ChannelDetails cd{};
+      if (getChannel(i, cd) && cd.name[0] != '\0' &&
+          strncasecmp(cd.name, "Public", 6) == 0) return true;
+    }
+#endif
+    if (addChannel("Public", "izOH6cXN6mrJ5e26oRXNcg==") == nullptr) return false;
+    saveChannels();
+    if (_ui) _ui->onThreadsChanged();
+    return true;
+  }
 
 private:
   void writeOKFrame();
@@ -243,6 +519,20 @@ private:
   uint32_t pending_status;
   uint32_t pending_telemetry, pending_discovery;   // pending _TELEMETRY_REQ
   uint32_t pending_req;   // pending _BINARY_REQ
+  /** UI-side ping tracker: holds first 4 bytes of recipient pub_key when the
+   *  touch UI fired a status request. Independent from `pending_status` so it
+   *  doesn't collide with the companion-serial workflow. */
+  uint32_t _ui_pending_status;
+  /** Which UI-side request is in flight against `_ui_pending_status` —
+   *  STATUS replies should route to onPingReply, TELEMETRY replies to
+   *  onTelemetryReply (CayenneLPP-aware). */
+  UiReqKind _ui_pending_kind = UiReqKind::None;
+  /** Reflected-tag match for the UI request. STATUS/TELEMETRY responses
+   *  echo our request's 4-byte timestamp at data[0..3], but a chained
+   *  guest LOGIN response carries the *repeater's* own clock there — so
+   *  matching by pubkey alone misroutes the login OK as the REQ reply.
+   *  Compare tag in onContactResponse to keep the two streams separate. */
+  uint32_t _ui_pending_tag = 0;
   BaseSerialInterface *_serial;
   AbstractUITask* _ui;
 
@@ -310,6 +600,22 @@ private:
 
   #define ADVERT_PATH_TABLE_SIZE   16
   AdvertPath advert_paths[ADVERT_PATH_TABLE_SIZE]; // circular table
+
+  // One-shot auto-advert on boot. Recipients with auto-add ON pick up our
+  // current pubkey, which is critical when the touch firmware regenerates
+  // identity after a SPIFFS wipe (otherwise old contacts have stale pubkey
+  // and silently drop our DMs because shared-secret no longer matches).
+  // 0 = already fired or disabled.
+  uint32_t _boot_advert_due_ms = 0;
+  bool     _boot_advert_done   = false;
+
+  // Most recently sent UI-initiated trace-ping tag. onTraceRecv compares
+  // this against the trace's tag field: if it matches, the trace was ours
+  // (a Ping from the action sheet) and we forward the SNRs to the UI; if
+  // not, it's an app-originated trace and we route to the companion app
+  // path. Single-slot is enough because the UI gates a new ping until the
+  // last one resolves or times out.
+  uint32_t _ui_trace_ping_tag = 0;
 };
 
 extern MyMesh the_mesh;

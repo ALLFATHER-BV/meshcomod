@@ -19,4 +19,10 @@ compile_commands.json
 .venv/
 venv/
 platformio.local.ini
+
+# Local tile-pack build data + generated Wi-Fi creds (never commit)
+/data/
 scripts/build/wifi_secrets.h
+
+# Local working notes (contains ops/infra details — never publish)
+CLAUDE.md

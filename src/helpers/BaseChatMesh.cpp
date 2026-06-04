@@ -1,5 +1,13 @@
 #include <helpers/BaseChatMesh.h>
 #include <Utils.h>
+#if defined(ESP32)
+#include <esp_heap_caps.h>   // for lazy PSRAM allocation of the contacts table
+#endif
+#if defined(ESP32_PLATFORM) && defined(HAS_HELTEC_V4_CAP_TOUCH) && defined(UI_LVGL)
+#include <helpers/MeshTouchTxTrace.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#endif
 
 #ifndef SERVER_RESPONSE_DELAY
   #define SERVER_RESPONSE_DELAY   300
@@ -68,6 +76,22 @@ void BaseChatMesh::bootstrapRTCfromContacts() {
 }
 
 ContactInfo* BaseChatMesh::allocateContactSlot() {
+  // Lazily allocate the contact table on first use. This is the ONLY place
+  // num_contacts grows, and every reader is gated by `i < num_contacts`, so
+  // `contacts` is guaranteed non-null whenever it is dereferenced elsewhere.
+  // On ESP32 we put the ~67KB table in PSRAM to keep it off scarce internal
+  // DRAM (WiFi needs internal heap for its connection timers). First touched
+  // during store.begin() -> addContact(), well after PSRAM is initialised.
+  if (!contacts) {
+#if defined(ESP32)
+    contacts = (ContactInfo*)heap_caps_malloc(sizeof(ContactInfo) * MAX_CONTACTS, MALLOC_CAP_SPIRAM);
+    if (!contacts) contacts = (ContactInfo*)heap_caps_malloc(sizeof(ContactInfo) * MAX_CONTACTS, MALLOC_CAP_8BIT);
+#else
+    contacts = (ContactInfo*)malloc(sizeof(ContactInfo) * MAX_CONTACTS);
+#endif
+    if (!contacts) return NULL;   // out of memory: behave as "no slot"
+    memset(contacts, 0, sizeof(ContactInfo) * MAX_CONTACTS);
+  }
   if (num_contacts < MAX_CONTACTS) {
     return &contacts[num_contacts++];
   } else if (shouldOverwriteWhenFull()) {
@@ -393,12 +417,11 @@ void BaseChatMesh::onGroupDataRecv(mesh::Packet* packet, uint8_t type, const mes
   }
 }
 
-mesh::Packet* BaseChatMesh::composeMsgPacket(const ContactInfo& recipient, uint32_t timestamp, uint8_t attempt, const char *text, uint32_t& expected_ack) {
+mesh::Packet* BaseChatMesh::composeMsgPacket(const ContactInfo& recipient, uint32_t timestamp, uint8_t attempt, const char *text, uint32_t& expected_ack, uint8_t* out_nonce) {
   int text_len = strlen(text);
   if (text_len > MAX_TEXT_LEN) return NULL;
-  if (attempt > 3 && text_len > MAX_TEXT_LEN-2) return NULL;
 
-  uint8_t temp[5+MAX_TEXT_LEN+1];
+  uint8_t temp[5+MAX_TEXT_LEN+2+4];
   memcpy(temp, &timestamp, 4);   // mostly an extra blob to help make packet_hash unique
   temp[4] = (attempt & 3);
   memcpy(&temp[5], text, text_len + 1);
@@ -406,20 +429,106 @@ mesh::Packet* BaseChatMesh::composeMsgPacket(const ContactInfo& recipient, uint3
   // calc expected ACK reply
   mesh::Utils::sha256((uint8_t *)&expected_ack, 4, temp, 5 + text_len, self_id.pub_key, PUB_KEY_SIZE);
 
-  int len = 5 + text_len;
-  if (attempt > 3) {
-    temp[len++] = 0;  // null terminator
-    temp[len++] = attempt;  // hide attempt number at tail end of payload
-  }
+  // Append null + raw millis() (4 bytes) as entropy. millis() is strictly monotonic on
+  // ESP32; if this still gives identical bytes between calls, the calls aren't happening.
+  // Also print the input bytes to serial UNCONDITIONALLY so we can see whether the path
+  // is being hit at all.
+  int len = 5 + text_len + 1;
+  uint32_t ms_now = (uint32_t)_ms->getMillis();
+  memcpy(&temp[len], &ms_now, sizeof(ms_now));
+  len += sizeof(ms_now);
+  if (out_nonce) *out_nonce = (uint8_t)(ms_now & 0xFF);
+  ++txt_send_seq;
 
-  return createDatagram(PAYLOAD_TYPE_TXT_MSG, recipient.id, recipient.getSharedSecret(self_id), temp, len);
+  mesh::Packet* pkt = createDatagram(PAYLOAD_TYPE_TXT_MSG, recipient.id, recipient.getSharedSecret(self_id), temp, len);
+  return pkt;
 }
 
-int  BaseChatMesh::sendMessage(const ContactInfo& recipient, uint32_t timestamp, uint8_t attempt, const char* text, uint32_t& expected_ack, uint32_t& est_timeout) {
-  mesh::Packet* pkt = composeMsgPacket(recipient, timestamp, attempt, text, expected_ack);
+void BaseChatMesh::initTxtTxUniquenessFromRng() {
+  mesh::RNG* g = getRNG();
+  if (!g) return;
+  uint8_t w[8];
+  g->random(w, sizeof(w));
+  txt_send_seq = (uint32_t)w[0] | ((uint32_t)w[1] << 8) | ((uint32_t)w[2] << 16) | ((uint32_t)w[3] << 24);
+  uint8_t nb = 0;
+  g->random(&nb, 1);
+  txt_nonce_counter = (uint8_t)(1 + (nb & 0xFE));
+  if (txt_nonce_counter == 0) txt_nonce_counter = 1;
+  g->random(w, 4);
+  _txt_last_ts = (uint32_t)w[0] | ((uint32_t)w[1] << 8) | ((uint32_t)w[2] << 16) | ((uint32_t)w[3] << 24);
+}
+
+int  BaseChatMesh::sendMessage(const ContactInfo& recipient, uint32_t timestamp, uint8_t attempt, const char* text, uint32_t& expected_ack, uint32_t& est_timeout, uint32_t* out_packet_hash4, TxtTxDebugInfo* out_dbg) {
+  (void)timestamp;
+  (void)attempt;
+  static uint8_t s_txt_attempt = 4;
+  uint32_t uniq_ts = getRTCClock()->getCurrentTimeUnique();
+  uint32_t millis_floor = (uint32_t)(_ms->getMillis() / 1000u);
+  if (millis_floor > uniq_ts) uniq_ts = millis_floor;
+  if (uniq_ts <= _txt_last_ts) uniq_ts = _txt_last_ts + 1;
+  _txt_last_ts = uniq_ts;
+  uint8_t uniq_attempt = s_txt_attempt++;
+  if (uniq_attempt < 4) {
+    uniq_attempt = 4;
+    s_txt_attempt = 5;
+  }
+  uint8_t nonce = 0;
+  mesh::Packet* pkt = composeMsgPacket(recipient, uniq_ts, uniq_attempt, text, expected_ack, &nonce);
   if (pkt == NULL) return MSG_SEND_FAILED;
+  {
+    uint8_t hash[MAX_HASH_SIZE];
+    pkt->calculatePacketHash(hash);
+    memcpy(&last_txt_tx_hash4, hash, sizeof(last_txt_tx_hash4));
+    has_last_txt_tx_hash4 = true;
+    if (out_packet_hash4) memcpy(out_packet_hash4, hash, sizeof(*out_packet_hash4));
+    if (out_dbg) {
+      out_dbg->uniq_ts = uniq_ts;
+      out_dbg->uniq_attempt = uniq_attempt;
+      out_dbg->nonce = nonce;
+      memcpy(&out_dbg->packet_hash4, hash, sizeof(out_dbg->packet_hash4));
+    }
+#if defined(ESP32_PLATFORM) && defined(HAS_HELTEC_V4_CAP_TOUCH) && defined(UI_LVGL)
+    {
+      char hx[40];
+      mesh_touch_hex_prefix(pkt->payload, (int)pkt->payload_len < 16 ? (int)pkt->payload_len : 16, hx, sizeof(hx));
+      const unsigned stack_hw = uxTaskGetStackHighWaterMark(nullptr);
+      mesh_touch_tx_tracef(
+          "%s TX_COMPOSE txt h=%08lX ts=%lu att=%u nonce=%u seq=%lu tlen=%u plen=%u stk=%u rtc=%lu uniq=%lu p0_15=%s",
+          getLogDateTime(),
+          (unsigned long)last_txt_tx_hash4,
+          (unsigned long)uniq_ts,
+          (unsigned)uniq_attempt,
+          (unsigned)nonce,
+          (unsigned long)txt_send_seq,
+          (unsigned)strlen(text),
+          (unsigned)pkt->payload_len,
+          stack_hw,
+          (unsigned long)getRTCClock()->getCurrentTime(),
+          (unsigned long)getRTCClock()->getCurrentTimeUnique(),
+          hx);
+    }
+#else
+    MESH_DEBUG_PRINTLN("%s TX_COMPOSE txt h=%08lX ts=%lu att=%u nonce=%u len=%u out_path=%d",
+                       getLogDateTime(),
+                       (unsigned long)last_txt_tx_hash4,
+                       (unsigned long)uniq_ts,
+                       (unsigned)uniq_attempt,
+                       (unsigned)nonce,
+                       (unsigned)strlen(text),
+                       (int)recipient.out_path_len);
+#endif
+  }
 
   uint32_t t = _radio->getEstAirtimeFor(pkt->getRawLength());
+
+  // Drop any queued plain TXT so a stale frame cannot go out ahead of this send (direct queue + retries).
+  for (int i = _mgr->getOutboundTotal() - 1; i >= 0; --i) {
+    mesh::Packet* q = _mgr->getOutboundByIdx(i);
+    if (q && q->getPayloadType() == PAYLOAD_TYPE_TXT_MSG) {
+      mesh::Packet* rm = _mgr->removeOutboundByIdx(i);
+      if (rm) _mgr->free(rm);
+    }
+  }
 
   int rc;
   if (recipient.out_path_len == OUT_PATH_UNKNOWN) {
@@ -434,19 +543,59 @@ int  BaseChatMesh::sendMessage(const ContactInfo& recipient, uint32_t timestamp,
   return rc;
 }
 
-int  BaseChatMesh::sendCommandData(const ContactInfo& recipient, uint32_t timestamp, uint8_t attempt, const char* text, uint32_t& est_timeout) {
+int  BaseChatMesh::sendCommandData(const ContactInfo& recipient, uint32_t timestamp, uint8_t attempt, const char* text, uint32_t& est_timeout, uint32_t* out_packet_hash4, TxtTxDebugInfo* out_dbg) {
   int text_len = strlen(text);
   if (text_len > MAX_TEXT_LEN) return MSG_SEND_FAILED;
 
-  uint8_t temp[5+MAX_TEXT_LEN+1];
+  uint8_t temp[5+MAX_TEXT_LEN+2+4];   // mirror composeMsgPacket: +1 null +1 nonce +4 seq in encrypted region
   memcpy(temp, &timestamp, 4);   // mostly an extra blob to help make packet_hash unique
   temp[4] = (attempt & 3) | (TXT_TYPE_CLI_DATA << 2);
   memcpy(&temp[5], text, text_len + 1);
 
-  auto pkt = createDatagram(PAYLOAD_TYPE_TXT_MSG, recipient.id, recipient.getSharedSecret(self_id), temp, 5 + text_len);
+  // Same per-call RNG+millis entropy strategy as composeMsgPacket — bypass counter paths.
+  int len = 5 + text_len + 1;
+  uint8_t entropy[4];
+  getRNG()->random(entropy, sizeof(entropy));
+  uint32_t ms_now = (uint32_t)_ms->getMillis();
+  entropy[0] ^= (uint8_t)(ms_now & 0xFF);
+  entropy[1] ^= (uint8_t)((ms_now >> 8) & 0xFF);
+  entropy[2] ^= (uint8_t)((ms_now >> 16) & 0xFF);
+  entropy[3] ^= (uint8_t)((ms_now >> 24) & 0xFF);
+  memcpy(&temp[len], entropy, sizeof(entropy));
+  len += sizeof(entropy);
+  ++txt_send_seq;  // diagnostic only
+
+  auto pkt = createDatagram(PAYLOAD_TYPE_TXT_MSG, recipient.id, recipient.getSharedSecret(self_id), temp, len);
   if (pkt == NULL) return MSG_SEND_FAILED;
+  {
+    uint8_t hash[MAX_HASH_SIZE];
+    pkt->calculatePacketHash(hash);
+    memcpy(&last_txt_tx_hash4, hash, sizeof(last_txt_tx_hash4));
+    has_last_txt_tx_hash4 = true;
+    if (out_packet_hash4) memcpy(out_packet_hash4, hash, sizeof(*out_packet_hash4));
+    if (out_dbg) {
+      out_dbg->uniq_ts = timestamp;
+      out_dbg->uniq_attempt = attempt;
+      out_dbg->nonce = 0;
+      memcpy(&out_dbg->packet_hash4, hash, sizeof(out_dbg->packet_hash4));
+    }
+    MESH_DEBUG_PRINTLN("%s TX_COMPOSE cmd h=%08lX ts=%lu att=%u len=%u out_path=%d",
+                       getLogDateTime(),
+                       (unsigned long)last_txt_tx_hash4,
+                       (unsigned long)timestamp,
+                       (unsigned)attempt,
+                       (unsigned)strlen(text),
+                       (int)recipient.out_path_len);
+  }
 
   uint32_t t = _radio->getEstAirtimeFor(pkt->getRawLength());
+  for (int i = _mgr->getOutboundTotal() - 1; i >= 0; --i) {
+    mesh::Packet* q = _mgr->getOutboundByIdx(i);
+    if (q && q->getPayloadType() == PAYLOAD_TYPE_TXT_MSG) {
+      mesh::Packet* rm = _mgr->removeOutboundByIdx(i);
+      if (rm) _mgr->free(rm);
+    }
+  }
   int rc;
   if (recipient.out_path_len == OUT_PATH_UNKNOWN) {
     sendFloodScoped(recipient, pkt);
@@ -461,7 +610,7 @@ int  BaseChatMesh::sendCommandData(const ContactInfo& recipient, uint32_t timest
 }
 
 bool BaseChatMesh::sendGroupMessage(uint32_t timestamp, mesh::GroupChannel& channel, const char* sender_name, const char* text, int text_len) {
-  uint8_t temp[5+MAX_TEXT_LEN+32];
+  uint8_t temp[5+MAX_TEXT_LEN+32];   // already includes ample headroom for null + nonce + seq
   memcpy(temp, &timestamp, 4);   // mostly an extra blob to help make packet_hash unique
   temp[4] = 0;  // TXT_TYPE_PLAIN
 
@@ -471,9 +620,22 @@ bool BaseChatMesh::sendGroupMessage(uint32_t timestamp, mesh::GroupChannel& chan
 
   if (text_len + prefix_len > MAX_TEXT_LEN) text_len = MAX_TEXT_LEN - prefix_len;
   memcpy(ep, text, text_len);
-  ep[text_len] = 0;  // null terminator
+  ep[text_len] = 0;  // null terminator (now folded into encrypted region for hash uniqueness)
 
-  auto pkt = createGroupDatagram(PAYLOAD_TYPE_GRP_TXT, channel, temp, 5 + prefix_len + text_len);
+  // Same per-call RNG+millis entropy strategy as composeMsgPacket — bypass counter paths.
+  int payload_len = 5 + prefix_len + text_len + 1;
+  uint8_t entropy[4];
+  getRNG()->random(entropy, sizeof(entropy));
+  uint32_t ms_now = (uint32_t)_ms->getMillis();
+  entropy[0] ^= (uint8_t)(ms_now & 0xFF);
+  entropy[1] ^= (uint8_t)((ms_now >> 8) & 0xFF);
+  entropy[2] ^= (uint8_t)((ms_now >> 16) & 0xFF);
+  entropy[3] ^= (uint8_t)((ms_now >> 24) & 0xFF);
+  memcpy(&temp[payload_len], entropy, sizeof(entropy));
+  payload_len += sizeof(entropy);
+  ++txt_send_seq;  // diagnostic only
+
+  auto pkt = createGroupDatagram(PAYLOAD_TYPE_GRP_TXT, channel, temp, payload_len);
   if (pkt) {
     sendFloodScoped(channel, pkt);
     return true;
