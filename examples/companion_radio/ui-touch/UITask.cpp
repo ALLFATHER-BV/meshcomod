@@ -81,7 +81,16 @@ UIEventType g_last_event = UIEventType::none;
 namespace {
 constexpr const char* k_ui_history_path = "/ui_chat_history_v1.bin";
 constexpr uint32_t k_ui_history_magic = 0x55494348; // "UICH"
-constexpr uint16_t k_ui_history_version = 4;   // v4: adds meta_flags/path_len/snr_q4/rssi per message
+// Bump when the on-disk record layout changes. From v5 on, the header
+// self-describes its record sizes (see loadHistoryFromStorage), so you can
+// APPEND fields to the END of UiHistoryThread/UiHistoryMsg and OLD blobs still
+// load — the appended tail reads back zero instead of the whole history being
+// discarded. v4 added meta_flags/path_len/snr_q4/rssi per message.
+constexpr uint16_t k_ui_history_version = 5;
+// Oldest on-disk version we still load. v4's record layout matches the current
+// build, so it reads fine via the sizeof() fallback below; anything older
+// predates that layout and is discarded.
+constexpr uint16_t k_ui_history_min_version = 4;
 
 struct __attribute__((packed)) UiHistoryHeader {
   uint32_t magic;
@@ -92,7 +101,13 @@ struct __attribute__((packed)) UiHistoryHeader {
   uint32_t msgcount;
   int16_t active_thread_idx;
   uint8_t active_thread_is_channel;
-  uint8_t _pad[5];
+  // v5+: on-disk record sizes at write time, so the loader can read a blob
+  // whose records were SHORTER (fields appended since) and zero-fill the new
+  // tail. Zero in a v4 blob -> loader falls back to sizeof(). Carved out of the
+  // old _pad, so the header size is unchanged from v4.
+  uint16_t thread_rec_size;
+  uint16_t msg_rec_size;
+  uint8_t _pad[1];
 };
 
 struct __attribute__((packed)) UiHistoryThread {
@@ -123,6 +138,10 @@ struct __attribute__((packed)) UiHistoryMsg {
   char thread[UITask::MAX_THREAD_NAME + 1];
   char sender[UITask::MAX_SENDER_NAME + 1];
   char text[UITask::MAX_MSG_TEXT + 1];
+  // Append any FUTURE fields HERE (after text) and bump k_ui_history_version.
+  // The v5+ loader zero-fills appended fields for older blobs, so appending
+  // never wipes chat history. Inserting in the middle (as v4 did) breaks that
+  // and must instead raise k_ui_history_min_version.
 };
 } // namespace
 #endif
@@ -290,15 +309,32 @@ static void tdeckPlayToneRaw(int freq, int ms, int vol = 9000) {
   i2s_zero_dma_buffer(kI2sPort);
 }
 
-// Notification chime: install I2S, play a short two-note beep, uninstall. Skips
-// entirely while tiles are downloading (DMA-RAM contention → reboot). The caller
-// already checks the sound pref.
+static volatile bool s_notify_playing = false;
+// The chime body: install I2S, play the two notes, uninstall. ~300 ms of blocking
+// i2s_write + driver setup/teardown — run on its own throwaway task (below).
+static void tdeckNotifyTaskFn(void* arg) {
+  (void)arg;
+  if (tdeckAudioInstall()) {
+    tdeckPlayToneRaw(880, 90);    // A5
+    tdeckPlayToneRaw(1318, 110);  // E6
+    i2s_driver_uninstall(kI2sPort);
+  }
+  s_notify_playing = false;
+  vTaskDelete(nullptr);
+}
+
+// Notification chime. Spawned on a short-lived task so the ~300 ms of I2S work
+// does NOT freeze the UI — newMsgImpl (the caller) runs on the UI/mesh thread, so
+// playing synchronously locked the screen for the whole chime. Skips while tiles
+// download (DMA-RAM contention → reboot) and won't stack itself. Caller checks the
+// sound pref.
 static void tdeckPlayNotify() {
   if (s_tile_fetch_pending > 0) return;   // don't fight the Wi-Fi/tile DMA buffers
-  if (!tdeckAudioInstall()) return;
-  tdeckPlayToneRaw(880, 90);    // A5
-  tdeckPlayToneRaw(1318, 110);  // E6
-  i2s_driver_uninstall(kI2sPort);
+  if (s_notify_playing) return;           // already chiming — don't stack tasks/I2S
+  s_notify_playing = true;
+  if (xTaskCreate(tdeckNotifyTaskFn, "notify", 4096, nullptr, 3, nullptr) != pdPASS) {
+    s_notify_playing = false;             // couldn't spawn (low DRAM) — skip the chime
+  }
 }
 #endif  // HAS_TDECK_GT911
 
@@ -324,6 +360,21 @@ struct GlobalStatusBar {
 };
 static GlobalStatusBar g_statusbar = {};
 static void updateGlobalStatusBar();   // fwd decl, called from refresh tick
+
+// Active chat thread name, surfaced in the status bar's left zone. The in-chat
+// header bar (back button + name) was removed to give the conversation the full
+// height — like the Terminal/Files views, the chat name lives in the status bar
+// and a small floating HOME button handles exit. Empty = no chat open.
+static char s_chat_title[40] = {0};
+static void setChatStatusTitle(const char* sanitized) {   // already glyph-sanitized name, or nullptr to clear
+  if (sanitized && sanitized[0]) {
+    strncpy(s_chat_title, sanitized, sizeof(s_chat_title) - 1);
+    s_chat_title[sizeof(s_chat_title) - 1] = '\0';
+  } else {
+    s_chat_title[0] = '\0';
+  }
+  updateGlobalStatusBar();
+}
 /** Bottom tab indices. Tabs: Home=0, Chats=1, Contacts=2, Map=3, Set=4. */
 constexpr int CHAT_INBOX_TAB_INDEX   = 1;
 constexpr int CONTACTS_TAB_INDEX     = 2;
@@ -332,14 +383,14 @@ constexpr int SETTINGS_TAB_INDEX     = 4;
 constexpr int TAB_LAST               = 4;
 
 // ---- Chat overlay layout ----
-constexpr int CHAT_HDR_H       = 44;   // header bar
-constexpr int CHAT_COMP_H      = 50;   // composer row
+constexpr int CHAT_HDR_H       = 0;    // in-chat header bar removed; thread name shows in the status bar
+constexpr int CHAT_COMP_H      = 34;   // composer row (slimmed 50 → 40 → 34; hugs the 30px textbox)
 constexpr int CHAT_KB_H        = 130;  // on-screen keyboard (portrait)
 // Bottom tab-bar height (matches lv_tabview_create in buildUiTree). A tab
 // page's usable content area is the screen minus the status bar and tab bar —
 // queried live so it tracks the current rotation (240×260 portrait /
 // 320×180 landscape).
-constexpr int TABBAR_H = 38;
+constexpr int TABBAR_H = 30;   // bottom nav bar (trimmed from 38; icons stay g_font_16)
 static inline lv_coord_t tabContentW() { return lv_disp_get_hor_res(nullptr); }
 static inline lv_coord_t tabContentH() { return lv_disp_get_ver_res(nullptr) - STATUSBAR_H - TABBAR_H; }
 // Usable area for a centered modal below the global status bar (small margin).
@@ -1780,6 +1831,7 @@ static void backBtnCb(lv_event_t* e) {
   hideKb();
   if (p->overlay) lv_obj_add_flag(p->overlay, LV_OBJ_FLAG_HIDDEN);
   p->detail_open = false;
+  setChatStatusTitle(nullptr);   // drop the thread name from the status bar
 }
 
 // Long-press → delete-this-chat confirmation popup. The popup uses the
@@ -2067,11 +2119,9 @@ static void threadSelectCb(lv_event_t* e) {
   // Update header name
   bool ch; uint16_t unread; uint32_t ts; char name[UITask::MAX_THREAD_NAME + 1];
   if (g_lv.task->getThreadInfo(ctx->idx, ch, unread, ts, name, sizeof(name))) {
-    if (p.header_name) {
-      char san[UITask::MAX_THREAD_NAME + 8];
-      copyUtf8ReplacingMissingGlyphs(&g_font_14, san, sizeof(san), name);
-      lv_label_set_text(p.header_name, san);
-    }
+    char san[UITask::MAX_THREAD_NAME + 8];
+    copyUtf8ReplacingMissingGlyphs(&g_font_12, san, sizeof(san), name);
+    setChatStatusTitle(san);   // thread name → status bar (no in-chat header bar)
   }
   refreshChatDetail(p);
   p.detail_open = true;
@@ -2492,6 +2542,24 @@ static void tabChangedCb(lv_event_t* e) {
     // working set small and lets the map cold-load with fresh data on
     // the next visit. (CPU stays at 160 MHz — the whole UI runs there.)
     freeMapTiles();
+  }
+
+  // Settings tab: reclaim the top status-bar strip — the dense settings UI is
+  // cramped otherwise. Hide the global bar and raise/grow the tabview to the full
+  // height; restore on every other tab. Runs after the map-chrome block so a
+  // map → settings switch still ends up with the bar hidden.
+  {
+    const bool on_settings = (new_t == SETTINGS_TAB_INDEX);
+    const lv_coord_t hor = lv_disp_get_hor_res(nullptr);
+    const lv_coord_t ver = lv_disp_get_ver_res(nullptr);
+    if (g_lv.tabview) {
+      lv_obj_set_pos(g_lv.tabview, 0, on_settings ? 0 : STATUSBAR_H);
+      lv_obj_set_size(g_lv.tabview, hor, on_settings ? ver : (lv_coord_t)(ver - STATUSBAR_H));
+    }
+    if (g_statusbar.root) {
+      if (on_settings) lv_obj_add_flag(g_statusbar.root, LV_OBJ_FLAG_HIDDEN);
+      else              lv_obj_clear_flag(g_statusbar.root, LV_OBJ_FLAG_HIDDEN);
+    }
   }
   if (g_lv.task) g_lv.task->onLvTabChanged(new_t);
 }
@@ -3124,7 +3192,8 @@ static void openDiscoveredModalCb(lv_event_t* e) {
 }
 
 static void buildProfileSettings() {
-  lv_obj_t* body = createSettingsModal("Profile", SettingsModalKind::Profile);
+  // No "Profile" group header — it just duplicates the sub-tab button name.
+  lv_obj_t* body = createSettingsModal("", SettingsModalKind::Profile);
   int y = 0;
   const lv_coord_t cw = s_settings_content_w;
   auto mk_label = [&](const char* text) {
@@ -3144,57 +3213,6 @@ static void buildProfileSettings() {
     attachSettingsTaEvents(ta);
     return ta;
   };
-
-  // Public key — long-press copies. The "Identity" feature MCterm offers
-  // also surfaces the *private* key; we don't expose it here because
-  // LocalIdentity::prv_key is private to the base library and showing
-  // private material on a touch screen is mostly a footgun anyway.
-  mk_label("Identity (public key)");
-  {
-    const uint8_t* pk = the_mesh.getSelfPubKey();
-    char pk_hex[2 * PUB_KEY_SIZE + 1];
-    for (int i = 0; i < (int)PUB_KEY_SIZE; ++i) {
-      snprintf(pk_hex + i*2, 3, "%02x", pk[i]);
-    }
-    lv_obj_t* pk_lbl = lv_label_create(body);
-    lv_label_set_long_mode(pk_lbl, LV_LABEL_LONG_WRAP);
-    lv_obj_set_width(pk_lbl, lv_pct(100));
-    lv_label_set_text(pk_lbl, pk_hex);
-    lv_obj_set_style_text_color(pk_lbl, lv_color_hex(COLOR_ACCENT), LV_PART_MAIN);
-    lv_obj_set_style_text_font(pk_lbl, &g_font_12, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(pk_lbl, lv_color_hex(0x0A0B0C), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(pk_lbl, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(pk_lbl, 4, LV_PART_MAIN);
-    lv_obj_set_style_radius(pk_lbl, 4, LV_PART_MAIN);
-    lv_obj_set_pos(pk_lbl, 2, y);
-    lv_obj_add_flag(pk_lbl, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(pk_lbl, copyLabelLongPressCb, LV_EVENT_LONG_PRESSED,
-                        const_cast<char*>("pubkey"));
-    y += 50;
-  }
-
-  // "Share QR" button — mirrors the Chats-tab header affordance. Same
-  // popup, just a second entry point reachable from Settings → Profile
-  // where the operator might already be looking at their identity.
-  {
-    lv_obj_t* sb = lv_btn_create(body);
-    lv_obj_set_size(sb, lv_pct(100),34);
-    lv_obj_set_pos(sb, 2, y);
-    styleButton(sb);
-    lv_obj_add_event_cb(sb, +[](lv_event_t* e) {
-      if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
-      openShareMyContactPopup();
-    }, LV_EVENT_CLICKED, nullptr);
-    lv_obj_t* sl = lv_label_create(sb);
-    // LV_SYMBOL_IMAGE doubles as the "QR-like square" glyph the chat
-    // header uses — keeps the visual language consistent across entry
-    // points so the operator pattern-matches them as the same action.
-    lv_label_set_text(sl, LV_SYMBOL_IMAGE "   Share QR");
-    lv_obj_set_style_text_color(sl, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
-    lv_obj_set_style_text_font(sl, &g_font_14, LV_PART_MAIN);
-    lv_obj_center(sl);
-    y += 42;
-  }
 
   mk_label("Node name");
   g_set_modal.name_ta = mk_ta(cw, 0, "Node name", 31);
@@ -3273,6 +3291,53 @@ static void buildProfileSettings() {
     lv_obj_t* lpol = lv_label_create(bpol);
     lv_label_set_text(lpol, "Save policy");
     lv_obj_center(lpol);
+    y += 40;   // advance past the Save-policy button so the moved Identity block clears it
+  }
+
+  // ---- Identity + Share QR (moved to the BOTTOM of the Profile page) ----
+  // Public key — long-press copies. We don't surface the *private* key here
+  // (LocalIdentity::prv_key is library-private, and private material on a touch
+  // screen is a footgun).
+  mk_label("Identity (public key)");
+  {
+    const uint8_t* pk = the_mesh.getSelfPubKey();
+    char pk_hex[2 * PUB_KEY_SIZE + 1];
+    for (int i = 0; i < (int)PUB_KEY_SIZE; ++i) {
+      snprintf(pk_hex + i*2, 3, "%02x", pk[i]);
+    }
+    lv_obj_t* pk_lbl = lv_label_create(body);
+    lv_label_set_long_mode(pk_lbl, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(pk_lbl, lv_pct(100));
+    lv_label_set_text(pk_lbl, pk_hex);
+    lv_obj_set_style_text_color(pk_lbl, lv_color_hex(COLOR_ACCENT), LV_PART_MAIN);
+    lv_obj_set_style_text_font(pk_lbl, &g_font_12, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(pk_lbl, lv_color_hex(0x0A0B0C), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(pk_lbl, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(pk_lbl, 4, LV_PART_MAIN);
+    lv_obj_set_style_radius(pk_lbl, 4, LV_PART_MAIN);
+    lv_obj_set_pos(pk_lbl, 2, y);
+    lv_obj_add_flag(pk_lbl, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(pk_lbl, copyLabelLongPressCb, LV_EVENT_LONG_PRESSED,
+                        const_cast<char*>("pubkey"));
+    y += 50;
+  }
+
+  // "Share QR" button — second entry point to the same popup as the Chats header.
+  {
+    lv_obj_t* sb = lv_btn_create(body);
+    lv_obj_set_size(sb, lv_pct(100),34);
+    lv_obj_set_pos(sb, 2, y);
+    styleButton(sb);
+    lv_obj_add_event_cb(sb, +[](lv_event_t* e) {
+      if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+      openShareMyContactPopup();
+    }, LV_EVENT_CLICKED, nullptr);
+    lv_obj_t* sl = lv_label_create(sb);
+    lv_label_set_text(sl, LV_SYMBOL_IMAGE "   Share QR");
+    lv_obj_set_style_text_color(sl, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
+    lv_obj_set_style_text_font(sl, &g_font_14, LV_PART_MAIN);
+    lv_obj_center(sl);
+    y += 42;
   }
 }
 
@@ -3324,7 +3389,8 @@ static void clampDropdownListCb(lv_event_t* e) {
 }
 
 static void buildRadioSettings() {
-  lv_obj_t* body = createSettingsModal("Radio", SettingsModalKind::Radio);
+  // No "Radio" group header — it just duplicates the sub-tab button name.
+  lv_obj_t* body = createSettingsModal("", SettingsModalKind::Radio);
   NodePrefs* prefs = the_mesh.getNodePrefs();
   int y = 0;
   auto mk_label = [&](const char* text) {
@@ -3928,7 +3994,8 @@ static void lockColorChosenCb(lv_event_t* e);
 #endif
 
 static void buildDeviceSettings() {
-  lv_obj_t* body = createSettingsModal("Device", SettingsModalKind::Device);
+  // No "Device" group header — it just duplicates the sub-tab button name.
+  lv_obj_t* body = createSettingsModal("", SettingsModalKind::Device);
   int y = 0;
 
   lv_obj_t* b_gps = lv_btn_create(body);
@@ -4833,7 +4900,7 @@ static void buildWifiSettings() {
   lv_obj_set_style_text_font(g_set_modal.wifi_sta_status_l, &g_font_14, LV_PART_MAIN);
   lv_obj_set_pos(g_set_modal.wifi_sta_status_l, 2, y);
   lv_label_set_text(g_set_modal.wifi_sta_status_l, "Loading...");
-  y += 34;
+  y += 42;   // room for the 2-line connected status so it can't overlap the SSID field
 
   // ---- SSID + Scan (same row: field on the left, Scan opens the picker) ----
   lv_obj_t* wssid_l = lv_label_create(body);
@@ -11286,6 +11353,12 @@ static void openMapOptions() {
   };
   mk_row_btn(LV_SYMBOL_REFRESH "  Reload tiles in view", mapOptReloadCb);
   mk_row_btn(LV_SYMBOL_EYE_OPEN "  About / credits",     mapOptInfoCb);
+
+  // Close X (top-right of the card). Added last so move_foreground() keeps it
+  // above the title/switch/rows and reliably tappable. Same dismiss path as the
+  // backdrop tap. The 32×32 hit area only grazes the link-lines switch (y=30)
+  // by ~2px, which is imperceptible.
+  addCloseXBadge(card, mapOptionsDismissCb);
 }
 
 static void mapOpenOptionsCb(lv_event_t* e) {
@@ -12114,43 +12187,13 @@ static void makeChatDetail(LvChatPanel& p) {
   lv_obj_clear_flag(p.overlay, LV_OBJ_FLAG_SCROLLABLE);
   lv_obj_add_flag(p.overlay, LV_OBJ_FLAG_HIDDEN);
 
-  // ---- Header bar ----
-  lv_obj_t* hdr = lv_obj_create(p.overlay);
-  lv_obj_set_size(hdr, chatScreenW(), CHAT_HDR_H);
-  lv_obj_set_pos(hdr, 0, 0);
-  styleSurface(hdr, COLOR_PANEL, 0);
-  lv_obj_clear_flag(hdr, LV_OBJ_FLAG_SCROLLABLE);
-  lv_obj_set_style_border_side(hdr, LV_BORDER_SIDE_BOTTOM, LV_PART_MAIN);
-  lv_obj_set_style_border_width(hdr, 1, LV_PART_MAIN);
-  lv_obj_set_style_border_color(hdr, lv_color_hex(0x18191A), LV_PART_MAIN);
-
-  // Back button: 36x36 pill-radius icon button. Earlier 52x36 rectangle
-  // with radius-10 looked top-heavy and the < glyph drifted left of the
-  // visual centre because lv_obj_center anchors on the typographic
-  // origin, not the geometric centre. A square pill + zero pad puts the
-  // glyph dead-centre.
-  lv_obj_t* back = lv_btn_create(hdr);
-  lv_obj_set_size(back, 36, 36);
-  lv_obj_align(back, LV_ALIGN_LEFT_MID, 4, 0);
-  styleButton(back);
-  lv_obj_set_style_radius(back, 18, LV_PART_MAIN);
-  lv_obj_set_style_pad_all(back, 0, LV_PART_MAIN);
-  lv_obj_t* back_lbl = lv_label_create(back);
-  lv_label_set_text(back_lbl, LV_SYMBOL_LEFT);
-  lv_obj_set_style_text_font(back_lbl, &g_font_16, LV_PART_MAIN);
-  lv_obj_center(back_lbl);
-  lv_obj_add_event_cb(back, backBtnCb, LV_EVENT_PRESSED, &p);
-  lv_obj_add_event_cb(back, backBtnCb, LV_EVENT_CLICKED, &p);
-
-  p.header_name = lv_label_create(hdr);
-  lv_label_set_text(p.header_name, "");
-  // Back button now 36 wide → shift the name label left to fill the
-  // recovered horizontal space. Width tracks the screen (wider in landscape).
-  lv_obj_set_width(p.header_name, chatScreenW() - 50);
-  lv_obj_align(p.header_name, LV_ALIGN_LEFT_MID, 46, 0);
-  lv_obj_set_style_text_color(p.header_name, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
-  lv_obj_set_style_text_font(p.header_name, &g_font_14, LV_PART_MAIN);
-  lv_label_set_long_mode(p.header_name, LV_LABEL_LONG_SCROLL_CIRCULAR);
+  // ---- No header bar ----
+  // The old back-button + thread-name bar ate ~44 px of every conversation. The
+  // thread name now lives in the global status bar (set on open via
+  // setChatStatusTitle), and a small floating HOME button (created last, at the
+  // end of this fn so it sits on top) handles exit — mirroring the Terminal/Files
+  // fullscreen views. Gives the conversation the full height.
+  p.header_name = nullptr;
 
   // ---- Message area (scrollable container of speech-bubble children) ----
   // Each message gets its own lv_obj bubble inside p.msgs so we can style
@@ -12178,7 +12221,7 @@ static void makeChatDetail(LvChatPanel& p) {
   lv_obj_set_style_border_width(p.composer_row, 1, LV_PART_MAIN);
   lv_obj_set_style_border_color(p.composer_row, lv_color_hex(0x18191A), LV_PART_MAIN);
   lv_obj_set_style_pad_hor(p.composer_row, 6, LV_PART_MAIN);
-  lv_obj_set_style_pad_ver(p.composer_row, 7, LV_PART_MAIN);
+  lv_obj_set_style_pad_ver(p.composer_row, 2, LV_PART_MAIN);
 
   // Layout math (row = 240 px, pad_hor = 4 → content area = 232):
   //   QR(30) + gap(6) + Emoji(30) + gap(6) + TA + gap(6) + Send(34)
@@ -12190,7 +12233,7 @@ static void makeChatDetail(LvChatPanel& p) {
   // "on the way", ...) — same idea as MCterm's preset macros. Editable
   // from Settings → Quick replies.
   lv_obj_t* qr_btn = lv_btn_create(p.composer_row);
-  lv_obj_set_size(qr_btn, 30, 34);
+  lv_obj_set_size(qr_btn, 30, 30);
   lv_obj_align(qr_btn, LV_ALIGN_LEFT_MID, 0, 0);
   styleButton(qr_btn);
   lv_obj_set_style_radius(qr_btn, 15, LV_PART_MAIN);
@@ -12203,7 +12246,7 @@ static void makeChatDetail(LvChatPanel& p) {
 
   // Emoji / special-character picker button (smiley). Opens the insert grid.
   lv_obj_t* emoji_btn = lv_btn_create(p.composer_row);
-  lv_obj_set_size(emoji_btn, 30, 34);
+  lv_obj_set_size(emoji_btn, 30, 30);
   lv_obj_align(emoji_btn, LV_ALIGN_LEFT_MID, 36, 0);   // 30 (QR) + 6 gap
   styleButton(emoji_btn);
   lv_obj_set_style_radius(emoji_btn, 15, LV_PART_MAIN);
@@ -12218,11 +12261,12 @@ static void makeChatDetail(LvChatPanel& p) {
   // Fill the row between the two left chips and Send (right): content width is
   // screen - 8 (pad), minus QR(30)+gap(6)+Emoji(30)+gap(6) on the left and
   // gap(6)+Send(34) on the right => screen - 120. Widens with the screen.
-  lv_obj_set_size(p.composer_ta, chatScreenW() - 120, 34);
+  lv_obj_set_size(p.composer_ta, chatScreenW() - 120, 30);
   // 30 (QR) + 6 + 30 (Emoji) + 6 = 72 offset from content-left.
   lv_obj_align(p.composer_ta, LV_ALIGN_LEFT_MID, 72, 0);
   styleCard(p.composer_ta);
-  lv_obj_set_style_radius(p.composer_ta, 17, LV_PART_MAIN);   // pill shape
+  lv_obj_set_style_radius(p.composer_ta, 15, LV_PART_MAIN);   // pill shape
+  lv_obj_set_style_pad_ver(p.composer_ta, 3, LV_PART_MAIN);   // tighter so the slim row fits the text
   lv_textarea_set_one_line(p.composer_ta, true);
   lv_textarea_set_placeholder_text(p.composer_ta, "Type a message...");
   lv_obj_set_style_text_color(p.composer_ta, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
@@ -12232,15 +12276,30 @@ static void makeChatDetail(LvChatPanel& p) {
   lv_obj_add_event_cb(p.composer_ta, kbActivityPressCb, LV_EVENT_PRESSED, nullptr);
 
   lv_obj_t* send = lv_btn_create(p.composer_row);
-  lv_obj_set_size(send, 34, 34);
+  lv_obj_set_size(send, 34, 30);
   lv_obj_align(send, LV_ALIGN_RIGHT_MID, 0, 0);
   styleButton(send);
-  lv_obj_set_style_radius(send, 17, LV_PART_MAIN);
+  lv_obj_set_style_radius(send, 15, LV_PART_MAIN);
   lv_obj_add_event_cb(send, sendFromPanelCb, LV_EVENT_CLICKED, &p);
   lv_obj_t* sl = lv_label_create(send);
   lv_label_set_text(sl, LV_SYMBOL_RIGHT);
   lv_obj_set_style_text_font(sl, &g_font_16, LV_PART_MAIN);
   lv_obj_center(sl);
+
+  // Floating HOME button (created last so it sits above the message area) —
+  // exits the conversation, mirroring the Terminal/Files fullscreen views. The
+  // thread name shows in the status bar; this replaces the old back-button bar.
+  lv_obj_t* home = lv_btn_create(p.overlay);
+  lv_obj_set_size(home, 40, 28);
+  lv_obj_align(home, LV_ALIGN_TOP_RIGHT, -6, 4);
+  styleButton(home);
+  // Reuse backBtnCb (closes the chat → thread list). PRESSED + CLICKED matches
+  // the old back button so the cap-touch swipe-detector race can't drop the tap.
+  lv_obj_add_event_cb(home, backBtnCb, LV_EVENT_PRESSED, &p);
+  lv_obj_add_event_cb(home, backBtnCb, LV_EVENT_CLICKED, &p);
+  lv_obj_t* hl = lv_label_create(home);
+  lv_label_set_text(hl, LV_SYMBOL_HOME);
+  lv_obj_center(hl);
 }
 
 static int append_settings_section(lv_obj_t* tab, int y, const char* title, lv_event_cb_t cb, int sub_idx) {
@@ -12443,7 +12502,7 @@ static void makeSettings(lv_obj_t* tab) {
   // Short labels: the 5 cells split the (narrow, 240 px in V4 portrait) bar
   // evenly, so "Network"/"Profile" would fill a cell edge-to-edge and the last
   // letter touched the next tab's first letter ("…k" / "D…"). Trimmed to fit.
-  s_settings_pages[0] = lv_tabview_add_tab(sub, "Prof");
+  s_settings_pages[0] = lv_tabview_add_tab(sub, "Profile");
   s_settings_pages[1] = lv_tabview_add_tab(sub, "Radio");
   s_settings_pages[2] = lv_tabview_add_tab(sub, "Net");
   s_settings_pages[3] = lv_tabview_add_tab(sub, "Device");
@@ -14547,38 +14606,35 @@ static void refreshSettingsSectionSubtitles() {
   }
 
 #if defined(ESP32) && defined(MULTI_TRANSPORT_COMPANION)
-  if (g_set_modal.root && g_set_modal.wifi_sta_status_l &&
-      g_set_modal.kind == SettingsModalKind::Wifi) {
-    char line[160];
+  // wifi_sta_status_l is the dedicated Wi-Fi page's status line — created ONLY by
+  // buildWifiSettings, for the old modal AND the inline Net sub-tab. The old gate
+  // also required g_set_modal.root + kind==Wifi (both modal-only), so the inline
+  // sub-tab was stuck on "Loading…". resetSettingsModalState() zeroes the struct on
+  // every sub-tab switch, so a non-null pointer reliably means the page is live.
+  if (g_set_modal.wifi_sta_status_l) {
     const int re2 = wifiConfigGetRadioEnabled() ? 1 : 0;
     if (!re2) {
       lv_label_set_text(g_set_modal.wifi_sta_status_l, "Radio: off");
     } else {
+      char line[160];
       const int st = static_cast<int>(WiFi.status());
       char ssid_buf[WIFI_CONFIG_SSID_MAX];
       wifiConfigGetSsid(ssid_buf, sizeof(ssid_buf));
       if (st == WL_CONNECTED) {
         IPAddress ip = WiFi.localIP();
         const int rssi = WiFi.RSSI();
-        if (g_set_modal.kind == SettingsModalKind::Wifi) {
-          snprintf(line, sizeof(line),
-                   "Connected: %s\nIP: %u.%u.%u.%u\nRSSI: %d dBm  ·  WS: %d",
-                   ssid_buf[0] ? ssid_buf : "(unnamed)",
-                   (unsigned)ip[0], (unsigned)ip[1], (unsigned)ip[2], (unsigned)ip[3],
-                   rssi, g_lv.task->getWsConnectedCount());
-        } else {
-          snprintf(line, sizeof(line), "STA: %u.%u.%u.%u\n%d dBm",
-                   (unsigned)ip[0], (unsigned)ip[1], (unsigned)ip[2], (unsigned)ip[3], rssi);
-        }
+        // 2 lines: ssid on top, then IP + RSSI + WS on one compact line (the IP
+        // used to be on its own line, pushing the block to 3 lines → overlap).
+        snprintf(line, sizeof(line),
+                 "Connected: %s\nIP %u.%u.%u.%u  ·  %d dBm  ·  WS %d",
+                 ssid_buf[0] ? ssid_buf : "(unnamed)",
+                 (unsigned)ip[0], (unsigned)ip[1], (unsigned)ip[2], (unsigned)ip[3],
+                 rssi, g_lv.task->getWsConnectedCount());
       } else {
-        if (g_set_modal.kind == SettingsModalKind::Wifi) {
-          snprintf(line, sizeof(line), "%s%s\n%s",
-                   ssid_buf[0] ? "Target: " : "",
-                   ssid_buf[0] ? ssid_buf : "(no SSID set)",
-                   wifiStaStatusBrief(st));
-        } else {
-          snprintf(line, sizeof(line), "STA: %s", wifiStaStatusBrief(st));
-        }
+        snprintf(line, sizeof(line), "%s%s\n%s",
+                 ssid_buf[0] ? "Target: " : "",
+                 ssid_buf[0] ? ssid_buf : "(no SSID set)",
+                 wifiStaStatusBrief(st));
       }
       lv_label_set_text(g_set_modal.wifi_sta_status_l, line);
     }
@@ -15179,6 +15235,21 @@ static void updateGlobalStatusBar() {
   if (!g_statusbar.root || !g_lv.task) return;
 
   // ---- Left zone ----
+  if (s_chat_title[0]) {
+    // An open conversation surfaces its thread name here (the in-chat header bar
+    // was removed to reclaim height). Keep the global unread badge as a prefix so
+    // you still see mail waiting in OTHER threads while reading this one. Smaller
+    // font so the name + badge fit.
+    lv_obj_set_style_text_font(g_statusbar.left_label, &g_font_12, LV_PART_MAIN);
+    int total_unread = g_lv.task->getUnreadTotal();
+    if (total_unread > 0) {
+      char buf[64];
+      snprintf(buf, sizeof(buf), LV_SYMBOL_ENVELOPE " %d  %s", total_unread, s_chat_title);
+      lv_label_set_text(g_statusbar.left_label, buf);
+    } else {
+      lv_label_set_text(g_statusbar.left_label, s_chat_title);
+    }
+  } else
 #if defined(HAS_TDECK_GT911)
   if (s_fullscreen_view && s_fullscreen_title[0]) {
     // A fullscreen tool view (Terminal / Files) borrows the left zone for its
@@ -15948,7 +16019,7 @@ static void buildUiTree() {
   lv_obj_set_style_text_color(root, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
 
   // ---- Tabview ----
-  g_lv.tabview = lv_tabview_create(root, LV_DIR_BOTTOM, 38);
+  g_lv.tabview = lv_tabview_create(root, LV_DIR_BOTTOM, TABBAR_H);
   // Tabview leaves the top STATUSBAR_H pixels free so the global status
   // bar (on lv_layer_sys) doesn't paint over tab content. Sized from the
   // live display resolution so it fills the screen in either orientation
@@ -16513,15 +16584,43 @@ bool UITask::loadHistoryFromStorage() {
     f.close();
     return false;
   }
-  if (hdr.magic != k_ui_history_magic || hdr.version != k_ui_history_version ||
+  if (hdr.magic != k_ui_history_magic ||
+      hdr.version < k_ui_history_min_version || hdr.version > k_ui_history_version ||
       hdr.ui_msg_count > MAX_UI_MESSAGES || hdr.ui_msg_head >= MAX_UI_MESSAGES) {
     f.close();
     return false;
   }
 
+  // On-disk record sizes. v5+ stores them so a blob written by an older build
+  // (shorter records — fields appended since) still loads: we read the stored
+  // size and leave the appended tail zeroed. A v4 blob predates these fields
+  // but shares the current record layout, so fall back to sizeof(). Reject
+  // absurd sizes from a corrupt blob.
+  const size_t disk_thread_sz =
+      (hdr.version >= 5 && hdr.thread_rec_size) ? hdr.thread_rec_size : sizeof(UiHistoryThread);
+  const size_t disk_msg_sz =
+      (hdr.version >= 5 && hdr.msg_rec_size) ? hdr.msg_rec_size : sizeof(UiHistoryMsg);
+  if (disk_thread_sz == 0 || disk_thread_sz > 4096 ||
+      disk_msg_sz == 0 || disk_msg_sz > 4096) {
+    f.close();
+    return false;
+  }
+
+  // Read one on-disk record into a zero-initialized current-layout struct:
+  // keep min(disk_sz, cur_sz) bytes, skip any surplus tail of a newer record.
+  // Older blobs leave the appended tail zeroed; newer blobs are truncated to
+  // what this build understands.
+  auto readRec = [&](void* dst, size_t cur_sz, size_t disk_sz) -> bool {
+    memset(dst, 0, cur_sz);
+    const size_t take = disk_sz < cur_sz ? disk_sz : cur_sz;
+    if (f.readBytes(reinterpret_cast<char*>(dst), take) != static_cast<int>(take)) return false;
+    if (disk_sz > cur_sz && !f.seek(f.position() + (disk_sz - cur_sz))) return false;
+    return true;
+  };
+
   UiHistoryThread t{};
   for (int i = 0; i < MAX_UI_THREADS; ++i) {
-    if (f.readBytes(reinterpret_cast<char*>(&t), sizeof(t)) != static_cast<int>(sizeof(t))) {
+    if (!readRec(&t, sizeof(t), disk_thread_sz)) {
       f.close();
       return false;
     }
@@ -16539,7 +16638,7 @@ bool UITask::loadHistoryFromStorage() {
 
   UiHistoryMsg m{};
   for (int i = 0; i < MAX_UI_MESSAGES; ++i) {
-    if (f.readBytes(reinterpret_cast<char*>(&m), sizeof(m)) != static_cast<int>(sizeof(m))) {
+    if (!readRec(&m, sizeof(m), disk_msg_sz)) {
       f.close();
       return false;
     }
@@ -16591,6 +16690,8 @@ bool UITask::saveHistoryToStorage() {
   UiHistoryHeader hdr{};
   hdr.magic = k_ui_history_magic;
   hdr.version = k_ui_history_version;
+  hdr.thread_rec_size = static_cast<uint16_t>(sizeof(UiHistoryThread));
+  hdr.msg_rec_size = static_cast<uint16_t>(sizeof(UiHistoryMsg));
   hdr.ui_msg_count = static_cast<uint16_t>(_ui_msg_count);
   hdr.ui_msg_head = static_cast<uint16_t>(_ui_msg_head);
   hdr.msgcount = static_cast<uint32_t>(_msgcount);
@@ -17743,10 +17844,10 @@ void UITask::openMeshContactDm(uint32_t mesh_contact_index) {
     lv_obj_add_flag(g_lv.ch.overlay, LV_OBJ_FLAG_HIDDEN);
     g_lv.ch.detail_open = false;
   }
-  if (g_lv.dm.header_name) {
+  {
     char san[UITask::MAX_THREAD_NAME + 8];
-    copyUtf8ReplacingMissingGlyphs(&g_font_14, san, sizeof(san), c.name);
-    lv_label_set_text(g_lv.dm.header_name, san);
+    copyUtf8ReplacingMissingGlyphs(&g_font_12, san, sizeof(san), c.name);
+    setChatStatusTitle(san);   // contact name → status bar (no in-chat header bar)
   }
   refreshChatDetail(g_lv.dm);
   g_lv.dm.detail_open = true;
