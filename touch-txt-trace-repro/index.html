@@ -10,13 +10,11 @@
       
       
       
-        <link rel="canonical" href="https://meshcore-dev.github.io/meshcore/packet_format/">
+        <link rel="canonical" href="https://meshcore-dev.github.io/meshcore/touch-txt-trace-repro/">
       
       
-        <link rel="prev" href="../number_allocations/">
+        <link rel="prev" href="../terminal_chat_cli/">
       
-      
-        <link rel="next" href="../payloads/">
       
       
         
@@ -27,7 +25,7 @@
     
     
       
-        <title>Packet Format - MeshCore Docs</title>
+        <title>Touch TXT send forensics — repro and decision tree - MeshCore Docs</title>
       
     
     
@@ -70,7 +68,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#packet-format" class="md-skip">
+        <a href="#touch-txt-send-forensics-repro-and-decision-tree" class="md-skip">
           Skip to content
         </a>
       
@@ -105,7 +103,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Packet Format
+              Touch TXT send forensics — repro and decision tree
             
           </span>
         </div>
@@ -682,37 +680,10 @@
       
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Packet Format
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../packet_format/" class="md-nav__link">
         
   
   
@@ -728,109 +699,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#version-1-packet-format" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Version 1 Packet Format
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Version 1 Packet Format">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#packet-format_1" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Packet Format
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#header-format" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Header Format
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#route-types" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Route Types
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#path-length-encoding" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Path Length Encoding
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#payload-types" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Payload Types
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#payload-versions" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Payload Versions
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -947,10 +815,37 @@
       
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../touch-txt-trace-repro/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Touch TXT send forensics — repro and decision tree
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -966,6 +861,70 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#one-shot-repro-after-flash" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        One-shot repro (after flash)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-to-look-for-in-logs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What to look for in logs
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#decision-tree-after-capture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decision tree (after capture)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#merged-binary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Merged binary
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -997,85 +956,46 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#version-1-packet-format" class="md-nav__link">
+  <a href="#one-shot-repro-after-flash" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Version 1 Packet Format
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Version 1 Packet Format">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#packet-format_1" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Packet Format
+        One-shot repro (after flash)
       
     </span>
   </a>
   
 </li>
-        
-          <li class="md-nav__item">
-  <a href="#header-format" class="md-nav__link">
+      
+        <li class="md-nav__item">
+  <a href="#what-to-look-for-in-logs" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Header Format
+        What to look for in logs
       
     </span>
   </a>
   
 </li>
-        
-          <li class="md-nav__item">
-  <a href="#route-types" class="md-nav__link">
+      
+        <li class="md-nav__item">
+  <a href="#decision-tree-after-capture" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Route Types
+        Decision tree (after capture)
       
     </span>
   </a>
   
 </li>
-        
-          <li class="md-nav__item">
-  <a href="#path-length-encoding" class="md-nav__link">
+      
+        <li class="md-nav__item">
+  <a href="#merged-binary" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Path Length Encoding
+        Merged binary
       
     </span>
   </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#payload-types" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Payload Types
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#payload-versions" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Payload Versions
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
@@ -1096,7 +1016,7 @@
 
 
   
-    <a href="https://github.com/meshcore-dev/meshcore/edit/main/docs/packet_format.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+    <a href="https://github.com/meshcore-dev/meshcore/edit/main/docs/touch-txt-trace-repro.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
       
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
     </a>
@@ -1104,377 +1024,48 @@
   
 
 
-<h1 id="packet-format">Packet Format</h1>
-<p>This document describes the MeshCore packet format.</p>
+<h1 id="touch-txt-send-forensics-repro-and-decision-tree">Touch TXT send forensics — repro and decision tree</h1>
+<p>Firmware with always-on tracing: serial @115200 plus on-device <strong>Settings → Diag</strong> panel (same lines mirrored).</p>
+<h2 id="one-shot-repro-after-flash">One-shot repro (after flash)</h2>
+<ol>
+<li><strong>Cold boot</strong> (disconnect USB/power briefly), reconnect serial.</li>
+<li>Send DM messages: <code>aaa</code> → wait 3s → <code>bbb</code> → wait 3s → <code>ccc</code>.</li>
+<li>Press <strong>RST</strong> on the board; confirm Diag shows a new <code>BOOT #…</code> line.</li>
+<li>Send <code>ddd</code>.</li>
+<li>Capture: full serial log, Diag screenshot, and receiver-side hash column for each send.</li>
+</ol>
+<h2 id="what-to-look-for-in-logs">What to look for in logs</h2>
 <ul>
-<li><code>0xYY</code> indicates <code>YY</code> in hex notation.</li>
-<li><code>0bYY</code> indicates <code>YY</code> in binary notation.</li>
-<li>Bit 0 indicates the bit furthest to the right: <code>0000000X</code></li>
-<li>Bit 7 indicates the bit furthest to the left: <code>X0000000</code></li>
+<li><code>BOOT #N r=R</code> — <code>N</code> must increment only on real resets. If <code>N</code> jumps between send #1 and #2 without you pressing RST → <strong>silent reboot</strong>.</li>
+<li><code>SEND#k boot=N</code> — per UI send; <code>boot</code> should match <code>BOOT #</code> until next reset.</li>
+<li><code>TX BUF len=… crc=…</code> — if CRC matches between sends with <strong>different</strong> text → UI/composer bug; if CRC differs but <code>TX_COMPOSE h=</code> matches → bug below compose.</li>
+<li><code>TX_COMPOSE … seq=… p0_15=…</code> — must change between sends; includes FreeRTOS stack HWM (<code>stk=</code>) and RTC (<code>rtc=</code> / <code>uniq=</code>).</li>
+<li><code>TX_ENQUEUE</code> / <code>TX_DEQUEUE</code> / <code>TX_START</code> / <code>RADIO_TX_START</code> / <code>TX_DONE</code> — same hash should flow; if compose hash ≠ dequeue hash → queue/pool issue; if <code>TX_START</code> raw differs from <code>RADIO_TX_START</code> → unlikely (same buffer); if compose differs but radio raw matches → radio replay/driver.</li>
 </ul>
-<h2 id="version-1-packet-format">Version 1 Packet Format</h2>
-<p>This is the protocol level packet structure used in MeshCore firmware v1.12.0</p>
-<pre><code>[header][transport_codes(optional)][path_length][path][payload]
+<h2 id="decision-tree-after-capture">Decision tree (after capture)</h2>
+<ol>
+<li>
+<p><strong>Boot count changes between send #1 and #2?</strong><br />
+   → Treat as <strong>silent reset</strong>; use logs + WDT/boot reason to find crash site. RNG seeding (<code>initTxtTxUniquenessFromRng</code>) still prevents identical ciphertext across resets once root reset is fixed.</p>
+</li>
+<li>
+<p><strong>Boot stable, TX BUF CRC same for different text?</strong><br />
+   → <strong>UI path</strong> bug (composer buffer).</p>
+</li>
+<li>
+<p><strong>CRC differs, TX_COMPOSE hash identical?</strong><br />
+   → <strong>compose / pool</strong> path (e.g. <code>composeMsgPacket</code> not reflecting new text).</p>
+</li>
+<li>
+<p><strong>TX_COMPOSE differs, TX_DEQUEUE / TX_START differ?</strong><br />
+   → Trace further toward radio; if on-air hash on peer still stuck → receiver/tooling.</p>
+</li>
+</ol>
+<h2 id="merged-binary">Merged binary</h2>
+<p>Build touch env, then merge target:</p>
+<pre><code class="language-bash">python3 -m platformio run -e heltec_v4_tft_companion_radio_usb_tcp_touch -t mergebin
 </code></pre>
-<ul>
-<li><a href="#header-format">header</a> - 1 byte<ul>
-<li>8-bit Format: <code>0bVVPPPPRR</code> - <code>V=Version</code> - <code>P=PayloadType</code> - <code>R=RouteType</code></li>
-<li>Bits 0-1 - 2-bits - <a href="#route-types">Route Type</a><ul>
-<li><code>0x00</code>/<code>0b00</code> - <code>ROUTE_TYPE_TRANSPORT_FLOOD</code> - Flood Routing + Transport Codes</li>
-<li><code>0x01</code>/<code>0b01</code> - <code>ROUTE_TYPE_FLOOD</code> - Flood Routing</li>
-<li><code>0x02</code>/<code>0b10</code> - <code>ROUTE_TYPE_DIRECT</code> - Direct Routing</li>
-<li><code>0x03</code>/<code>0b11</code> - <code>ROUTE_TYPE_TRANSPORT_DIRECT</code> - Direct Routing + Transport Codes</li>
-</ul>
-</li>
-<li>Bits 2-5 - 4-bits - <a href="#payload-types">Payload Type</a><ul>
-<li><code>0x00</code>/<code>0b0000</code> - <code>PAYLOAD_TYPE_REQ</code> - Request (destination/source hashes + MAC)</li>
-<li><code>0x01</code>/<code>0b0001</code> - <code>PAYLOAD_TYPE_RESPONSE</code> - Response to <code>REQ</code> or <code>ANON_REQ</code></li>
-<li><code>0x02</code>/<code>0b0010</code> - <code>PAYLOAD_TYPE_TXT_MSG</code> - Plain text message</li>
-<li><code>0x03</code>/<code>0b0011</code> - <code>PAYLOAD_TYPE_ACK</code> - Acknowledgment</li>
-<li><code>0x04</code>/<code>0b0100</code> - <code>PAYLOAD_TYPE_ADVERT</code> - Node advertisement</li>
-<li><code>0x05</code>/<code>0b0101</code> - <code>PAYLOAD_TYPE_GRP_TXT</code> - Group text message (unverified)</li>
-<li><code>0x06</code>/<code>0b0110</code> - <code>PAYLOAD_TYPE_GRP_DATA</code> - Group datagram (unverified)</li>
-<li><code>0x07</code>/<code>0b0111</code> - <code>PAYLOAD_TYPE_ANON_REQ</code> - Anonymous request</li>
-<li><code>0x08</code>/<code>0b1000</code> - <code>PAYLOAD_TYPE_PATH</code> - Returned path</li>
-<li><code>0x09</code>/<code>0b1001</code> - <code>PAYLOAD_TYPE_TRACE</code> - Trace a path, collecting SNR for each hop</li>
-<li><code>0x0A</code>/<code>0b1010</code> - <code>PAYLOAD_TYPE_MULTIPART</code> - Packet is part of a sequence of packets</li>
-<li><code>0x0B</code>/<code>0b1011</code> - <code>PAYLOAD_TYPE_CONTROL</code> - Control packet data (unencrypted)</li>
-<li><code>0x0C</code>/<code>0b1100</code> - reserved</li>
-<li><code>0x0D</code>/<code>0b1101</code> - reserved</li>
-<li><code>0x0E</code>/<code>0b1110</code> - reserved</li>
-<li><code>0x0F</code>/<code>0b1111</code> - <code>PAYLOAD_TYPE_RAW_CUSTOM</code> - Custom packet (raw bytes, custom encryption)</li>
-</ul>
-</li>
-<li>Bits 6-7 - 2-bits - <a href="#payload-versions">Payload Version</a><ul>
-<li><code>0x00</code>/<code>0b00</code> - v1 - 1-byte src/dest hashes, 2-byte MAC</li>
-<li><code>0x01</code>/<code>0b01</code> - v2 - Future version (e.g., 2-byte hashes, 4-byte MAC)</li>
-<li><code>0x02</code>/<code>0b10</code> - v3 - Future version</li>
-<li><code>0x03</code>/<code>0b11</code> - v4 - Future version</li>
-</ul>
-</li>
-</ul>
-</li>
-<li><code>transport_codes</code> - 4 bytes (optional)<ul>
-<li>Only present for <code>ROUTE_TYPE_TRANSPORT_FLOOD</code> and <code>ROUTE_TYPE_TRANSPORT_DIRECT</code></li>
-<li><code>transport_code_1</code> - 2 bytes - <code>uint16_t</code> - calculated from region scope</li>
-<li><code>transport_code_2</code> - 2 bytes - <code>uint16_t</code> - reserved</li>
-</ul>
-</li>
-<li><code>path_length</code> - 1 byte - Encoded path metadata<ul>
-<li>Bits 0-5 store path hash count / hop count (<code>0-63</code>)</li>
-<li>Bits 6-7 store path hash size minus 1<ul>
-<li><code>0b00</code>: 1-byte path hashes</li>
-<li><code>0b01</code>: 2-byte path hashes</li>
-<li><code>0b10</code>: 3-byte path hashes</li>
-<li><code>0b11</code>: reserved / unsupported</li>
-</ul>
-</li>
-</ul>
-</li>
-<li><code>path</code> - <code>hop_count * hash_size</code> bytes - Path to use for Direct Routing or flood path tracking<ul>
-<li>Up to a maximum of 64 bytes, defined by <code>MAX_PATH_SIZE</code></li>
-<li>Effective byte length is calculated from the encoded hop count and hash size, not taken directly from <code>path_length</code></li>
-<li>v1.12.0 firmware and older only handled legacy 1-byte path hashes and dropped packets whose path bytes exceeded <a href="https://github.com/meshcore-dev/MeshCore/blob/e812632235274ffd2382adf5354168aec765d416/src/Dispatcher.cpp#L144">64 bytes</a></li>
-</ul>
-</li>
-<li><code>payload</code> - variable length - Payload Data<ul>
-<li>Up to a maximum 184 bytes, defined by <code>MAX_PACKET_PAYLOAD</code></li>
-<li>Generally this is the remainder of the raw packet data</li>
-<li>The firmware parses this data based on the provided Payload Type</li>
-<li>v1.12.0 firmware and older drops packets with <code>payload</code> sizes <a href="https://github.com/meshcore-dev/MeshCore/blob/e812632235274ffd2382adf5354168aec765d416/src/Dispatcher.cpp#L152">larger than 184</a></li>
-</ul>
-</li>
-</ul>
-<h3 id="packet-format_1">Packet Format</h3>
-<table>
-<thead>
-<tr>
-<th>Field</th>
-<th>Size (bytes)</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>header</td>
-<td>1</td>
-<td>Contains routing type, payload type, and payload version</td>
-</tr>
-<tr>
-<td>transport_codes</td>
-<td>4 (optional)</td>
-<td>2x 16-bit transport codes (if ROUTE_TYPE_TRANSPORT_*)</td>
-</tr>
-<tr>
-<td>path_length</td>
-<td>1</td>
-<td>Encodes path hash size in bits 6-7 and hop count in bits 0-5</td>
-</tr>
-<tr>
-<td>path</td>
-<td>up to 64 (<code>MAX_PATH_SIZE</code>)</td>
-<td>Stores <code>hop_count * hash_size</code> bytes of path data if applicable</td>
-</tr>
-<tr>
-<td>payload</td>
-<td>up to 184 (<code>MAX_PACKET_PAYLOAD</code>)</td>
-<td>Data for the provided Payload Type</td>
-</tr>
-</tbody>
-</table>
-<blockquote>
-<p>NOTE: see the <a href="../payloads/">Payloads</a> documentation for more information about the content of specific payload types.</p>
-</blockquote>
-<h3 id="header-format">Header Format</h3>
-<p>Bit 0 means the lowest bit (1s place)</p>
-<table>
-<thead>
-<tr>
-<th>Bits</th>
-<th>Mask</th>
-<th>Field</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>0-1</td>
-<td><code>0x03</code></td>
-<td>Route Type</td>
-<td>Flood, Direct, etc</td>
-</tr>
-<tr>
-<td>2-5</td>
-<td><code>0x3C</code></td>
-<td>Payload Type</td>
-<td>Request, Response, ACK, etc</td>
-</tr>
-<tr>
-<td>6-7</td>
-<td><code>0xC0</code></td>
-<td>Payload Version</td>
-<td>Versioning of the payload format</td>
-</tr>
-</tbody>
-</table>
-<h3 id="route-types">Route Types</h3>
-<table>
-<thead>
-<tr>
-<th>Value</th>
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>0x00</code></td>
-<td><code>ROUTE_TYPE_TRANSPORT_FLOOD</code></td>
-<td>Flood Routing + Transport Codes</td>
-</tr>
-<tr>
-<td><code>0x01</code></td>
-<td><code>ROUTE_TYPE_FLOOD</code></td>
-<td>Flood Routing</td>
-</tr>
-<tr>
-<td><code>0x02</code></td>
-<td><code>ROUTE_TYPE_DIRECT</code></td>
-<td>Direct Routing</td>
-</tr>
-<tr>
-<td><code>0x03</code></td>
-<td><code>ROUTE_TYPE_TRANSPORT_DIRECT</code></td>
-<td>Direct Routing + Transport Codes</td>
-</tr>
-</tbody>
-</table>
-<h3 id="path-length-encoding">Path Length Encoding</h3>
-<p><code>path_length</code> is not a raw byte count. It packs both hash size and hop count:</p>
-<table>
-<thead>
-<tr>
-<th>Bits</th>
-<th>Field</th>
-<th>Meaning</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>0-5</td>
-<td>Hop Count</td>
-<td>Number of path hashes (<code>0-63</code>)</td>
-</tr>
-<tr>
-<td>6-7</td>
-<td>Hash Size Code</td>
-<td>Stored as <code>hash_size - 1</code></td>
-</tr>
-</tbody>
-</table>
-<p>Hash size codes:</p>
-<table>
-<thead>
-<tr>
-<th>Bits 6-7</th>
-<th>Hash Size</th>
-<th>Notes</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>0b00</code></td>
-<td>1 byte</td>
-<td>Legacy / default mode</td>
-</tr>
-<tr>
-<td><code>0b01</code></td>
-<td>2 bytes</td>
-<td>Supported in current firmware</td>
-</tr>
-<tr>
-<td><code>0b10</code></td>
-<td>3 bytes</td>
-<td>Supported in current firmware</td>
-</tr>
-<tr>
-<td><code>0b11</code></td>
-<td>4 bytes</td>
-<td>Reserved / invalid</td>
-</tr>
-</tbody>
-</table>
-<p>Examples:</p>
-<ul>
-<li><code>0x00</code>: zero-hop packet, no path bytes</li>
-<li><code>0x05</code>: 5 hops using 1-byte hashes, so path is 5 bytes</li>
-<li><code>0x45</code>: 5 hops using 2-byte hashes, so path is 10 bytes</li>
-<li><code>0x8A</code>: 10 hops using 3-byte hashes, so path is 30 bytes</li>
-</ul>
-<h3 id="payload-types">Payload Types</h3>
-<table>
-<thead>
-<tr>
-<th>Value</th>
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>0x00</code></td>
-<td><code>PAYLOAD_TYPE_REQ</code></td>
-<td>Request (destination/source hashes + MAC)</td>
-</tr>
-<tr>
-<td><code>0x01</code></td>
-<td><code>PAYLOAD_TYPE_RESPONSE</code></td>
-<td>Response to <code>REQ</code> or <code>ANON_REQ</code></td>
-</tr>
-<tr>
-<td><code>0x02</code></td>
-<td><code>PAYLOAD_TYPE_TXT_MSG</code></td>
-<td>Plain text message</td>
-</tr>
-<tr>
-<td><code>0x03</code></td>
-<td><code>PAYLOAD_TYPE_ACK</code></td>
-<td>Acknowledgment</td>
-</tr>
-<tr>
-<td><code>0x04</code></td>
-<td><code>PAYLOAD_TYPE_ADVERT</code></td>
-<td>Node advertisement</td>
-</tr>
-<tr>
-<td><code>0x05</code></td>
-<td><code>PAYLOAD_TYPE_GRP_TXT</code></td>
-<td>Group text message (unverified)</td>
-</tr>
-<tr>
-<td><code>0x06</code></td>
-<td><code>PAYLOAD_TYPE_GRP_DATA</code></td>
-<td>Group datagram (unverified)</td>
-</tr>
-<tr>
-<td><code>0x07</code></td>
-<td><code>PAYLOAD_TYPE_ANON_REQ</code></td>
-<td>Anonymous request</td>
-</tr>
-<tr>
-<td><code>0x08</code></td>
-<td><code>PAYLOAD_TYPE_PATH</code></td>
-<td>Returned path</td>
-</tr>
-<tr>
-<td><code>0x09</code></td>
-<td><code>PAYLOAD_TYPE_TRACE</code></td>
-<td>Trace a path, collecting SNR for each hop</td>
-</tr>
-<tr>
-<td><code>0x0A</code></td>
-<td><code>PAYLOAD_TYPE_MULTIPART</code></td>
-<td>Packet is part of a sequence of packets</td>
-</tr>
-<tr>
-<td><code>0x0B</code></td>
-<td><code>PAYLOAD_TYPE_CONTROL</code></td>
-<td>Control packet data (unencrypted)</td>
-</tr>
-<tr>
-<td><code>0x0C</code></td>
-<td>reserved</td>
-<td>reserved</td>
-</tr>
-<tr>
-<td><code>0x0D</code></td>
-<td>reserved</td>
-<td>reserved</td>
-</tr>
-<tr>
-<td><code>0x0E</code></td>
-<td>reserved</td>
-<td>reserved</td>
-</tr>
-<tr>
-<td><code>0x0F</code></td>
-<td><code>PAYLOAD_TYPE_RAW_CUSTOM</code></td>
-<td>Custom packet (raw bytes, custom encryption)</td>
-</tr>
-</tbody>
-</table>
-<h3 id="payload-versions">Payload Versions</h3>
-<table>
-<thead>
-<tr>
-<th>Value</th>
-<th>Version</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>0x00</code></td>
-<td>1</td>
-<td>1-byte src/dest hashes, 2-byte MAC</td>
-</tr>
-<tr>
-<td><code>0x01</code></td>
-<td>2</td>
-<td>Future version (e.g., 2-byte hashes, 4-byte MAC)</td>
-</tr>
-<tr>
-<td><code>0x02</code></td>
-<td>3</td>
-<td>Future version</td>
-</tr>
-<tr>
-<td><code>0x03</code></td>
-<td>4</td>
-<td>Future version</td>
-</tr>
-</tbody>
-</table>
+<p>Artifact: <code>.pio/build/heltec_v4_tft_companion_radio_usb_tcp_touch/firmware-merged.bin</code> (copy to <code>out/</code> with a dated name for flashing).</p>
 
 
 

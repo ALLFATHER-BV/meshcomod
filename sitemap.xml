@@ -13,6 +13,10 @@
          <lastmod>2026-06-04</lastmod>
     </url>
     <url>
+         <loc>https://meshcore-dev.github.io/meshcore/HARDWARE_TOUCH_PARITY_CHECKLIST/</loc>
+         <lastmod>2026-06-04</lastmod>
+    </url>
+    <url>
          <loc>https://meshcore-dev.github.io/meshcore/RELEASE_PROCEDURE/</loc>
          <lastmod>2026-06-04</lastmod>
     </url>
@@ -30,6 +34,10 @@
     </url>
     <url>
          <loc>https://meshcore-dev.github.io/meshcore/V3_BOOT_DEBUG/</loc>
+         <lastmod>2026-06-04</lastmod>
+    </url>
+    <url>
+         <loc>https://meshcore-dev.github.io/meshcore/WEBCLIENT_TOUCH_PARITY/</loc>
          <lastmod>2026-06-04</lastmod>
     </url>
     <url>
@@ -78,6 +86,10 @@
     </url>
     <url>
          <loc>https://meshcore-dev.github.io/meshcore/terminal_chat_cli/</loc>
+         <lastmod>2026-06-04</lastmod>
+    </url>
+    <url>
+         <loc>https://meshcore-dev.github.io/meshcore/touch-txt-trace-repro/</loc>
          <lastmod>2026-06-04</lastmod>
     </url>
 </urlset>

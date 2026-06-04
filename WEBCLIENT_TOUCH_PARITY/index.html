@@ -10,13 +10,13 @@
       
       
       
-        <link rel="canonical" href="https://meshcore-dev.github.io/meshcore/packet_format/">
+        <link rel="canonical" href="https://meshcore-dev.github.io/meshcore/WEBCLIENT_TOUCH_PARITY/">
       
       
-        <link rel="prev" href="../number_allocations/">
+        <link rel="prev" href="../V3_BOOT_DEBUG/">
       
       
-        <link rel="next" href="../payloads/">
+        <link rel="next" href="../cli_commands/">
       
       
         
@@ -27,7 +27,7 @@
     
     
       
-        <title>Packet Format - MeshCore Docs</title>
+        <title>Web client ↔ Heltec V4 touch UI — functionality parity matrix - MeshCore Docs</title>
       
     
     
@@ -70,7 +70,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#packet-format" class="md-skip">
+        <a href="#web-client-heltec-v4-touch-ui-functionality-parity-matrix" class="md-skip">
           Skip to content
         </a>
       
@@ -105,7 +105,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Packet Format
+              Web client ↔ Heltec V4 touch UI — functionality parity matrix
             
           </span>
         </div>
@@ -466,10 +466,37 @@
       
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../WEBCLIENT_TOUCH_PARITY/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Web client ↔ Heltec V4 touch UI — functionality parity matrix
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -485,6 +512,59 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#command-quick-reference-firmware-mymeshcpp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Command quick reference (firmware MyMesh.cpp)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#parity-gaps-acceptable-backlog" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parity gaps (acceptable / backlog)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#related-docs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Related docs
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -682,37 +762,10 @@
       
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Packet Format
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../packet_format/" class="md-nav__link">
         
   
   
@@ -728,109 +781,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#version-1-packet-format" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Version 1 Packet Format
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Version 1 Packet Format">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#packet-format_1" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Packet Format
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#header-format" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Header Format
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#route-types" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Route Types
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#path-length-encoding" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Path Length Encoding
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#payload-types" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Payload Types
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#payload-versions" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Payload Versions
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -997,85 +947,35 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#version-1-packet-format" class="md-nav__link">
+  <a href="#command-quick-reference-firmware-mymeshcpp" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Version 1 Packet Format
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Version 1 Packet Format">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#packet-format_1" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Packet Format
+        Command quick reference (firmware MyMesh.cpp)
       
     </span>
   </a>
   
 </li>
-        
-          <li class="md-nav__item">
-  <a href="#header-format" class="md-nav__link">
+      
+        <li class="md-nav__item">
+  <a href="#parity-gaps-acceptable-backlog" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Header Format
+        Parity gaps (acceptable / backlog)
       
     </span>
   </a>
   
 </li>
-        
-          <li class="md-nav__item">
-  <a href="#route-types" class="md-nav__link">
+      
+        <li class="md-nav__item">
+  <a href="#related-docs" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Route Types
+        Related docs
       
     </span>
   </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#path-length-encoding" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Path Length Encoding
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#payload-types" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Payload Types
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#payload-versions" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Payload Versions
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
@@ -1096,7 +996,7 @@
 
 
   
-    <a href="https://github.com/meshcore-dev/meshcore/edit/main/docs/packet_format.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+    <a href="https://github.com/meshcore-dev/meshcore/edit/main/docs/WEBCLIENT_TOUCH_PARITY.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
       
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
     </a>
@@ -1104,377 +1004,188 @@
   
 
 
-<h1 id="packet-format">Packet Format</h1>
-<p>This document describes the MeshCore packet format.</p>
-<ul>
-<li><code>0xYY</code> indicates <code>YY</code> in hex notation.</li>
-<li><code>0bYY</code> indicates <code>YY</code> in binary notation.</li>
-<li>Bit 0 indicates the bit furthest to the right: <code>0000000X</code></li>
-<li>Bit 7 indicates the bit furthest to the left: <code>X0000000</code></li>
-</ul>
-<h2 id="version-1-packet-format">Version 1 Packet Format</h2>
-<p>This is the protocol level packet structure used in MeshCore firmware v1.12.0</p>
-<pre><code>[header][transport_codes(optional)][path_length][path][payload]
-</code></pre>
-<ul>
-<li><a href="#header-format">header</a> - 1 byte<ul>
-<li>8-bit Format: <code>0bVVPPPPRR</code> - <code>V=Version</code> - <code>P=PayloadType</code> - <code>R=RouteType</code></li>
-<li>Bits 0-1 - 2-bits - <a href="#route-types">Route Type</a><ul>
-<li><code>0x00</code>/<code>0b00</code> - <code>ROUTE_TYPE_TRANSPORT_FLOOD</code> - Flood Routing + Transport Codes</li>
-<li><code>0x01</code>/<code>0b01</code> - <code>ROUTE_TYPE_FLOOD</code> - Flood Routing</li>
-<li><code>0x02</code>/<code>0b10</code> - <code>ROUTE_TYPE_DIRECT</code> - Direct Routing</li>
-<li><code>0x03</code>/<code>0b11</code> - <code>ROUTE_TYPE_TRANSPORT_DIRECT</code> - Direct Routing + Transport Codes</li>
-</ul>
-</li>
-<li>Bits 2-5 - 4-bits - <a href="#payload-types">Payload Type</a><ul>
-<li><code>0x00</code>/<code>0b0000</code> - <code>PAYLOAD_TYPE_REQ</code> - Request (destination/source hashes + MAC)</li>
-<li><code>0x01</code>/<code>0b0001</code> - <code>PAYLOAD_TYPE_RESPONSE</code> - Response to <code>REQ</code> or <code>ANON_REQ</code></li>
-<li><code>0x02</code>/<code>0b0010</code> - <code>PAYLOAD_TYPE_TXT_MSG</code> - Plain text message</li>
-<li><code>0x03</code>/<code>0b0011</code> - <code>PAYLOAD_TYPE_ACK</code> - Acknowledgment</li>
-<li><code>0x04</code>/<code>0b0100</code> - <code>PAYLOAD_TYPE_ADVERT</code> - Node advertisement</li>
-<li><code>0x05</code>/<code>0b0101</code> - <code>PAYLOAD_TYPE_GRP_TXT</code> - Group text message (unverified)</li>
-<li><code>0x06</code>/<code>0b0110</code> - <code>PAYLOAD_TYPE_GRP_DATA</code> - Group datagram (unverified)</li>
-<li><code>0x07</code>/<code>0b0111</code> - <code>PAYLOAD_TYPE_ANON_REQ</code> - Anonymous request</li>
-<li><code>0x08</code>/<code>0b1000</code> - <code>PAYLOAD_TYPE_PATH</code> - Returned path</li>
-<li><code>0x09</code>/<code>0b1001</code> - <code>PAYLOAD_TYPE_TRACE</code> - Trace a path, collecting SNR for each hop</li>
-<li><code>0x0A</code>/<code>0b1010</code> - <code>PAYLOAD_TYPE_MULTIPART</code> - Packet is part of a sequence of packets</li>
-<li><code>0x0B</code>/<code>0b1011</code> - <code>PAYLOAD_TYPE_CONTROL</code> - Control packet data (unencrypted)</li>
-<li><code>0x0C</code>/<code>0b1100</code> - reserved</li>
-<li><code>0x0D</code>/<code>0b1101</code> - reserved</li>
-<li><code>0x0E</code>/<code>0b1110</code> - reserved</li>
-<li><code>0x0F</code>/<code>0b1111</code> - <code>PAYLOAD_TYPE_RAW_CUSTOM</code> - Custom packet (raw bytes, custom encryption)</li>
-</ul>
-</li>
-<li>Bits 6-7 - 2-bits - <a href="#payload-versions">Payload Version</a><ul>
-<li><code>0x00</code>/<code>0b00</code> - v1 - 1-byte src/dest hashes, 2-byte MAC</li>
-<li><code>0x01</code>/<code>0b01</code> - v2 - Future version (e.g., 2-byte hashes, 4-byte MAC)</li>
-<li><code>0x02</code>/<code>0b10</code> - v3 - Future version</li>
-<li><code>0x03</code>/<code>0b11</code> - v4 - Future version</li>
-</ul>
-</li>
-</ul>
-</li>
-<li><code>transport_codes</code> - 4 bytes (optional)<ul>
-<li>Only present for <code>ROUTE_TYPE_TRANSPORT_FLOOD</code> and <code>ROUTE_TYPE_TRANSPORT_DIRECT</code></li>
-<li><code>transport_code_1</code> - 2 bytes - <code>uint16_t</code> - calculated from region scope</li>
-<li><code>transport_code_2</code> - 2 bytes - <code>uint16_t</code> - reserved</li>
-</ul>
-</li>
-<li><code>path_length</code> - 1 byte - Encoded path metadata<ul>
-<li>Bits 0-5 store path hash count / hop count (<code>0-63</code>)</li>
-<li>Bits 6-7 store path hash size minus 1<ul>
-<li><code>0b00</code>: 1-byte path hashes</li>
-<li><code>0b01</code>: 2-byte path hashes</li>
-<li><code>0b10</code>: 3-byte path hashes</li>
-<li><code>0b11</code>: reserved / unsupported</li>
-</ul>
-</li>
-</ul>
-</li>
-<li><code>path</code> - <code>hop_count * hash_size</code> bytes - Path to use for Direct Routing or flood path tracking<ul>
-<li>Up to a maximum of 64 bytes, defined by <code>MAX_PATH_SIZE</code></li>
-<li>Effective byte length is calculated from the encoded hop count and hash size, not taken directly from <code>path_length</code></li>
-<li>v1.12.0 firmware and older only handled legacy 1-byte path hashes and dropped packets whose path bytes exceeded <a href="https://github.com/meshcore-dev/MeshCore/blob/e812632235274ffd2382adf5354168aec765d416/src/Dispatcher.cpp#L144">64 bytes</a></li>
-</ul>
-</li>
-<li><code>payload</code> - variable length - Payload Data<ul>
-<li>Up to a maximum 184 bytes, defined by <code>MAX_PACKET_PAYLOAD</code></li>
-<li>Generally this is the remainder of the raw packet data</li>
-<li>The firmware parses this data based on the provided Payload Type</li>
-<li>v1.12.0 firmware and older drops packets with <code>payload</code> sizes <a href="https://github.com/meshcore-dev/MeshCore/blob/e812632235274ffd2382adf5354168aec765d416/src/Dispatcher.cpp#L152">larger than 184</a></li>
-</ul>
-</li>
-</ul>
-<h3 id="packet-format_1">Packet Format</h3>
+<h1 id="web-client-heltec-v4-touch-ui-functionality-parity-matrix">Web client ↔ Heltec V4 touch UI — functionality parity matrix</h1>
+<p>This document maps <strong>Meshcomod web client</strong> capabilities (companion protocol + UI) to the <strong>on-device touch UI</strong> (<code>examples/companion_radio/ui-new/UITask.*</code>) and the <strong>serial/WebSocket command/response</strong> codes implemented in firmware (<code>examples/companion_radio/MyMesh.cpp</code>).</p>
+<p><strong>Rule:</strong> Touch UI must use the same <strong>companion framing</strong> and <strong>mesh send/receive paths</strong> as the web client; it does not introduce alternate on-air semantics.</p>
 <table>
 <thead>
 <tr>
-<th>Field</th>
-<th>Size (bytes)</th>
-<th>Description</th>
+<th>Web client area</th>
+<th>Web client surface (reference)</th>
+<th>Touch UI surface (Heltec V4)</th>
+<th>Companion / mesh mapping</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>header</td>
+<td><strong>Connect / session</strong></td>
+<td>USB / BLE / Wi‑Fi transports, session replay</td>
+<td><strong>Home:</strong> connection summary. <strong>Net:</strong> contacts + connection text. <strong>Set → Transports:</strong> TCP / BLE / Wi‑Fi (STA radio) toggles + WS hint + <strong>Reset path</strong></td>
+<td>Same node; <code>_serial-&gt;isConnected()</code>, transport flags via <code>BaseSerialInterface</code>; Wi‑Fi uses <code>MyMesh::meshcomodSetWifiRadio</code> → same path as meshcomod <code>wifi on</code> / <code>wifi off</code></td>
+</tr>
+<tr>
+<td><strong>DM chat</strong></td>
+<td>Thread list + timeline + composer</td>
+<td>Chat tab: thread list, timeline, composer</td>
+<td><strong>Send:</strong> <code>CMD_SEND_TXT_MSG</code> path in <code>MyMesh::handleCmdFrame</code> → <code>sendMessage()</code>; <strong>Touch:</strong> calls <code>the_mesh.sendMessage()</code> directly (equivalent payload path)</td>
+</tr>
+<tr>
+<td><strong>Channel chat</strong></td>
+<td>Channel threads + composer</td>
+<td>Chan tab</td>
+<td><strong>Send:</strong> <code>CMD_SEND_CHANNEL_TXT_MSG</code> → <code>sendGroupMessage()</code>; <strong>Touch:</strong> <code>the_mesh.sendGroupMessage()</code> with <code>getChannel(slot)</code></td>
+</tr>
+<tr>
+<td><strong>Receive / sync</strong></td>
+<td><code>PUSH_MSG_WAITING</code>, <code>CMD_SYNC_NEXT_MESSAGE</code>, history</td>
+<td>Timeline fed by <code>AbstractUITask::newMsg</code> / <code>notify</code> from <code>MyMesh</code> (<code>queueMessage</code>, <code>onChannelMessageRecv</code>)</td>
+<td>Same push/history ring; touch does not reimplement sync client</td>
+</tr>
+<tr>
+<td><strong>Optimistic / status</strong></td>
+<td>Optimistic rows + ack UI</td>
+<td>Outgoing line appended locally; alerts for send result / delivery</td>
+<td>ACK path still pushes <code>PUSH_CODE_SEND_CONFIRMED</code> to serial clients; touch shows send result via alerts</td>
+</tr>
+<tr>
+<td><strong>Contacts list</strong></td>
+<td>Full CRUD, filters, favorites</td>
+<td><strong>Net tab:</strong> scrollable contact list → opens DM thread</td>
+<td><strong>Data:</strong> <code>getNumContacts</code> / <code>getContactByIdx</code>; <strong>Commands:</strong> <code>CMD_GET_CONTACTS</code>, <code>CMD_ADD_UPDATE_CONTACT</code>, <code>CMD_REMOVE_CONTACT</code>, etc. (from web/serial)</td>
+</tr>
+<tr>
+<td><strong>Channels list</strong></td>
+<td>Load/set slots, secrets</td>
+<td><strong>Chan tab</strong> + threads seeded from <code>getChannel(i)</code></td>
+<td><code>CMD_GET_CHANNEL</code> / <code>CMD_SET_CHANNEL</code></td>
+</tr>
+<tr>
+<td><strong>Room server</strong></td>
+<td>Login, ACL, posts</td>
+<td>Not a dedicated touch flow</td>
+<td><code>CMD_SEND_LOGIN</code>, <code>CMD_LOGOUT</code>, room frames — parity <strong>partial</strong> until dedicated UI</td>
+</tr>
+<tr>
+<td><strong>Settings / device</strong></td>
+<td>Tabs: profile, radio, auto-add, transports, device, experimental (+ OTA/backup/map in web)</td>
+<td><strong>Set tab:</strong> WhatsApp-style <strong>category list</strong> (6 rows). Each opens a full-screen overlay: <strong>Profile</strong> (name, lat/lon, share position), <strong>Radio</strong> (freq/mod/TX/airtime + reboot prompt), <strong>Auto-add</strong>, <strong>Transports</strong>, <strong>Device</strong> (identity/stats, time/advert/reboot, GPS/buzzer, <strong>diagnostics log</strong>), <strong>Experimental</strong>. <strong>Out of scope on touch:</strong> backup import/export, OTA catalog, map/preset pickers — use web/serial.</td>
+<td>Writes go through <code>NodePrefs</code> / <code>the_mesh.savePrefs()</code>, <code>applyRadioFromPrefs()</code>, <code>advert()</code>, RTC, <code>_board-&gt;reboot()</code> — same persistence as companion; no new packet/storage formats</td>
+</tr>
+<tr>
+<td><strong>Repeater / transport</strong></td>
+<td>Wi‑Fi / repeater tools</td>
+<td><strong>Set → Transports</strong> (toggles + reset path); provisioning flow unchanged</td>
+<td>Path: <code>CMD_RESET_PATH</code> (serial); touch: <code>resetActiveDmPath</code> when contact resolved</td>
+</tr>
+<tr>
+<td><strong>Diagnostics</strong></td>
+<td>Rx log, CLI, dashboard</td>
+<td><strong>Set → Device</strong> footer: compact rolling log; <strong>Home</strong> stats unchanged</td>
+<td><code>CMD_GET_STATS</code>, trace/telemetry — touch shows <strong>local</strong> UI/diag lines; deep CLI remains serial/web</td>
+</tr>
+<tr>
+<td><strong>Persistence</strong></td>
+<td>IndexedDB + localStorage</td>
+<td><code>Preferences</code> namespace <code>meshTouch</code> (active tab); <code>NodePrefs</code> / <code>DataStore</code> for node prefs</td>
+<td>Same store files as companion build</td>
+</tr>
+</tbody>
+</table>
+<h2 id="command-quick-reference-firmware-mymeshcpp">Command quick reference (firmware <code>MyMesh.cpp</code>)</h2>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Symbol</th>
+<th>Role</th>
+</tr>
+</thead>
+<tbody>
+<tr>
 <td>1</td>
-<td>Contains routing type, payload type, and payload version</td>
+<td><code>CMD_APP_START</code></td>
+<td>Session start / self info</td>
 </tr>
 <tr>
-<td>transport_codes</td>
-<td>4 (optional)</td>
-<td>2x 16-bit transport codes (if ROUTE_TYPE_TRANSPORT_*)</td>
-</tr>
-<tr>
-<td>path_length</td>
-<td>1</td>
-<td>Encodes path hash size in bits 6-7 and hop count in bits 0-5</td>
-</tr>
-<tr>
-<td>path</td>
-<td>up to 64 (<code>MAX_PATH_SIZE</code>)</td>
-<td>Stores <code>hop_count * hash_size</code> bytes of path data if applicable</td>
-</tr>
-<tr>
-<td>payload</td>
-<td>up to 184 (<code>MAX_PACKET_PAYLOAD</code>)</td>
-<td>Data for the provided Payload Type</td>
-</tr>
-</tbody>
-</table>
-<blockquote>
-<p>NOTE: see the <a href="../payloads/">Payloads</a> documentation for more information about the content of specific payload types.</p>
-</blockquote>
-<h3 id="header-format">Header Format</h3>
-<p>Bit 0 means the lowest bit (1s place)</p>
-<table>
-<thead>
-<tr>
-<th>Bits</th>
-<th>Mask</th>
-<th>Field</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>0-1</td>
-<td><code>0x03</code></td>
-<td>Route Type</td>
-<td>Flood, Direct, etc</td>
-</tr>
-<tr>
-<td>2-5</td>
-<td><code>0x3C</code></td>
-<td>Payload Type</td>
-<td>Request, Response, ACK, etc</td>
-</tr>
-<tr>
-<td>6-7</td>
-<td><code>0xC0</code></td>
-<td>Payload Version</td>
-<td>Versioning of the payload format</td>
-</tr>
-</tbody>
-</table>
-<h3 id="route-types">Route Types</h3>
-<table>
-<thead>
-<tr>
-<th>Value</th>
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>0x00</code></td>
-<td><code>ROUTE_TYPE_TRANSPORT_FLOOD</code></td>
-<td>Flood Routing + Transport Codes</td>
-</tr>
-<tr>
-<td><code>0x01</code></td>
-<td><code>ROUTE_TYPE_FLOOD</code></td>
-<td>Flood Routing</td>
-</tr>
-<tr>
-<td><code>0x02</code></td>
-<td><code>ROUTE_TYPE_DIRECT</code></td>
-<td>Direct Routing</td>
-</tr>
-<tr>
-<td><code>0x03</code></td>
-<td><code>ROUTE_TYPE_TRANSPORT_DIRECT</code></td>
-<td>Direct Routing + Transport Codes</td>
-</tr>
-</tbody>
-</table>
-<h3 id="path-length-encoding">Path Length Encoding</h3>
-<p><code>path_length</code> is not a raw byte count. It packs both hash size and hop count:</p>
-<table>
-<thead>
-<tr>
-<th>Bits</th>
-<th>Field</th>
-<th>Meaning</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>0-5</td>
-<td>Hop Count</td>
-<td>Number of path hashes (<code>0-63</code>)</td>
-</tr>
-<tr>
-<td>6-7</td>
-<td>Hash Size Code</td>
-<td>Stored as <code>hash_size - 1</code></td>
-</tr>
-</tbody>
-</table>
-<p>Hash size codes:</p>
-<table>
-<thead>
-<tr>
-<th>Bits 6-7</th>
-<th>Hash Size</th>
-<th>Notes</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>0b00</code></td>
-<td>1 byte</td>
-<td>Legacy / default mode</td>
-</tr>
-<tr>
-<td><code>0b01</code></td>
-<td>2 bytes</td>
-<td>Supported in current firmware</td>
-</tr>
-<tr>
-<td><code>0b10</code></td>
-<td>3 bytes</td>
-<td>Supported in current firmware</td>
-</tr>
-<tr>
-<td><code>0b11</code></td>
-<td>4 bytes</td>
-<td>Reserved / invalid</td>
-</tr>
-</tbody>
-</table>
-<p>Examples:</p>
-<ul>
-<li><code>0x00</code>: zero-hop packet, no path bytes</li>
-<li><code>0x05</code>: 5 hops using 1-byte hashes, so path is 5 bytes</li>
-<li><code>0x45</code>: 5 hops using 2-byte hashes, so path is 10 bytes</li>
-<li><code>0x8A</code>: 10 hops using 3-byte hashes, so path is 30 bytes</li>
-</ul>
-<h3 id="payload-types">Payload Types</h3>
-<table>
-<thead>
-<tr>
-<th>Value</th>
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>0x00</code></td>
-<td><code>PAYLOAD_TYPE_REQ</code></td>
-<td>Request (destination/source hashes + MAC)</td>
-</tr>
-<tr>
-<td><code>0x01</code></td>
-<td><code>PAYLOAD_TYPE_RESPONSE</code></td>
-<td>Response to <code>REQ</code> or <code>ANON_REQ</code></td>
-</tr>
-<tr>
-<td><code>0x02</code></td>
-<td><code>PAYLOAD_TYPE_TXT_MSG</code></td>
-<td>Plain text message</td>
-</tr>
-<tr>
-<td><code>0x03</code></td>
-<td><code>PAYLOAD_TYPE_ACK</code></td>
-<td>Acknowledgment</td>
-</tr>
-<tr>
-<td><code>0x04</code></td>
-<td><code>PAYLOAD_TYPE_ADVERT</code></td>
-<td>Node advertisement</td>
-</tr>
-<tr>
-<td><code>0x05</code></td>
-<td><code>PAYLOAD_TYPE_GRP_TXT</code></td>
-<td>Group text message (unverified)</td>
-</tr>
-<tr>
-<td><code>0x06</code></td>
-<td><code>PAYLOAD_TYPE_GRP_DATA</code></td>
-<td>Group datagram (unverified)</td>
-</tr>
-<tr>
-<td><code>0x07</code></td>
-<td><code>PAYLOAD_TYPE_ANON_REQ</code></td>
-<td>Anonymous request</td>
-</tr>
-<tr>
-<td><code>0x08</code></td>
-<td><code>PAYLOAD_TYPE_PATH</code></td>
-<td>Returned path</td>
-</tr>
-<tr>
-<td><code>0x09</code></td>
-<td><code>PAYLOAD_TYPE_TRACE</code></td>
-<td>Trace a path, collecting SNR for each hop</td>
-</tr>
-<tr>
-<td><code>0x0A</code></td>
-<td><code>PAYLOAD_TYPE_MULTIPART</code></td>
-<td>Packet is part of a sequence of packets</td>
-</tr>
-<tr>
-<td><code>0x0B</code></td>
-<td><code>PAYLOAD_TYPE_CONTROL</code></td>
-<td>Control packet data (unencrypted)</td>
-</tr>
-<tr>
-<td><code>0x0C</code></td>
-<td>reserved</td>
-<td>reserved</td>
-</tr>
-<tr>
-<td><code>0x0D</code></td>
-<td>reserved</td>
-<td>reserved</td>
-</tr>
-<tr>
-<td><code>0x0E</code></td>
-<td>reserved</td>
-<td>reserved</td>
-</tr>
-<tr>
-<td><code>0x0F</code></td>
-<td><code>PAYLOAD_TYPE_RAW_CUSTOM</code></td>
-<td>Custom packet (raw bytes, custom encryption)</td>
-</tr>
-</tbody>
-</table>
-<h3 id="payload-versions">Payload Versions</h3>
-<table>
-<thead>
-<tr>
-<th>Value</th>
-<th>Version</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>0x00</code></td>
-<td>1</td>
-<td>1-byte src/dest hashes, 2-byte MAC</td>
-</tr>
-<tr>
-<td><code>0x01</code></td>
 <td>2</td>
-<td>Future version (e.g., 2-byte hashes, 4-byte MAC)</td>
+<td><code>CMD_SEND_TXT_MSG</code></td>
+<td>DM plain text</td>
 </tr>
 <tr>
-<td><code>0x02</code></td>
 <td>3</td>
-<td>Future version</td>
+<td><code>CMD_SEND_CHANNEL_TXT_MSG</code></td>
+<td>Channel plain text</td>
 </tr>
 <tr>
-<td><code>0x03</code></td>
 <td>4</td>
-<td>Future version</td>
+<td><code>CMD_GET_CONTACTS</code></td>
+<td>Contact dump / sync</td>
+</tr>
+<tr>
+<td>10</td>
+<td><code>CMD_SYNC_NEXT_MESSAGE</code></td>
+<td>Pull next history message</td>
+</tr>
+<tr>
+<td>31 / 32</td>
+<td><code>CMD_GET_CHANNEL</code> / <code>CMD_SET_CHANNEL</code></td>
+<td>Channel slots</td>
+</tr>
+<tr>
+<td>13</td>
+<td><code>CMD_RESET_PATH</code></td>
+<td>Clear stored route</td>
+</tr>
+<tr>
+<td>20</td>
+<td><code>CMD_GET_BATT_AND_STORAGE</code></td>
+<td>Battery / storage</td>
+</tr>
+<tr>
+<td>56</td>
+<td><code>CMD_GET_STATS</code></td>
+<td>Stats subtypes (v8+)</td>
 </tr>
 </tbody>
 </table>
+<p>Push codes include <code>PUSH_CODE_MSG_WAITING</code> (1) and <code>PUSH_CODE_SEND_CONFIRMED</code> for ACK delivery to <strong>connected</strong> clients.</p>
+<h2 id="parity-gaps-acceptable-backlog">Parity gaps (acceptable / backlog)</h2>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Full room-server UX</td>
+<td>Backlog — protocol exists</td>
+</tr>
+<tr>
+<td>MeshCore backup import/export on device</td>
+<td><strong>Intentionally not in touch UI</strong> — storage constrained; use web client</td>
+</tr>
+<tr>
+<td>OTA catalog / map picker / preset search on device</td>
+<td><strong>Intentionally not in touch UI</strong> — use web client</td>
+</tr>
+<tr>
+<td>Full Rx log + export</td>
+<td>Partial — compact on-device log only</td>
+</tr>
+<tr>
+<td>Trace / path / binary helpers from bubbles</td>
+<td>Backlog — use web client or serial for deep tools</td>
+</tr>
+</tbody>
+</table>
+<h2 id="related-docs">Related docs</h2>
+<ul>
+<li><code>docs/companion_protocol.md</code> — framing overview  </li>
+<li><code>docs/REPEATER_MESHCOMOD_CLIENT_INTEGRATION.md</code> — client integration  </li>
+<li><code>docs/HARDWARE_TOUCH_PARITY_CHECKLIST.md</code> — acceptance tests  </li>
+</ul>
 
 
 
