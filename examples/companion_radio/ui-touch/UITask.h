@@ -34,6 +34,7 @@ public:
   static const int MAX_THREAD_NAME = 32;
   static const int MAX_SENDER_NAME = 24;
   static const int MAX_MSG_TEXT = 96;
+  static const int MAX_UI_PATH = 32;  // inbound-route bytes/message for the Info popup (covers deep + multi-byte-hash routes)
 
   // Outgoing-DM delivery state. None for incoming + channel messages.
   enum : uint8_t {
@@ -50,6 +51,7 @@ public:
   enum : uint8_t {
     MSG_META_HAS_RX    = (1u << 0),  // snr_q4/rssi/path_len populated
     MSG_META_IS_FLOOD  = (1u << 1),  // packet was flooded (path_len = hop count); else 0xFF / direct
+    MSG_META_HAS_SCOPE = (1u << 2),  // in_scope holds a valid transport scope (transport_codes[0])
   };
 
   struct UIMessage {
@@ -62,6 +64,13 @@ public:
     uint8_t  path_len;       // hop count for flood packets; 0xFF for direct/routed; 0 if unknown
     int8_t   snr_q4;         // SNR × 4 (matches on-wire encoding); 0 if unknown
     int8_t   rssi;           // dBm; 0 if unknown
+    // RAM-only (not persisted): route + repeats metadata, valid for the current
+    // session. sent_fp links an outgoing flood to MyMesh's "repeats heard" ring;
+    // in_path[] holds the repeater hashes an inbound flood traversed.
+    uint32_t sent_fp;
+    uint16_t in_scope;       // transport scope (transport_codes[0]); valid iff MSG_META_HAS_SCOPE
+    uint8_t  in_path_n;
+    uint8_t  in_path[MAX_UI_PATH];
     char thread[MAX_THREAD_NAME + 1];
     char sender[MAX_SENDER_NAME + 1];
     char text[MAX_MSG_TEXT + 1];
@@ -180,7 +189,9 @@ private:
   int findThreadByName(const char* name, bool channel) const;
   void sortThreadsByRecent(bool channel_mode, int out_indexes[], int& out_count) const;
   int appendMessage(const char* thread, const char* sender, const char* text, bool channel, bool outgoing, bool mark_unread, uint32_t ack_hash = 0, uint8_t deliv_state = DELIV_NONE,
-                    uint8_t meta_flags = 0, uint8_t path_len = 0, int8_t snr_q4 = 0, int8_t rssi = 0);
+                    uint8_t meta_flags = 0, uint8_t path_len = 0, int8_t snr_q4 = 0, int8_t rssi = 0,
+                    const uint8_t* in_path = nullptr, uint8_t in_path_n = 0, uint32_t sent_fp = 0,
+                    uint16_t in_scope = 0);
   // Shared core for newMsg / newMsgFromPubWithMeta — see UITask.cpp.
   void newMsgImpl(uint8_t path_len, const char* from_name, const char* text, int msgcount,
                   uint8_t meta_flags, int8_t snr_q4, int8_t rssi);

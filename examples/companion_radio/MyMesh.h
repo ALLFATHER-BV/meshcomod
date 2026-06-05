@@ -115,6 +115,35 @@ public:
   // count, etc.). self_id and num_channels live in `protected:` of the base
   // classes, so we expose narrow getters here.
   const uint8_t *getSelfPubKey() const { return self_id.pub_key; }
+  /** Export this node's 64-byte private key (settings backup). */
+  size_t uiExportPrivKey(uint8_t dest[64]) { return self_id.writeTo(dest, 64); }
+  /** Import a 64-byte private key from a settings backup: validate, persist,
+   *  swap the active identity, reload contacts (invalidate shared secrets).
+   *  Returns false on an invalid key or storage failure. */
+  bool uiImportPrivKey(const uint8_t src[64]) {
+    if (!mesh::LocalIdentity::validatePrivateKey(src)) return false;
+    mesh::LocalIdentity identity;
+    identity.readFrom(src, 64);
+    if (!_store->saveMainIdentity(identity)) return false;
+    self_id = identity;
+    resetContacts();
+    _store->loadContacts(this);
+    return true;
+  }
+  /** Add/merge a contact from a settings backup (name + pubkey + flags + GPS).
+   *  Returns false if the slot table is full. Mirrors how addContact works. */
+  bool uiAddContactFromBackup(const uint8_t pub_key[32], const char* name, uint8_t type,
+                              uint8_t flags, int32_t lat, int32_t lon,
+                              uint32_t last_advert, uint32_t lastmod) {
+    ContactInfo c{};
+    memcpy(c.id.pub_key, pub_key, 32);
+    c.type = type; c.flags = flags;
+    c.gps_lat = lat; c.gps_lon = lon;
+    c.last_advert_timestamp = last_advert; c.lastmod = lastmod;
+    c.out_path_len = OUT_PATH_UNKNOWN;
+    strncpy(c.name, name ? name : "", sizeof(c.name) - 1);
+    return addContact(c);
+  }
   // Channel count by iterating slots — `num_channels` is private in the base.
   // A channel slot is in-use when its name is non-empty (matches the lookup
   // pattern used elsewhere in the firmware).
@@ -133,6 +162,19 @@ public:
 
   void loop();
   void handleCmdFrame(size_t len);
+
+  // ---- Settings backup (MeshCore-app-compatible JSON) ----
+  /** Write the full backup JSON (name, public/private key, radio + position
+   *  settings, channels, contacts) to `out`. Matches the stock MeshCore app
+   *  export shape so the file opens in the app / web client. */
+  void uiExportBackup(Print& out, double node_lat, double node_lon);
+  /** Apply a parsed backup. `sections` bit flags choose what to apply:
+   *  bit0=identity(name+key) bit1=radio bit2=position bit3=channels bit4=contacts.
+   *  `replace_*` clears existing channels/contacts first. Returns false on a
+   *  malformed document. Fills counts (channels/contacts applied) if non-null. */
+  bool uiImportBackup(Stream& in, uint8_t sections,
+                      bool replace_channels, bool replace_contacts,
+                      int* out_channels, int* out_contacts);
   bool advert();
   /** Send advert with explicit routing: true = flood (multi-hop), false = zero-hop.
    *  `advert()` (zero-hop) is kept for backward compatibility. */
@@ -311,6 +353,79 @@ public:
     // wherever it's used.
     next_ack_idx = (next_ack_idx + 1) % 8;
   }
+
+  // ---- "Repeats heard" for sent floods + route of the last received flood ----
+  // When we originate a flood TXT, repeaters re-broadcast it and our own radio
+  // hears the echoes (same payload, longer path). We fingerprint the payload at
+  // send time (sendFloodScoped) and match echoes in logRxRaw, counting repeats
+  // per recent send. The touch UI stamps its outgoing bubble with the
+  // fingerprint (uiLastSentFp) and later reads the count (uiRepeatsForFp).
+  // _last_rx_path holds the path hashes of the just-received flood so the UI's
+  // newMsg* handler (called synchronously next) can stash the inbound route.
+  static const int UI_ECHO_SLOTS = 12;
+  uint32_t _echo_fp[UI_ECHO_SLOTS]  = {0};
+  uint8_t  _echo_rep[UI_ECHO_SLOTS] = {0};
+  uint8_t  _echo_idx = 0;
+  uint32_t _last_sent_fp = 0;
+  uint8_t  _last_rx_path[32] = {0};
+  uint8_t  _last_rx_path_n  = 0;
+  uint16_t _last_rx_scope     = 0;     // transport_codes[0] of the last RX flood ("scope")
+  bool     _last_rx_has_scope = false; // false if the packet carried no transport codes
+  volatile bool _echo_dirty = false;   // a repeat was counted -> UI should refresh
+
+  /** Fingerprint of the most-recently originated flood TXT payload (0 if none). */
+  uint32_t uiLastSentFp() const { return _last_sent_fp; }
+
+  /** Echoes (repeater re-broadcasts) heard of the flood TXT with this payload
+   *  fingerprint. 0 if unknown / evicted from the ring. */
+  uint8_t uiRepeatsForFp(uint32_t fp) const {
+    if (fp == 0) return 0;
+    for (int i = 0; i < UI_ECHO_SLOTS; i++) if (_echo_fp[i] == fp) return _echo_rep[i];
+    return 0;
+  }
+
+  /** Path (repeater hashes) of the most-recently received flood; copies up to
+   *  `max` bytes into buf, returns the count. Read synchronously from the
+   *  newMsg* handler that follows reception. */
+  uint8_t lastRxPath(uint8_t* buf, uint8_t max) const {
+    uint8_t n = _last_rx_path_n < max ? _last_rx_path_n : max;
+    if (buf && n) memcpy(buf, _last_rx_path, n);
+    return n;
+  }
+  /** Scope (transport_codes[0]) of the last received flood; *has = false when
+   *  the packet carried no transport codes. */
+  uint16_t lastRxScope(bool* has) const { if (has) *has = _last_rx_has_scope; return _last_rx_scope; }
+  /** Capture route + scope of a just-received flood for the Info popup. Call
+   *  synchronously right before the newMsg* notification. */
+  void uiStashRxMeta(mesh::Packet* pkt) {
+    _last_rx_path_n = 0;
+    if (pkt && pkt->isRouteFlood()) {
+      int nb = (int)pkt->getPathHashCount() * (int)pkt->getPathHashSize();
+      if (nb > (int)sizeof(_last_rx_path)) nb = (int)sizeof(_last_rx_path);
+      if (nb > 0) { memcpy(_last_rx_path, pkt->path, nb); _last_rx_path_n = (uint8_t)nb; }
+    }
+    const uint8_t rt = pkt ? pkt->getRouteType() : 0xFF;
+    _last_rx_has_scope = (rt == ROUTE_TYPE_TRANSPORT_FLOOD || rt == ROUTE_TYPE_TRANSPORT_DIRECT);
+    _last_rx_scope = (_last_rx_has_scope && pkt) ? pkt->transport_codes[0] : 0;
+  }
+
+  /** Track a freshly-sent flood TXT fingerprint (called from sendFloodScoped). */
+  void uiTrackSentFp(uint32_t fp) {
+    if (fp == 0) return;
+    _last_sent_fp = fp;
+    for (int i = 0; i < UI_ECHO_SLOTS; i++) if (_echo_fp[i] == fp) { _echo_rep[i] = 0; return; }
+    _echo_fp[_echo_idx] = fp; _echo_rep[_echo_idx] = 0;
+    _echo_idx = (uint8_t)((_echo_idx + 1) % UI_ECHO_SLOTS);
+  }
+
+  /** Count one echo of fingerprint `fp` (called from logRxRaw on a match). */
+  void uiCountEcho(uint32_t fp) {
+    for (int i = 0; i < UI_ECHO_SLOTS; i++)
+      if (_echo_fp[i] == fp) { if (_echo_rep[i] < 255) _echo_rep[i]++; _echo_dirty = true; return; }
+  }
+  /** True once if a repeat was counted since the last call — the UI uses this
+   *  to refresh the chat so the bubble's repeat tag updates live. */
+  bool takeEchoDirty() { bool d = _echo_dirty; _echo_dirty = false; return d; }
 
   /** Send a 0-hop trace ping to a single neighbor (typically a repeater).
    *  Returns the trace tag we chose (non-zero on success) so the UI can

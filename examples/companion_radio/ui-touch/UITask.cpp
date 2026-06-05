@@ -3191,6 +3191,28 @@ static void openDiscoveredModalCb(lv_event_t* e) {
   }
 }
 
+// Buffered Print over a File. The JSON export writes byte-at-a-time; on a raw
+// File that's one flash op per byte (a 60 KB backup ≈ 60k syscalls → a
+// multi-second UI freeze). Batching into 1 KB writes makes it ~60 ops.
+class FileBufWriter : public Print {
+  File& _f;
+  uint8_t _buf[1024];
+  size_t _n = 0;
+public:
+  explicit FileBufWriter(File& f) : _f(f) {}
+  void flushBuf() { if (_n) { _f.write(_buf, _n); _n = 0; } }
+  size_t write(uint8_t b) override { _buf[_n++] = b; if (_n >= sizeof(_buf)) flushBuf(); return 1; }
+  size_t write(const uint8_t* d, size_t n) override {
+    for (size_t i = 0; i < n; ++i) { _buf[_n++] = d[i]; if (_n >= sizeof(_buf)) flushBuf(); }
+    return n;
+  }
+};
+
+// Import settings opens a full-screen .json picker (internal flash + SD), the
+// same UX as the lock-wallpaper picker. Defined later in this file (where the
+// SD mount state is in scope); forward-declared here for the button below.
+static void openBackupPicker();
+
 static void buildProfileSettings() {
   // No "Profile" group header — it just duplicates the sub-tab button name.
   lv_obj_t* body = createSettingsModal("", SettingsModalKind::Profile);
@@ -3337,6 +3359,74 @@ static void buildProfileSettings() {
     lv_obj_set_style_text_color(sl, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
     lv_obj_set_style_text_font(sl, &g_font_14, LV_PART_MAIN);
     lv_obj_center(sl);
+    y += 42;
+  }
+
+  // "Export settings" — write a MeshCore-app-compatible JSON backup (identity,
+  // radio/position, channels, contacts) to SD if a card is in, else internal
+  // flash. The file opens in the stock app / web client.
+  {
+    lv_obj_t* eb = lv_btn_create(body);
+    lv_obj_set_size(eb, lv_pct(100), 34);
+    lv_obj_set_pos(eb, 2, y);
+    styleButton(eb);
+    lv_obj_add_event_cb(eb, +[](lv_event_t* e) {
+      if (lv_event_get_code(e) != LV_EVENT_CLICKED || !g_lv.task) return;
+      // "Exporting…" overlay, painted now so the (now brief) write isn't a
+      // mystery freeze.
+      lv_obj_t* ov = lv_obj_create(lv_layer_top());
+      lv_obj_remove_style_all(ov);
+      lv_obj_set_size(ov, lv_disp_get_hor_res(nullptr), lv_disp_get_ver_res(nullptr));
+      lv_obj_set_style_bg_color(ov, lv_color_black(), LV_PART_MAIN);
+      lv_obj_set_style_bg_opa(ov, LV_OPA_70, LV_PART_MAIN);
+      lv_obj_clear_flag(ov, LV_OBJ_FLAG_SCROLLABLE);
+      { lv_obj_t* ol = lv_label_create(ov);
+        lv_label_set_text(ol, "Exporting settings\xe2\x80\xa6");
+        lv_obj_set_style_text_color(ol, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
+        lv_obj_set_style_text_font(ol, &g_font_16, LV_PART_MAIN);
+        lv_obj_center(ol); }
+      lv_refr_now(nullptr);
+
+      File f; const char* where = "internal";
+#if defined(HAS_TDECK_GT911)
+      if (SD.cardType() != CARD_NONE) { f = SD.open("/meshcore-backup.json", FILE_WRITE); if (f) where = "SD"; }
+#endif
+      if (!f) { SPIFFS.begin(false); f = SPIFFS.open("/meshcore-backup.json", FILE_WRITE); }
+      if (!f) { lv_obj_del(ov); g_lv.task->showAlert("Export failed (can't open file)", 1800); return; }
+      { FileBufWriter bw(f);
+        the_mesh.uiExportBackup(bw, g_lv.task->getNodeLat(), g_lv.task->getNodeLon());
+        bw.flushBuf(); }
+      f.close();
+      lv_obj_del(ov);
+      char msg[88];
+      snprintf(msg, sizeof msg, "Saved %s:/meshcore-backup.json", where);
+      g_lv.task->showAlert(msg, 2600);
+    }, LV_EVENT_CLICKED, nullptr);
+    lv_obj_t* el = lv_label_create(eb);
+    lv_label_set_text(el, "Export settings");
+    lv_obj_set_style_text_color(el, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
+    lv_obj_set_style_text_font(el, &g_font_14, LV_PART_MAIN);
+    lv_obj_center(el);
+    y += 42;
+  }
+
+  // "Import settings" — restore a MeshCore-app-compatible JSON backup from
+  // /meshcore-backup.json (SD if present, else internal). Replaces identity,
+  // channels and contacts, then reboots so radio settings take effect.
+  {
+    lv_obj_t* ib = lv_btn_create(body);
+    lv_obj_set_size(ib, lv_pct(100), 34);
+    lv_obj_set_pos(ib, 2, y);
+    styleButton(ib);
+    lv_obj_add_event_cb(ib, +[](lv_event_t* e) {
+      if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+      openBackupPicker();
+    }, LV_EVENT_CLICKED, nullptr);
+    lv_obj_t* il = lv_label_create(ib);
+    lv_label_set_text(il, "Import settings");
+    lv_obj_set_style_text_color(il, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
+    lv_obj_set_style_text_font(il, &g_font_14, LV_PART_MAIN);
+    lv_obj_center(il);
     y += 42;
   }
 }
@@ -8435,14 +8525,26 @@ static bool fmSdTryMount() {
   // approach the loop watchdog window, so drop the WDT around the loop. 4 MHz
   // is reliable on the shared LoRa bus; max_files=3 keeps the VFS footprint
   // small (dir + at most 2 files).
-  static const uint16_t kSettleMs[] = { 40, 120, 200, 300, 450 };
-  const int kAttempts = (int)(sizeof(kSettleMs) / sizeof(kSettleMs[0]));
+  // Ladder of (settle, clock) attempts. The first three use the fast 4 MHz the
+  // shared LoRa bus handles well; a cold / cheap card that won't wake at 4 MHz
+  // then gets progressively longer settles AND a lower clock (1 MHz, then
+  // 400 kHz) — many such cards only complete their power-up handshake at a slow
+  // clock, and previously needed a physical reinsert (power-cycle) to mount. A
+  // healthy card mounts on attempt 1 and returns immediately; only a stubborn
+  // one walks the whole ladder (~2.7 s worst case, loop WDT dropped below). The
+  // clock that succeeds becomes the operating clock — slower is fine here (the
+  // file list + a settings backup are small; map tiles live on internal flash).
+  static const struct { uint16_t settle_ms; uint32_t hz; } kMountLadder[] = {
+    {  40, 4000000 }, { 120, 4000000 }, { 200, 4000000 },
+    { 300, 1000000 }, { 450, 1000000 }, { 650,  400000 }, { 900, 400000 },
+  };
+  const int kAttempts = (int)(sizeof(kMountLadder) / sizeof(kMountLadder[0]));
   bool mounted = false;
   disableLoopWDT();
   for (int attempt = 0; attempt < kAttempts; ++attempt) {
     SD.end();
-    delay(kSettleMs[attempt]);
-    if (SD.begin(PIN_SD_CS, *spi, 4000000, "/sd", 3) && SD.cardType() != CARD_NONE) {
+    delay(kMountLadder[attempt].settle_ms);
+    if (SD.begin(PIN_SD_CS, *spi, kMountLadder[attempt].hz, "/sd", 3) && SD.cardType() != CARD_NONE) {
       mounted = true;
       break;
     }
@@ -9284,6 +9386,18 @@ static bool fmIsSystemPath(const char* full) {
     if (!strcmp(base, kSys[i])) return true;
   return false;
 }
+// OS-metadata cruft on removable FAT/exFAT cards: macOS AppleDouble sidecars
+// ("._<name>") and dot-files (.DS_Store, .Spotlight-V100, .Trashes, .fseventsd,
+// .TemporaryItems…), the Finder "__MACOSX" ZIP folder, and Windows' "System
+// Volume Information". Hidden in the file manager unless "Show system files" is
+// on — same toggle that reveals MeshCore's own SPIFFS files.
+static bool fmIsHiddenName(const char* base) {
+  if (!base || !base[0]) return false;
+  if (base[0] == '.') return true;                            // ._* AppleDouble + all dot-files
+  if (!strcmp(base, "__MACOSX")) return true;
+  if (!strcasecmp(base, "System Volume Information")) return true;
+  return false;
+}
 // Append an entry, de-duplicating by (name,isdir) so synthesised virtual folders collapse.
 static void fmAddEntry(const char* name, uint32_t size, bool isdir) {
   if (!name[0] || s_fm_count >= FM_MAX_ENTRIES) return;
@@ -9345,7 +9459,8 @@ static void fmRefresh() {
       while (e && s_fm_count < FM_MAX_ENTRIES) {
         const char* full = e.name();
         const char* base = strrchr(full, '/'); base = base ? base + 1 : full;
-        fmAddEntry(base, (uint32_t)e.size(), e.isDirectory());
+        if (s_fm_show_hidden || !fmIsHiddenName(base))
+          fmAddEntry(base, (uint32_t)e.size(), e.isDirectory());
         e.close();
         e = dir.openNextFile();
       }
@@ -12840,7 +12955,7 @@ static void openMessageInfoPopup(int msg_idx) {
   // channel messages have no single peer to trace, so they keep the compact card.
   const bool show_trace = !m.channel;
   const int card_w = 220;
-  const int card_h = show_trace ? 262 : 220;
+  const int card_h = show_trace ? 290 : 250;
   lv_obj_t* card = lv_obj_create(s_msg_info_root);
   lv_obj_remove_style_all(card);
   lv_obj_set_size(card, card_w, card_h);
@@ -12865,7 +12980,7 @@ static void openMessageInfoPopup(int msg_idx) {
   //   SNR    -3.5 dB             (or "—")
   //   RSSI   -101 dBm            (or "—")
   //   Status sent / delivered / failed   (only when outgoing DM)
-  char body[320];
+  char body[420];
   int blen = 0;
   // Title is rendered as a separate label below — don't repeat it in body.
   // Time
@@ -12886,7 +13001,8 @@ static void openMessageInfoPopup(int msg_idx) {
     const bool is_flood = (m.meta_flags & UITask::MSG_META_IS_FLOOD) != 0;
     if (is_flood) {
       blen += snprintf(body + blen, sizeof(body) - blen,
-                       "\nPath   flood, %u hops", (unsigned)m.path_len);
+                       "\nPath   flood, %u hops, %u-byte hash",
+                       (unsigned)(m.path_len & 0x3F), (unsigned)((m.path_len >> 6) + 1));
     } else {
       blen += snprintf(body + blen, sizeof(body) - blen,
                        "\nPath   direct (routed)");
@@ -12895,6 +13011,22 @@ static void openMessageInfoPopup(int msg_idx) {
                      "\nSNR    %.2f dB", (double)m.snr_q4 / 4.0);
     blen += snprintf(body + blen, sizeof(body) - blen,
                      "\nRSSI   %d dBm", (int)m.rssi);
+    if (m.meta_flags & UITask::MSG_META_HAS_SCOPE) {
+      blen += snprintf(body + blen, sizeof(body) - blen, "\nScope  %04X", (unsigned)m.in_scope);
+    }
+    // Full inbound route as consistent hex hops (e.g. 24E0>6401>B303) — the
+    // repeaters this flood traversed. No name resolution (kept it uniform hex).
+    if (is_flood && m.in_path_n > 0) {
+      const uint8_t hsz = (uint8_t)((m.path_len >> 6) + 1);
+      const uint8_t cnt = (uint8_t)(m.path_len & 0x3F);
+      blen += snprintf(body + blen, sizeof(body) - blen, "\nRoute  ");
+      int off = 0;
+      for (uint8_t h = 0; h < cnt && off + hsz <= m.in_path_n; ++h, off += hsz) {
+        if (h) blen += snprintf(body + blen, sizeof(body) - blen, ">");
+        for (uint8_t b = 0; b < hsz; ++b)
+          blen += snprintf(body + blen, sizeof(body) - blen, "%02X", m.in_path[off + b]);
+      }
+    }
   } else if (!m.outgoing) {
     blen += snprintf(body + blen, sizeof(body) - blen,
                      "\nPath   \xe2\x80\x94"
@@ -12911,6 +13043,12 @@ static void openMessageInfoPopup(int msg_idx) {
       case UITask::DELIV_FAILED:    ds = "failed";    break;
     }
     blen += snprintf(body + blen, sizeof(body) - blen, "\nStatus %s", ds);
+  }
+  // "Repeats heard": echoes of our sent flood re-broadcast by nearby repeaters,
+  // counted live this session. Shown for any tracked outgoing flood.
+  if (m.outgoing && m.sent_fp) {
+    blen += snprintf(body + blen, sizeof(body) - blen,
+                     "\nRepeats heard: %u", (unsigned)the_mesh.uiRepeatsForFp(m.sent_fp));
   }
   if (blen >= (int)sizeof(body)) blen = sizeof(body) - 1;
   body[blen] = '\0';
@@ -13124,9 +13262,16 @@ static void refreshChatDetail(LvChatPanel& p) {
         case UITask::DELIV_FAILED:    deliv_glyph = " " LV_SYMBOL_CLOSE; deliv_fg = 0xE08080;  break;
       }
     }
-    if (ts_buf[0] || deliv_glyph[0]) {
-      char footer[24];
-      snprintf(footer, sizeof(footer), "%s%s", ts_buf, deliv_glyph);
+    // Repeats-heard tag for outgoing floods (DM + channel): how many nearby
+    // repeaters re-broadcast this message. Only shown once ≥1.
+    char rep_buf[12] = "";
+    if (m.outgoing && m.sent_fp) {
+      const uint8_t reps = the_mesh.uiRepeatsForFp(m.sent_fp);
+      if (reps > 0) snprintf(rep_buf, sizeof(rep_buf), " " LV_SYMBOL_REFRESH "%u", (unsigned)reps);
+    }
+    if (ts_buf[0] || deliv_glyph[0] || rep_buf[0]) {
+      char footer[40];
+      snprintf(footer, sizeof(footer), "%s%s%s", ts_buf, deliv_glyph, rep_buf);
       lv_obj_t* foot = lv_label_create(bubble);
       lv_label_set_text(foot, footer);
       lv_obj_set_style_text_font(foot, &g_font_12, LV_PART_MAIN);
@@ -14270,6 +14415,210 @@ static void lockColorChosenCb(lv_event_t* e) {
   if (g_lv.task) g_lv.task->showAlert("Lock text colour set", 1000);
 }
 #endif  // HAS_TDECK_GT911
+// The settings-backup import picker below must link on BOTH touch boards (its
+// Import button is not keyboard-gated), so briefly close the enclosing
+// HAS_TDECK_KEYBOARD region here and reopen it right after openBackupPicker().
+#endif  // HAS_TDECK_KEYBOARD — paused for the board-agnostic backup picker
+
+// ---- Settings backup: import file picker ------------------------------------
+// Mirrors the lock-wallpaper picker UX: a full-screen list of *.json files on
+// internal flash + (T-Deck) the SD card root. Picking one shows a short confirm
+// then streams it through MyMesh::uiImportBackup and reboots so the imported
+// radio/identity settings take effect. Lives OUTSIDE the HAS_TDECK_GT911 guard
+// above because the Import button exists on both touch boards (the Heltec has
+// no SD slot, so it lists internal flash only).
+static lv_obj_t* s_backup_picker = nullptr;
+static char      s_backup_paths[24][160];   // "int:/foo.json" | "sd:/foo.json"
+static char      s_backup_disp [24][48];    // shown label, e.g. "SD: foo.json"
+static int       s_backup_count = 0;
+static char      s_backup_chosen[160] = {0};
+
+static bool backupIsJson(const char* name) {
+  if (!name) return false;
+  const char* base = strrchr(name, '/'); base = base ? base + 1 : name;
+  // Skip hidden / macOS AppleDouble sidecars (".DS_Store", and the "._<name>"
+  // resource-fork file Finder writes next to every file it copies to a FAT SD
+  // card) — otherwise "._meshcore-backup.json" shows up as a bogus duplicate.
+  if (base[0] == '.') return false;
+  const char* d = strrchr(base, '.');
+  return d && !strcasecmp(d, ".json");
+}
+static void backupAddPath(const char* stored, const char* disp) {
+  const int cap = (int)(sizeof s_backup_paths / sizeof s_backup_paths[0]);
+  if (s_backup_count >= cap) return;
+  for (int i = 0; i < s_backup_count; ++i)
+    if (!strcmp(s_backup_paths[i], stored)) return;             // dedup
+  strncpy(s_backup_paths[s_backup_count], stored, 159); s_backup_paths[s_backup_count][159] = '\0';
+  strncpy(s_backup_disp [s_backup_count], disp,   47);  s_backup_disp [s_backup_count][47]  = '\0';
+  s_backup_count++;
+}
+static void backupScan() {
+  s_backup_count = 0;
+  // Internal SPIFFS is flat — list any *.json at the root.
+  SPIFFS.begin(false);
+  File root = SPIFFS.open("/");
+  if (root) {
+    File e = root.openNextFile();
+    while (e) {
+      const char* full = e.path();
+      if (full && backupIsJson(full)) {
+        const char* base = strrchr(full, '/'); base = base ? base + 1 : full;
+        char stored[160]; snprintf(stored, sizeof stored, "int:%s", full);
+        char disp[48];    snprintf(disp,   sizeof disp,   "Internal: %s", base);
+        backupAddPath(stored, disp);
+      }
+      e.close();
+      e = root.openNextFile();
+    }
+    root.close();
+  }
+#if defined(HAS_TDECK_GT911)
+  // SD card root (a real directory on the T-Deck). Actively (re)mount here: the
+  // SD is otherwise only probed while the file manager is open, so without this
+  // the picker would miss the card until the user had opened the file manager
+  // once. fmSdTryMount() no-ops if already mounted, else walks the mount ladder.
+  if (fmSdTryMount()) {
+    File d = SD.open("/");
+    if (d && d.isDirectory()) {
+      File e = d.openNextFile();
+      while (e) {
+        if (!e.isDirectory()) {
+          const char* nm = e.name();
+          const char* base = strrchr(nm, '/'); base = base ? base + 1 : nm;
+          if (backupIsJson(base)) {
+            char stored[160]; snprintf(stored, sizeof stored, "sd:/%s", base);
+            char disp[48];    snprintf(disp,   sizeof disp,   "SD: %s", base);
+            backupAddPath(stored, disp);
+          }
+        }
+        e.close();
+        e = d.openNextFile();
+      }
+    }
+    if (d) d.close();
+  }
+#endif
+}
+static void backupPickerClose() {
+  if (s_backup_picker) { lv_obj_del(s_backup_picker); s_backup_picker = nullptr; }
+}
+static void backupPickerCloseCb(lv_event_t* e) {
+  if (lv_event_get_code(e) == LV_EVENT_CLICKED) backupPickerClose();
+}
+// Apply the file stashed in s_backup_chosen, then reboot.
+static void doBackupImportChosen() {
+  if (!g_lv.task || !s_backup_chosen[0]) return;
+  fs::FS* fsp = nullptr;
+  const char* path = s_backup_chosen;
+  if (!strncmp(path, "int:", 4)) { SPIFFS.begin(false); fsp = &SPIFFS; path += 4; }
+#if defined(HAS_TDECK_GT911)
+  else if (!strncmp(path, "sd:", 3)) { fsp = &SD; path += 3; }
+#endif
+  if (!fsp) { g_lv.task->showAlert("Import: storage unavailable", 2000); return; }
+  // "Importing…" overlay, painted before the blocking parse + apply.
+  lv_obj_t* ov = lv_obj_create(lv_layer_top());
+  lv_obj_remove_style_all(ov);
+  lv_obj_set_size(ov, lv_disp_get_hor_res(nullptr), lv_disp_get_ver_res(nullptr));
+  lv_obj_set_style_bg_color(ov, lv_color_black(), LV_PART_MAIN);
+  lv_obj_set_style_bg_opa(ov, LV_OPA_70, LV_PART_MAIN);
+  lv_obj_clear_flag(ov, LV_OBJ_FLAG_SCROLLABLE);
+  { lv_obj_t* ol = lv_label_create(ov); lv_label_set_text(ol, "Importing settings\xe2\x80\xa6");
+    lv_obj_set_style_text_color(ol, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
+    lv_obj_set_style_text_font(ol, &g_font_16, LV_PART_MAIN); lv_obj_center(ol); }
+  lv_refr_now(nullptr);
+  File f = fsp->open(path, FILE_READ);
+  // uiImportBackup is a long synchronous burst of SPIFFS writes — identity,
+  // channels, and DataStore::saveContacts issues ~12 writes per contact (2000+
+  // for a full address book). That keeps the flash cache disabled long enough to
+  // starve the idle task and trip the TASK watchdog; the panic surfaces as an
+  // 'ipc0' abort inside spi_flash_op_block_func (a flash/cache stall, NOT a
+  // partition fault). A successful import reboots immediately, so suspend the
+  // per-core idle watchdogs for the duration and only restore them if we bail.
+  disableCore0WDT();
+  disableCore1WDT();
+  int nch = 0, nco = 0;
+  bool ok = f && the_mesh.uiImportBackup(f, 0x1F, true, true, &nch, &nco);
+  if (f) f.close();
+  if (!ok) {
+    enableCore0WDT();
+    enableCore1WDT();
+    lv_obj_del(ov);
+    g_lv.task->showAlert("Import failed (bad/unreadable JSON)", 2400);
+    return;
+  }
+  g_lv.task->persistHistoryNow();
+  delay(1200);
+  ESP.restart();
+}
+static void backupChosenCb(lv_event_t* e) {
+  if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+  const char* stored = (const char*)lv_event_get_user_data(e);
+  if (!stored) return;
+  strncpy(s_backup_chosen, stored, sizeof(s_backup_chosen) - 1);
+  s_backup_chosen[sizeof(s_backup_chosen) - 1] = '\0';
+  backupPickerClose();
+  showConfirm("Import this backup?\nReplaces identity,\nchannels & contacts,\nthen reboots.",
+              "Import", doBackupImportChosen);
+}
+static void openBackupPicker() {
+  backupScan();
+  backupPickerClose();
+  const lv_coord_t sw = lv_disp_get_hor_res(nullptr);
+  const lv_coord_t sh = lv_disp_get_ver_res(nullptr);
+  s_backup_picker = lv_obj_create(lv_layer_top());
+  lv_obj_remove_style_all(s_backup_picker);
+  lv_obj_set_size(s_backup_picker, sw, sh - STATUSBAR_H);
+  lv_obj_set_pos(s_backup_picker, 0, STATUSBAR_H);
+  lv_obj_set_style_bg_color(s_backup_picker, lv_color_hex(COLOR_BG), LV_PART_MAIN);
+  lv_obj_set_style_bg_opa(s_backup_picker, LV_OPA_COVER, LV_PART_MAIN);
+  lv_obj_clear_flag(s_backup_picker, LV_OBJ_FLAG_SCROLLABLE);
+
+  lv_obj_t* title = lv_label_create(s_backup_picker);
+  lv_label_set_text(title, "Import settings");
+  lv_obj_set_style_text_font(title, &g_font_16, LV_PART_MAIN);
+  lv_obj_set_style_text_color(title, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
+  lv_obj_set_pos(title, 8, 8);
+
+  lv_obj_t* close = lv_btn_create(s_backup_picker);
+  lv_obj_set_size(close, 30, 26);
+  lv_obj_align(close, LV_ALIGN_TOP_RIGHT, -6, 4);
+  styleButton(close);
+  lv_obj_add_event_cb(close, backupPickerCloseCb, LV_EVENT_CLICKED, nullptr);
+  lv_obj_t* cl = lv_label_create(close); lv_label_set_text(cl, LV_SYMBOL_CLOSE);
+  lv_obj_set_style_text_font(cl, &g_font_12, LV_PART_MAIN); lv_obj_center(cl);
+
+  lv_obj_t* list = lv_obj_create(s_backup_picker);
+  lv_obj_remove_style_all(list);
+  lv_obj_set_size(list, sw - 12, sh - STATUSBAR_H - 42);
+  lv_obj_set_pos(list, 6, 36);
+  lv_obj_set_style_pad_row(list, 6, LV_PART_MAIN);
+  lv_obj_set_flex_flow(list, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_scroll_dir(list, LV_DIR_VER);
+
+  if (s_backup_count == 0) {
+    lv_obj_t* empty = lv_label_create(list);
+    lv_label_set_text(empty, "No .json backups found.\nExport one first, or copy a\nmeshcore-backup.json to the\nSD card or internal flash.");
+    lv_obj_set_style_text_color(empty, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
+    lv_obj_set_style_text_font(empty, &g_font_12, LV_PART_MAIN);
+  }
+  for (int i = 0; i < s_backup_count; ++i) {
+    lv_obj_t* b = lv_btn_create(list);
+    lv_obj_set_width(b, lv_pct(100));
+    lv_obj_set_height(b, 36);
+    styleButton(b);
+    lv_obj_add_event_cb(b, backupChosenCb, LV_EVENT_CLICKED, s_backup_paths[i]);
+    lv_obj_t* l = lv_label_create(b);
+    lv_label_set_text(l, s_backup_disp[i]);
+    lv_label_set_long_mode(l, LV_LABEL_LONG_DOT);
+    lv_obj_set_width(l, lv_pct(94));
+    lv_obj_align(l, LV_ALIGN_LEFT_MID, 4, 0);
+  }
+}
+
+// Reopen the HAS_TDECK_KEYBOARD region paused above for the backup picker; it
+// closes at that region's original #endif further below. (The next #if is the
+// original spacebar-countdown guard, now nested one level deeper — harmless.)
+#if defined(HAS_TDECK_KEYBOARD)
 
 #if defined(HAS_TDECK_KEYBOARD)
 // ---- Spacebar lock countdown -------------------------------------------------
@@ -17026,7 +17375,9 @@ bool UITask::lookupActiveContact(ContactInfo& out) const {
 int UITask::appendMessage(const char* thread, const char* sender, const char* text,
                           bool channel, bool outgoing, bool mark_unread,
                           uint32_t ack_hash, uint8_t deliv_state,
-                          uint8_t meta_flags, uint8_t path_len, int8_t snr_q4, int8_t rssi) {
+                          uint8_t meta_flags, uint8_t path_len, int8_t snr_q4, int8_t rssi,
+                          const uint8_t* in_path, uint8_t in_path_n, uint32_t sent_fp,
+                          uint16_t in_scope) {
   int t_idx = findOrCreateThread(thread, channel);
   if (t_idx < 0) return -1;
   UIMessage& m = _ui_msgs[_ui_msg_head];
@@ -17047,6 +17398,10 @@ int UITask::appendMessage(const char* thread, const char* sender, const char* te
   m.path_len    = path_len;
   m.snr_q4      = snr_q4;
   m.rssi        = rssi;
+  m.sent_fp     = sent_fp;
+  m.in_scope    = in_scope;
+  m.in_path_n   = (in_path && in_path_n) ? (in_path_n > MAX_UI_PATH ? (uint8_t)MAX_UI_PATH : in_path_n) : 0;
+  if (m.in_path_n) memcpy(m.in_path, in_path, m.in_path_n);
   strncpy(m.thread, thread ? thread : (channel ? "#general" : "Unknown"), MAX_THREAD_NAME);
   m.thread[MAX_THREAD_NAME] = '\0';
   strncpy(m.sender, sender ? sender : (_node_prefs ? _node_prefs->node_name : "me"), MAX_SENDER_NAME);
@@ -17262,7 +17617,8 @@ bool UITask::sendComposerToActiveThread() {
       showAlert("Send failed", 1200);
       return false;
     }
-    appendMessage(_ui_threads[_active_thread_idx].name, sender, truncated, true, true, false);
+    appendMessage(_ui_threads[_active_thread_idx].name, sender, truncated, true, true, false,
+                  0, DELIV_NONE, 0, 0, 0, 0, nullptr, 0, the_mesh.uiLastSentFp());
     resetComposer();
     showAlert("Sent", 900);
     return true;
@@ -17353,7 +17709,7 @@ bool UITask::sendComposerToActiveThread() {
   // matches it and fires UITask::onMessageAcked → bubble flips to ✓✓.
   the_mesh.uiRegisterExpectedAck(expected_ack, recipient.id.pub_key);
   appendMessage(_ui_threads[_active_thread_idx].name, sender, truncated, false, true, false,
-                expected_ack, DELIV_SENT);
+                expected_ack, DELIV_SENT, 0, 0, 0, 0, nullptr, 0, the_mesh.uiLastSentFp());
   resetComposer();
   showAlert("Sent", 900);
   return true;
@@ -18268,9 +18624,21 @@ void UITask::newMsgImpl(uint8_t path_len, const char* from_name, const char* tex
   const char* sender = channel
       ? (parsed_sender[0] ? parsed_sender : (from_name && from_name[0] ? from_name : "node"))
       : (from_name && from_name[0] ? from_name : "node");
+  // Inbound route (repeater hashes) for the Info popup — flood RX only; read
+  // synchronously from MyMesh, which stashed it just before this call.
+  uint8_t in_path[MAX_UI_PATH];
+  uint8_t in_path_n = 0;
+  uint16_t in_scope = 0;
+  if ((meta_flags & MSG_META_HAS_RX) && (meta_flags & MSG_META_IS_FLOOD)) {
+    in_path_n = the_mesh.lastRxPath(in_path, sizeof(in_path));
+    bool has_scope = false;
+    in_scope = the_mesh.lastRxScope(&has_scope);
+    if (has_scope) meta_flags |= MSG_META_HAS_SCOPE;
+  }
   appendMessage(thread, sender, body, channel, false, true,
                 0 /*ack_hash*/, DELIV_NONE,
-                meta_flags, path_len, snr_q4, rssi);
+                meta_flags, path_len, snr_q4, rssi,
+                in_path_n ? in_path : nullptr, in_path_n, 0 /*sent_fp*/, in_scope);
   syncThreadMeshSlots(thread, channel);
 #if defined(HAS_TDECK_GT911)
   // Mirror incoming traffic into the terminal live feed (only while it's open).
@@ -18538,6 +18906,10 @@ void UITask::loop() {
     }
   }
 #endif
+
+  // A repeater echo of one of our sent floods was just counted — repaint the
+  // open chat so the sent bubble's repeat tag ticks up live.
+  if (the_mesh.takeEchoDirty()) g_lv.dirty_timeline = true;
 
   bool heavy_ok = !g_lv.defer_heavy_refresh || now >= g_lv.heavy_refresh_at_ms;
   if (g_lv.defer_heavy_refresh && heavy_ok) g_lv.defer_heavy_refresh = false;

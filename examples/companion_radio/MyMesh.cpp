@@ -2,6 +2,7 @@
 
 #include <Arduino.h> // needed for PlatformIO
 #include <Mesh.h>
+#include <ArduinoJson.h>   // settings backup import (uiImportBackup)
 #include <string.h>
 #include <time.h>     // gmtime_r for the "clock" CLI command
 #ifdef ESP32
@@ -1316,6 +1317,22 @@ uint8_t MyMesh::getAutoAddMaxHops() const {
   return _prefs.autoadd_max_hops;
 }
 
+// Lightweight payload fingerprint (FNV-1a 32) for matching our own sent flood
+// against its echoes heard back from repeaters (see logRxRaw / uiTrackSentFp).
+// The payload is unchanged as repeaters re-flood (only the path grows), so the
+// same bytes fingerprint identically at send and on every echo.
+static uint32_t fnv1a32(const uint8_t* d, int n) {
+  uint32_t h = 2166136261u;
+  for (int i = 0; i < n; i++) { h ^= d[i]; h *= 16777619u; }
+  return h ? h : 1;  // never return 0 (our "none" sentinel)
+}
+// Flood message types we track for "repeats heard": DM text (TXT_MSG 0x02) AND
+// group/channel text (GRP_TXT 0x05). Channel posts are NOT TXT_MSG — easy to
+// miss, and the reason channel sends fingerprinted to 0 at first.
+static inline bool isMsgFloodType(uint8_t t) {
+  return t == PAYLOAD_TYPE_TXT_MSG || t == PAYLOAD_TYPE_GRP_TXT;
+}
+
 void MyMesh::logRxRaw(float snr, float rssi, const uint8_t raw[], int len) {
 #if defined(DISPLAY_CLASS)
   // Diagnostic: log EVERY received frame so we can prove what reaches the
@@ -1377,6 +1394,19 @@ void MyMesh::logRxRaw(float snr, float rssi, const uint8_t raw[], int len) {
     }
     _ui->appendDiag(dbg);
   }
+  // "Repeats heard": our originated flood TXT comes back when repeaters
+  // re-broadcast it (identical payload, longer path). Fingerprint the payload
+  // and bump the matching sent message's count. The fp ring only holds our own
+  // recent sends, so other nodes' traffic can't false-match.
+  if (len > 0 && isMsgFloodType((raw[0] >> 2) & 0x0F)) {
+    const bool has_xp = (raw[0] & 0x80) != 0;
+    const int  ps     = 1 + (has_xp ? 4 : 0);
+    if (ps < len) {
+      const uint8_t pb   = raw[ps];
+      const int     poff = ps + 1 + (pb & 0x3F) * (((pb >> 6) & 0x03) + 1);
+      if (poff < len) uiCountEcho(fnv1a32(raw + poff, len - poff));
+    }
+  }
 #endif
   if (len + 3 <= MAX_FRAME_SIZE) {
     int i = 0;
@@ -1392,6 +1422,183 @@ void MyMesh::logRxRaw(float snr, float rssi, const uint8_t raw[], int len) {
       _serial->writeFrameToAll(out_frame, i);
     }
   }
+}
+
+void MyMesh::uiExportBackup(Print& out, double node_lat, double node_lon) {
+  static const char* HX = "0123456789abcdef";
+  auto hex = [&](const uint8_t* d, int n) {
+    for (int i = 0; i < n; ++i) { out.write(HX[d[i] >> 4]); out.write(HX[d[i] & 0xF]); }
+  };
+  auto esc = [&](const char* s) {
+    for (; s && *s; ++s) {
+      char c = *s;
+      if (c == '"' || c == '\\') { out.write('\\'); out.write((uint8_t)c); }
+      else if (c == '\n') out.print("\\n");
+      else if (c == '\r') out.print("\\r");
+      else if (c == '\t') out.print("\\t");
+      else if ((uint8_t)c < 0x20) { char b[8]; snprintf(b, sizeof b, "\\u%04x", (unsigned)(uint8_t)c); out.print(b); }
+      else out.write((uint8_t)c);
+    }
+  };
+  NodePrefs* p = getNodePrefs();
+  uint8_t prv[64]; self_id.writeTo(prv, 64);
+
+  out.print("{\n  \"name\": \""); esc(p ? p->node_name : ""); out.print("\",\n");
+  out.print("  \"public_key\": \""); hex(self_id.pub_key, 32); out.print("\",\n");
+  out.print("  \"private_key\": \""); hex(prv, 64); out.print("\",\n");
+  if (p) {
+    char l[176];
+    snprintf(l, sizeof l,
+      "  \"radio_settings\": {\"frequency\": %.4f, \"bandwidth\": %.1f, \"spreading_factor\": %u, \"coding_rate\": %u, \"tx_power\": %d},\n",
+      (double)p->freq, (double)p->bw, (unsigned)p->sf, (unsigned)p->cr, (int)p->tx_power_dbm);
+    out.print(l);
+  }
+  {
+    char l[96];
+    snprintf(l, sizeof l,
+      "  \"position_settings\": {\"latitude\": %.6f, \"longitude\": %.6f},\n",
+      node_lat, node_lon);
+    out.print(l);
+  }
+  // Match the stock app's shape exactly (it always emits these two as null).
+  out.print("  \"other_settings\": null,\n");
+  out.print("  \"auto_add_settings\": null,\n");
+  out.print("  \"channels\": [");
+  bool first = true;
+#ifdef MAX_GROUP_CHANNELS
+  for (int i = 0; i < MAX_GROUP_CHANNELS; ++i) {
+    ChannelDetails cd{};
+    if (!getChannel(i, cd) || cd.name[0] == '\0') continue;
+    out.print(first ? "\n    {\"name\": \"" : ",\n    {\"name\": \"");
+    first = false;
+    esc(cd.name);
+    out.print("\", \"secret\": \""); hex(cd.channel.secret, 16); out.print("\"}");
+  }
+#endif
+  out.print(first ? "],\n" : "\n  ],\n");
+  out.print("  \"contacts\": [");
+  first = true;
+  uint32_t nc = getNumContacts();
+  for (uint32_t i = 0; i < nc; ++i) {
+    ContactInfo c;
+    if (!getContactByIdx(i, c)) continue;
+    char l[224];
+    out.print(first ? "\n    {\"type\": " : ",\n    {\"type\": ");
+    first = false;
+    snprintf(l, sizeof l, "%u, \"name\": \"", (unsigned)c.type); out.print(l);
+    esc(c.name);
+    out.print("\", \"custom_name\": null, \"public_key\": \""); hex(c.id.pub_key, 32);
+    snprintf(l, sizeof l,
+      "\", \"flags\": %u, \"latitude\": \"%.6f\", \"longitude\": \"%.6f\", \"last_advert\": %lu, \"last_modified\": %lu, \"out_path\": null}",
+      (unsigned)c.flags, (double)c.gps_lat / 1e6, (double)c.gps_lon / 1e6,
+      (unsigned long)c.last_advert_timestamp, (unsigned long)c.lastmod);
+    out.print(l);
+  }
+  out.print(first ? "]\n}\n" : "\n  ]\n}\n");
+}
+
+static uint8_t mc_hexNib(char c) {
+  if (c >= '0' && c <= '9') return c - '0';
+  if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+  if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+  return 0;
+}
+static int mc_hexToBytes(const char* hex, uint8_t* out, int max_bytes) {
+  int n = 0;
+  while (hex && hex[0] && hex[1] && n < max_bytes) { out[n++] = (mc_hexNib(hex[0]) << 4) | mc_hexNib(hex[1]); hex += 2; }
+  return n;
+}
+
+bool MyMesh::uiImportBackup(Stream& in, uint8_t sections,
+                            bool replace_channels, bool replace_contacts,
+                            int* out_channels, int* out_contacts) {
+  (void)replace_channels;
+  if (out_channels) *out_channels = 0;
+  if (out_contacts) *out_contacts = 0;
+  // PSRAM-backed doc so a big backup (60 KB+) doesn't exhaust internal RAM.
+  struct PsAlloc : ArduinoJson::Allocator {
+    void* allocate(size_t n) override { void* p = heap_caps_malloc(n, MALLOC_CAP_SPIRAM); return p ? p : malloc(n); }
+    void deallocate(void* p) override { heap_caps_free(p); }
+    void* reallocate(void* p, size_t n) override { void* q = heap_caps_realloc(p, n, MALLOC_CAP_SPIRAM); return q ? q : realloc(p, n); }
+  } alloc;
+  JsonDocument doc(&alloc);
+  if (deserializeJson(doc, in)) return false;
+  JsonObjectConst root = doc.as<JsonObjectConst>();
+  if (root.isNull()) return false;
+
+  bool prefs_dirty = false;
+  if (sections & 0x01) {  // identity: name + private key
+    const char* nm = root["name"].as<const char*>();
+    if (nm && nm[0]) { strncpy(_prefs.node_name, nm, sizeof(_prefs.node_name) - 1); _prefs.node_name[sizeof(_prefs.node_name) - 1] = 0; prefs_dirty = true; }
+    const char* pk = root["private_key"].as<const char*>();
+    if (pk && strlen(pk) >= 128) { uint8_t prv[64]; mc_hexToBytes(pk, prv, 64); uiImportPrivKey(prv); }
+  }
+  if (sections & 0x02) {  // radio
+    JsonObjectConst r = root["radio_settings"].as<JsonObjectConst>();
+    if (!r.isNull()) {
+      if (!r["frequency"].isNull())        { _prefs.freq = r["frequency"].as<float>(); prefs_dirty = true; }
+      if (!r["bandwidth"].isNull())        { _prefs.bw = r["bandwidth"].as<float>(); prefs_dirty = true; }
+      if (!r["spreading_factor"].isNull()) { _prefs.sf = (uint8_t)r["spreading_factor"].as<int>(); prefs_dirty = true; }
+      if (!r["coding_rate"].isNull())      { _prefs.cr = (uint8_t)r["coding_rate"].as<int>(); prefs_dirty = true; }
+      if (!r["tx_power"].isNull())         { _prefs.tx_power_dbm = (int8_t)r["tx_power"].as<int>(); prefs_dirty = true; }
+    }
+  }
+  if (sections & 0x04) {  // position
+    JsonObjectConst ps = root["position_settings"].as<JsonObjectConst>();
+    if (!ps.isNull()) {
+      if (!ps["latitude"].isNull())  { sensors.node_lat = ps["latitude"].as<double>(); prefs_dirty = true; }
+      if (!ps["longitude"].isNull()) { sensors.node_lon = ps["longitude"].as<double>(); prefs_dirty = true; }
+    }
+  }
+  if (prefs_dirty) savePrefs();
+
+  int nch = 0;
+  if (sections & 0x08) {  // channels (overwrite from slot 0)
+    JsonArrayConst ch = root["channels"].as<JsonArrayConst>();
+    if (!ch.isNull()) {
+      int idx = 0;
+      for (JsonVariantConst ev : ch) {
+        JsonObjectConst e = ev.as<JsonObjectConst>();
+        const char* nm = e["name"].as<const char*>();
+        const char* sec = e["secret"].as<const char*>();
+        if (!nm || !sec || strlen(sec) < 32) { idx++; continue; }
+#ifdef MAX_GROUP_CHANNELS
+        if (idx >= MAX_GROUP_CHANNELS) break;
+#endif
+        ChannelDetails cd{};
+        strncpy(cd.name, nm, sizeof(cd.name) - 1);
+        mc_hexToBytes(sec, cd.channel.secret, 16);
+        if (setChannel((uint8_t)idx, cd)) nch++;
+        idx++;
+      }
+      saveChannels();
+    }
+  }
+  int nco = 0;
+  if (sections & 0x10) {  // contacts
+    JsonArrayConst co = root["contacts"].as<JsonArrayConst>();
+    if (!co.isNull()) {
+      if (replace_contacts) resetContacts();
+      for (JsonVariantConst ev : co) {
+        JsonObjectConst e = ev.as<JsonObjectConst>();
+        const char* pk = e["public_key"].as<const char*>();
+        if (!pk || strlen(pk) < 64) continue;
+        uint8_t pub[32]; mc_hexToBytes(pk, pub, 32);
+        const char* cn = e["custom_name"].as<const char*>();
+        const char* nm = (cn && cn[0]) ? cn : e["name"].as<const char*>();
+        double lat = 0, lon = 0;
+        const char* la = e["latitude"].as<const char*>(); if (la) lat = atof(la);
+        const char* lo = e["longitude"].as<const char*>(); if (lo) lon = atof(lo);
+        if (uiAddContactFromBackup(pub, nm, e["type"].as<uint8_t>(), e["flags"].as<uint8_t>(),
+                                   (int32_t)(lat * 1e6), (int32_t)(lon * 1e6),
+                                   e["last_advert"].as<uint32_t>(), e["last_modified"].as<uint32_t>())) nco++;
+      }
+      saveContacts();
+    }
+  }
+  if (out_channels) *out_channels = nch;
+  if (out_contacts) *out_contacts = nco;
+  return true;
 }
 
 bool MyMesh::isAutoAddEnabled() const {
@@ -1608,6 +1815,7 @@ void MyMesh::queueMessage(const ContactInfo &from, uint8_t txt_type, mesh::Packe
     const int8_t snr_q4 = (int8_t)(pkt->getSNR() * 4);
     const int8_t rssi   = (int8_t)(_radio->getLastRSSI());
     const bool   is_flood = pkt->isRouteFlood();
+    uiStashRxMeta(pkt);   // capture route + scope for the per-message Info popup
     _ui->newMsgFromPubWithMeta(path_len, is_flood, from.id.pub_key, from.name,
                                text, history_count, snr_q4, rssi);
   }
@@ -1631,7 +1839,16 @@ bool MyMesh::allowPacketForward(const mesh::Packet* packet) {
   return _prefs.client_repeat != 0;
 }
 
+// Fingerprint + track an originated flood, but only for chat messages — DM text
+// and group/channel text (the things the UI shows "repeats heard" for);
+// adverts/acks/traces are ignored. fnv1a32/isMsgFloodType are defined above.
+static inline uint32_t txtFloodFp(mesh::Packet* pkt) {
+  if (!pkt || !isMsgFloodType(pkt->getPayloadType())) return 0;
+  return fnv1a32(pkt->payload, pkt->payload_len);
+}
+
 void MyMesh::sendFloodScoped(const TransportKey& scope, mesh::Packet* pkt, uint32_t delay_millis) {
+  uiTrackSentFp(txtFloodFp(pkt));
   uint8_t phs = (uint8_t)(_prefs.path_hash_mode + 1);
   if (scope.isNull()) {
     sendFlood(pkt, delay_millis, phs);
@@ -1644,6 +1861,7 @@ void MyMesh::sendFloodScoped(const TransportKey& scope, mesh::Packet* pkt, uint3
 }
 
 void MyMesh::sendFloodScoped(const ContactInfo& recipient, mesh::Packet* pkt, uint32_t delay_millis) {
+  uiTrackSentFp(txtFloodFp(pkt));
   // TODO: dynamic send_scope, depending on recipient and current 'home' Region
   uint8_t phs = (uint8_t)(_prefs.path_hash_mode + 1);
   if (send_scope.isNull()) {
@@ -1656,6 +1874,7 @@ void MyMesh::sendFloodScoped(const ContactInfo& recipient, mesh::Packet* pkt, ui
   }
 }
 void MyMesh::sendFloodScoped(const mesh::GroupChannel& channel, mesh::Packet* pkt, uint32_t delay_millis) {
+  uiTrackSentFp(txtFloodFp(pkt));
   // TODO: have per-channel send_scope
   uint8_t phs = (uint8_t)(_prefs.path_hash_mode + 1);
   if (send_scope.isNull()) {
@@ -1740,6 +1959,7 @@ void MyMesh::onChannelMessageRecv(const mesh::GroupChannel &channel, mesh::Packe
     const int8_t snr_q4 = (int8_t)(pkt->getSNR() * 4);
     const int8_t rssi   = (int8_t)(_radio->getLastRSSI());
     const bool   is_flood = pkt->isRouteFlood();
+    uiStashRxMeta(pkt);   // capture route + scope for the per-message Info popup
     _ui->newMsgFromPubWithMeta(path_len, is_flood, nullptr, channel_name,
                                text, history_count, snr_q4, rssi);
   }
