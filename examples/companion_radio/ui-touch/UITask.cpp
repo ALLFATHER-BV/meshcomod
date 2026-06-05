@@ -3213,6 +3213,23 @@ public:
 // SD mount state is in scope); forward-declared here for the button below.
 static void openBackupPicker();
 
+// Heavy-flash-write watchdog guard (ref-counted, nesting-safe). A large or
+// fragmenting SPIFFS write can trigger garbage collection — a multi-second
+// flash burst that disables the CPU cache and starves the idle task, long
+// enough to trip the TASK watchdog (confirmed by coredump: an 'ipc0' abort from
+// task_wdt_isr while another thread was in spiffs_gc_clean). Bracket such writes
+// so a bounded-but-slow GC pass can't reset the device. The same pattern the
+// file-manager format/paste paths already use. Ref-counted so a nested guard
+// (import -> persistHistoryNow -> saveHistoryToStorage) doesn't re-enable early.
+static int s_wdt_heavy_depth = 0;
+static inline void wdtHeavyBegin() {
+  if (s_wdt_heavy_depth++ == 0) { disableCore0WDT(); disableCore1WDT(); }
+}
+static inline void wdtHeavyEnd() {
+  if (s_wdt_heavy_depth > 0 && --s_wdt_heavy_depth == 0) { enableCore0WDT(); enableCore1WDT(); }
+}
+struct WdtHeavyGuard { WdtHeavyGuard() { wdtHeavyBegin(); } ~WdtHeavyGuard() { wdtHeavyEnd(); } };
+
 static void buildProfileSettings() {
   // No "Profile" group header — it just duplicates the sub-tab button name.
   lv_obj_t* body = createSettingsModal("", SettingsModalKind::Profile);
@@ -3393,10 +3410,11 @@ static void buildProfileSettings() {
 #endif
       if (!f) { SPIFFS.begin(false); f = SPIFFS.open("/meshcore-backup.json", FILE_WRITE); }
       if (!f) { lv_obj_del(ov); g_lv.task->showAlert("Export failed (can't open file)", 1800); return; }
-      { FileBufWriter bw(f);
-        the_mesh.uiExportBackup(bw, g_lv.task->getNodeLat(), g_lv.task->getNodeLon());
-        bw.flushBuf(); }
-      f.close();
+      { WdtHeavyGuard _wg;   // a 60 KB backup write to internal flash can trigger a SPIFFS GC
+        { FileBufWriter bw(f);
+          the_mesh.uiExportBackup(bw, g_lv.task->getNodeLat(), g_lv.task->getNodeLon());
+          bw.flushBuf(); }
+        f.close(); }
       lv_obj_del(ov);
       char msg[88];
       snprintf(msg, sizeof msg, "Saved %s:/meshcore-backup.json", where);
@@ -14534,19 +14552,17 @@ static void doBackupImportChosen() {
   // 'ipc0' abort inside spi_flash_op_block_func (a flash/cache stall, NOT a
   // partition fault). A successful import reboots immediately, so suspend the
   // per-core idle watchdogs for the duration and only restore them if we bail.
-  disableCore0WDT();
-  disableCore1WDT();
+  wdtHeavyBegin();
   int nch = 0, nco = 0;
   bool ok = f && the_mesh.uiImportBackup(f, 0x1F, true, true, &nch, &nco);
   if (f) f.close();
   if (!ok) {
-    enableCore0WDT();
-    enableCore1WDT();
+    wdtHeavyEnd();
     lv_obj_del(ov);
     g_lv.task->showAlert("Import failed (bad/unreadable JSON)", 2400);
     return;
   }
-  g_lv.task->persistHistoryNow();
+  g_lv.task->persistHistoryNow();   // nests under the guard above (ref-counted)
   delay(1200);
   ESP.restart();
 }
@@ -17052,6 +17068,7 @@ bool UITask::saveHistoryToStorage() {
   // hardware reset doesn't lose the chat — that's what the released build did
   // and it was reliable.
   if (!SPIFFS.begin(false)) return false;
+  WdtHeavyGuard _wg;   // a fragmenting history write can trigger a multi-second SPIFFS GC
   File f = SPIFFS.open(k_ui_history_path, "w");
   if (!f) return false;
 
