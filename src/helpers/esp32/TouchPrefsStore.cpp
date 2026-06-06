@@ -85,6 +85,44 @@ bool touchPrefsSetKbBacklight(uint8_t mode) {
   return ok;
 }
 
+static const char* KEY_KB_LAYOUT = "kblang";
+static const uint8_t DEFAULT_KB_LAYOUT = 0;   // English
+
+uint8_t touchPrefsGetKeyboardLayout() {
+  if (!s_begun) touchPrefsBegin();
+  uint8_t v = s_prefs.getUChar(KEY_KB_LAYOUT, DEFAULT_KB_LAYOUT);
+  return v;
+}
+
+bool touchPrefsSetKeyboardLayout(uint8_t layout) {
+  if (!s_begun) touchPrefsBegin();
+  s_prefs.end();
+  if (!s_prefs.begin(TOUCH_NS, false)) return false;
+  bool ok = s_prefs.putUChar(KEY_KB_LAYOUT, layout) > 0;
+  s_prefs.end();
+  s_begun = s_prefs.begin(TOUCH_NS, true);
+  return ok;
+}
+
+static const char* KEY_KB_SECONDARY = "kbsec";
+static const uint8_t DEFAULT_KB_SECONDARY = 0;   // None
+
+uint8_t touchPrefsGetSecondaryKeyboard() {
+  if (!s_begun) touchPrefsBegin();
+  uint8_t v = s_prefs.getUChar(KEY_KB_SECONDARY, DEFAULT_KB_SECONDARY);
+  return v;
+}
+
+bool touchPrefsSetSecondaryKeyboard(uint8_t secondary) {
+  if (!s_begun) touchPrefsBegin();
+  s_prefs.end();
+  if (!s_prefs.begin(TOUCH_NS, false)) return false;
+  bool ok = s_prefs.putUChar(KEY_KB_SECONDARY, secondary) > 0;
+  s_prefs.end();
+  s_begun = s_prefs.begin(TOUCH_NS, true);
+  return ok;
+}
+
 static const char* KEY_TILE_SRV = "tile_srv";
 static const char* DEFAULT_TILE_SERVER = "http://tiles.meshcomod.com";
 

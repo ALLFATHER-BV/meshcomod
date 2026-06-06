@@ -26,3 +26,4 @@ scripts/build/wifi_secrets.h
 
 # Local working notes (contains ops/infra details — never publish)
 CLAUDE.md
+*.ttf

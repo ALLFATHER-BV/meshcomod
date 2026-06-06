@@ -49,7 +49,7 @@ print(''.join(chr(c) for c in cps))
 for sz in 12 14 16; do
   npx --yes lv_font_conv@1.5.3 \
     --size "$sz" --bpp 4 --no-compress --format lvgl \
-    --font "$ARIAL" -r 0x00C0-0x00FF -r 0x0100-0x017F --symbols "$SPECIAL" \
+    --font "$ARIAL" -r 0x00C0-0x00FF -r 0x0100-0x017F -r 0x0400-0x04FF --symbols "$SPECIAL" \
     --font "$NOTO" --symbols "$EMOJI" \
     --lv-font-name "extras_$sz" \
     -o "$OUT/extras_font_$sz.c"

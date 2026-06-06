@@ -66,6 +66,7 @@
   #if defined(HAS_TDECK_KEYBOARD)
     #include <helpers/input/TDeckKeyboard.h>
   #endif
+  #include "KeyboardLayouts.h"
   #include <helpers/ui/ST7789LCDDisplay.h>
   #include <helpers/AdvertDataHelpers.h>
   #include <helpers/sensors/LPPDataHelpers.h>
@@ -366,6 +367,7 @@ struct GlobalStatusBar {
   lv_obj_t* clock;
   lv_obj_t* batt_pct;
   lv_obj_t* batt_icon;
+  lv_obj_t* layout_label;   // EN / BG indicator, right side
 };
 static GlobalStatusBar g_statusbar = {};
 static void updateGlobalStatusBar();   // fwd decl, called from refresh tick
@@ -1760,7 +1762,6 @@ static void kbMirrorBind(lv_obj_t* real_ta) {
   kbApplyRotation(effectiveKbRotation());
   kbShowRotateArrows(true);
 #endif
-  lv_textarea_set_cursor_pos(s_kb_mirror_ta, LV_TEXTAREA_CURSOR_LAST);
 }
 
 static void hideKb() {
@@ -4068,6 +4069,29 @@ static void useMilesToggleCb(lv_event_t* e) {
   refreshContactsList();
 }
 
+static void secondaryKeyboardChangedCb(lv_event_t* e) {
+  if (lv_event_get_code(e) != LV_EVENT_VALUE_CHANGED) return;
+  lv_obj_t* dd = lv_event_get_target(e);
+  uint16_t sel = lv_dropdown_get_selected(dd);
+  KeyboardLayoutId secondary = static_cast<KeyboardLayoutId>(sel);
+#if defined(ESP32)
+  touchPrefsSetSecondaryKeyboard(static_cast<uint8_t>(secondary));
+#endif
+  keyboardLayoutsSetSecondary(secondary);
+  // If user removed the secondary keyboard while it was active, fall back to EN.
+  if (keyboardLayoutsGetCurrent() != KeyboardLayoutId::EN &&
+      keyboardLayoutsGetCurrent() != secondary) {
+    keyboardLayoutsApply(g_lv.keyboard, KeyboardLayoutId::EN);
+#if defined(ESP32)
+    touchPrefsSetKeyboardLayout(static_cast<uint8_t>(KeyboardLayoutId::EN));
+#endif
+  }
+  if (g_lv.task) {
+    const char* msg = (secondary == KeyboardLayoutId::EN) ? "Secondary: None" : "Secondary: Bulgarian";
+    g_lv.task->showAlert(msg, 900);
+  }
+}
+
 // Screen orientation: the persistent base rotation, applied at boot. Tapping
 // cycles Portrait -> Landscape -> Landscape (flipped) and reboots so the whole
 // UI rebuilds at the chosen resolution (rebootDevice() saves chat history
@@ -4289,6 +4313,39 @@ static void buildDeviceSettings() {
     if (touchPrefsGetUseMiles()) lv_obj_add_state(sw, LV_STATE_CHECKED);
 #endif
     lv_obj_add_event_cb(sw, useMilesToggleCb, LV_EVENT_VALUE_CHANGED, nullptr);
+    y += 40;
+  }
+
+  /* Secondary keyboard. When set to Bulgarian, double-tap SPACE toggles
+     EN <-> BG on the T-Deck physical keyboard. When None, double-space
+     does nothing. The active layout is always remembered across reboots. */
+  {
+    lv_obj_t* l = lv_label_create(body);
+    lv_label_set_text(l, "Secondary keyboard");
+    lv_obj_set_style_text_color(l, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
+    lv_obj_set_style_text_font(l, &g_font_12, LV_PART_MAIN);
+    lv_obj_set_pos(l, 2, y);
+    y += 16;
+
+    lv_obj_t* dd = lv_dropdown_create(body);
+    lv_obj_set_size(dd, lv_pct(100), 34);
+    lv_obj_set_pos(dd, 2, y);
+    lv_dropdown_set_options(dd, "None\nBulgarian (phonetic)");
+    lv_obj_set_style_text_font(dd, &g_font_12, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(dd, lv_color_hex(COLOR_PANEL), LV_PART_MAIN);
+    lv_obj_set_style_text_color(dd, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
+    lv_obj_set_style_border_color(dd, lv_color_hex(0x18191A), LV_PART_MAIN);
+    lv_obj_t* dd_list = lv_dropdown_get_list(dd);
+    lv_obj_set_style_bg_color(dd_list, lv_color_hex(COLOR_PANEL), LV_PART_MAIN);
+    lv_obj_set_style_text_color(dd_list, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
+    lv_obj_set_style_text_font(dd_list, &g_font_12, LV_PART_MAIN);
+#if defined(ESP32)
+    uint8_t cur_sec = touchPrefsGetSecondaryKeyboard();
+    if (cur_sec >= KEYBOARD_LAYOUT_COUNT) cur_sec = 0;
+    lv_dropdown_set_selected(dd, cur_sec);
+#endif
+    lv_obj_add_event_cb(dd, secondaryKeyboardChangedCb, LV_EVENT_VALUE_CHANGED, nullptr);
+    lv_obj_add_event_cb(dd, clampDropdownListCb, LV_EVENT_CLICKED, nullptr);
     y += 40;
   }
 
@@ -15135,7 +15192,28 @@ static void handleHwKey(int key) {
   }
   if (key == 0x08 || key == 0x7F) {            // backspace / delete
     lv_textarea_del_char(ta);
-  } else if (key == 0x0D || key == 0x0A) {     // enter
+  } else if (key == ' ') {
+    // Double-tap SPACE within 250 ms toggles between English and the
+    // configured secondary keyboard. If no secondary is set, it behaves
+    // as a normal space.
+    static unsigned long s_last_space_ms = 0;
+    unsigned long now = millis();
+    bool toggle = (now - s_last_space_ms) < 250;
+    s_last_space_ms = now;
+    if (toggle && keyboardLayoutsGetSecondary() != KeyboardLayoutId::EN) {
+      // Remove the just-inserted first space before toggling.
+      lv_textarea_del_char(ta);
+      KeyboardLayoutId next = keyboardLayoutsToggle(g_lv.keyboard);
+#if defined(ESP32)
+      touchPrefsSetKeyboardLayout(static_cast<uint8_t>(next));
+#endif
+      if (g_lv.task) {
+        g_lv.task->showAlert(keyboardLayoutName(next), 800);
+      }
+    } else {
+      lv_textarea_add_char(ta, ' ');
+    }
+  } else if (key == 0x0D) {                   // regular ENTER (CR)
 #if defined(HAS_TDECK_GT911)
     if (s_editor_ta && ta == s_editor_ta) {
       lv_textarea_add_char(ta, '\n');   // multiline editor: Enter inserts a newline
@@ -15164,7 +15242,13 @@ static void handleHwKey(int key) {
       hideKb();   // settings/other field: confirm (syncs into the real field) + unfocus
     }
   } else if (key >= 0x20 && key < 0x7F) {      // printable ASCII
-    lv_textarea_add_char(ta, (uint32_t)key);
+    bool shifted = (key >= 'A' && key <= 'Z');
+    const char* mapped = keyboardLayoutMapHwKey(keyboardLayoutsGetCurrent(), key, shifted);
+    if (mapped) {
+      lv_textarea_add_text(ta, mapped);
+    } else {
+      lv_textarea_add_char(ta, (uint32_t)key);
+    }
   }
   if (g_lv.task) g_lv.task->noteUserInput();
 }
@@ -15985,6 +16069,14 @@ static void buildGlobalStatusBar() {
   lv_obj_set_style_text_color(g_statusbar.conn_icon, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
   lv_obj_set_style_text_font(g_statusbar.conn_icon, &g_font_12, LV_PART_MAIN);
   lv_obj_align(g_statusbar.conn_icon, LV_ALIGN_RIGHT_MID, -104, 0);
+
+  // Keyboard layout indicator — sits between conn_icon and clock.
+  g_statusbar.layout_label = lv_label_create(g_statusbar.root);
+  lv_label_set_text(g_statusbar.layout_label, "");
+  lv_obj_set_style_text_color(g_statusbar.layout_label, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
+  lv_obj_set_style_text_font(g_statusbar.layout_label, &g_font_12, LV_PART_MAIN);
+  lv_obj_align(g_statusbar.layout_label, LV_ALIGN_RIGHT_MID, -130, 0);
+  lv_obj_add_flag(g_statusbar.layout_label, LV_OBJ_FLAG_HIDDEN);
 }
 
 static void updateGlobalStatusBar() {
@@ -16094,6 +16186,18 @@ static void updateGlobalStatusBar() {
     }
   }
 #endif
+
+  // ---- Layout indicator ----
+  if (g_statusbar.layout_label) {
+    KeyboardLayoutId sec = keyboardLayoutsGetSecondary();
+    if (sec != KeyboardLayoutId::EN) {
+      const char* name = keyboardLayoutName(keyboardLayoutsGetCurrent());
+      lv_label_set_text(g_statusbar.layout_label, name);
+      lv_obj_clear_flag(g_statusbar.layout_label, LV_OBJ_FLAG_HIDDEN);
+    } else {
+      lv_obj_add_flag(g_statusbar.layout_label, LV_OBJ_FLAG_HIDDEN);
+    }
+  }
 }
 
 static void refreshStatusLabels() {
@@ -16934,6 +17038,22 @@ static void buildUiTree() {
       if (saved == LV_DISP_ROT_90 || saved == LV_DISP_ROT_270) s_kb_rotation = saved;
       else s_kb_rotation = LV_DISP_ROT_NONE;
     }
+  }
+#endif
+
+  // Apply saved keyboard preferences at boot.
+#if defined(ESP32)
+  {
+    uint8_t saved_secondary = touchPrefsGetSecondaryKeyboard();
+    keyboardLayoutsSetSecondary(static_cast<KeyboardLayoutId>(saved_secondary));
+    uint8_t saved_layout = touchPrefsGetKeyboardLayout();
+    // If the saved active layout is no longer valid (e.g. secondary was
+    // removed while BG was active), fall back to English.
+    if (saved_layout != static_cast<uint8_t>(KeyboardLayoutId::EN) &&
+        saved_layout != saved_secondary) {
+      saved_layout = static_cast<uint8_t>(KeyboardLayoutId::EN);
+    }
+    keyboardLayoutsApply(g_lv.keyboard, static_cast<KeyboardLayoutId>(saved_layout));
   }
 #endif
 
@@ -17959,10 +18079,21 @@ void UITask::appendComposerChar(char c) {
   _compose_buf[n + 1] = '\0';
 }
 
+void UITask::appendComposerText(const char* text) {
+  if (!text) return;
+  size_t n = strlen(_compose_buf);
+  size_t tlen = strlen(text);
+  if (n + tlen >= sizeof(_compose_buf)) return;
+  memcpy(_compose_buf + n, text, tlen + 1);
+}
+
 void UITask::backspaceComposerChar() {
   size_t n = strlen(_compose_buf);
   if (n == 0) return;
-  _compose_buf[n - 1] = '\0';
+  size_t i = n;
+  while (i > 0 && ((unsigned char)_compose_buf[i - 1] & 0xC0) == 0x80) --i;
+  if (i > 0) --i;
+  _compose_buf[i] = '\0';
 }
 
 bool UITask::sendComposerToActiveThread() {

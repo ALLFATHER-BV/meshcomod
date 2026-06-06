@@ -210,6 +210,7 @@ private:
   void setActiveThread(int idx, bool channel_mode);
   void resetComposer();
   void appendComposerChar(char c);
+  void appendComposerText(const char* text);
   void backspaceComposerChar();
   bool sendComposerToActiveThread();
   void markHistoryDirty(unsigned long delay_ms = 600);
@@ -271,6 +272,7 @@ public:
   void setComposerMode(bool enabled) { _composer_mode = enabled; }
   void composerReset() { resetComposer(); }
   void composerAppendChar(char c) { appendComposerChar(c); }
+  void composerAppendText(const char* text) { appendComposerText(text); }
   void composerBackspace() { backspaceComposerChar(); }
   bool composerSend() { return sendComposerToActiveThread(); }
   void composerTypingMode() { _composer_action_idx = -1; }

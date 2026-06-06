@@ -22,6 +22,17 @@ bool    touchPrefsSetBrightness(uint8_t pct);
 uint8_t touchPrefsGetKbBacklight();
 bool    touchPrefsSetKbBacklight(uint8_t mode);
 
+/** Currently active keyboard layout. 0 = English, 1 = Bulgarian phonetic.
+ *  Persisted so the device boots back into the last-used layout. */
+uint8_t touchPrefsGetKeyboardLayout();
+bool    touchPrefsSetKeyboardLayout(uint8_t layout);
+
+/** Secondary keyboard preference. 0 = None (default), 1 = Bulgarian phonetic.
+ *  When None, double-space does nothing. When set, double-space toggles
+ *  between English and the selected secondary layout. */
+uint8_t touchPrefsGetSecondaryKeyboard();
+bool    touchPrefsSetSecondaryKeyboard(uint8_t secondary);
+
 /** User-configurable quick-reply macros: up to 6 short strings the user can
  *  drop into the composer with a single tap (e.g. "ok", "on the way",
  *  "stuck — wait"). idx is 0..5; max length 31 chars + null. Returns the

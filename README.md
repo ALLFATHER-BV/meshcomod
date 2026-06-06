@@ -69,6 +69,74 @@ A complete on-device interface for the **Heltec V4 TFT** and **LilyGo T-Deck**. 
 
 > A complete, cumulative feature list lives in the per-release notes — see [`prebuilt/releases/TOUCH/pre-alpha_16/notes.md`](prebuilt/releases/TOUCH/pre-alpha_16/notes.md) and earlier drops.
 
+### Keyboard layouts (Touch UI)
+
+The touch UI supports **multiple keyboard layouts** for both the on-screen keyboard (Heltec V4) and the T-Deck physical keyboard. The firmware ships with **English** as the primary layout, plus an optional **Bulgarian (phonetic)** secondary.
+
+#### Enabling a secondary keyboard
+
+1. Open **Settings → Device**
+2. Find **"Secondary keyboard"**
+3. Choose **"Bulgarian (phonetic)"** (or **"None"** to disable)
+
+The setting is saved in NVS and survives reboots.
+
+#### Switching layouts
+
+| Device | Action |
+|---|---|
+| **Heltec V4** | Tap the composer to open the on-screen keyboard, then tap the **EN/BG** pill button above the keyboard |
+| **T-Deck** | **Double-tap SPACE** (two presses within 250 ms). A toast shows the new layout name. Single spaces between words work normally. |
+
+The currently active layout is shown in the **status bar** (right side, between the connection icon and the clock). The indicator only appears when a secondary keyboard is enabled.
+
+Your **last-used layout** is remembered across reboots.
+
+#### Bulgarian phonetic key mapping (T-Deck physical keyboard)
+
+The Bulgarian phonetic layout follows the standard PC phonetic mapping used by most Bulgarian speakers:
+
+| Key | Cyrillic | Key | Cyrillic |
+|-----|----------|-----|----------|
+| `q` | `я` | `a` | `а` |
+| `w` | `в` | `s` | `с` |
+| `e` | `е` | `d` | `д` |
+| `r` | `р` | `f` | `ф` |
+| `t` | `т` | `g` | `г` |
+| `y` | `ъ` | `h` | `х` |
+| `u` | `у` | `j` | `й` |
+| `i` | `и` | `k` | `к` |
+| `o` | `о` | `l` | `л` |
+| `p` | `п` | `z` | `з` |
+| `1` | `ш` | `x` | `ь` |
+| `2` | `щ` | `c` | `ц` |
+| `3` | `ч` | `v` | `ж` |
+| `4` | `ю` | `b` | `б` |
+| | | `n` | `н` |
+| | | `m` | `м` |
+
+Shifted symbols on `1`–`4` (`!`, `@`, `#`, `$`) produce the corresponding uppercase Cyrillic letters (`Ш`, `Щ`, `Ч`, `Ю`). All other printable ASCII characters (numbers `5`–`9`, `0`, punctuation) pass through unchanged.
+
+On the **Heltec V4 on-screen keyboard**, the Bulgarian layout uses a compact 3-row Cyrillic grid. The letter `ю` is accessible via the **Sym** layer (tap the `Sym` key on the keyboard).
+
+#### Adding a new keyboard layout
+
+The keyboard system is designed to be extensible. To add a new language (e.g. Ukrainian):
+
+1. **Font data** — if the language uses characters already covered by the full Cyrillic block (`U+0400–U+04FF`), no font changes are needed. The fallback fonts already include the whole block. For other scripts, regenerate the extras fonts with the required Unicode range:
+   ```bash
+   scripts/build/regen-extras-fonts.sh
+   ```
+
+2. **Layout data** — edit [`examples/companion_radio/ui-touch/KeyboardLayouts.cpp`](examples/companion_radio/ui-touch/KeyboardLayouts.cpp):
+   - Add an entry to `KeyboardLayoutId` in `KeyboardLayouts.h`
+   - Define `OsKeyboardLayout` (on-screen maps) and `HwKeyboardLayout` (T-Deck transliteration)
+   - Append them to `k_os_layouts[]` and `k_hw_layouts[]`
+
+3. **Settings picker** — the dropdown in **Settings → Device → Secondary keyboard** auto-populates from the registered layouts. Just update `KEYBOARD_LAYOUT_COUNT` in `KeyboardLayouts.h`.
+
+No changes to `UITask.cpp`, `TouchPrefsStore`, or the settings UI code are required.
+
 ### Bluetooth **or** Wi-Fi — not both at once
 
 This is the one behaviour that surprises people coming from the OLED companion. On the touch boards the ESP32-S3's internal RAM **cannot** hold the Bluetooth stack, the LVGL/TFT UI, **and** Wi-Fi at the same time. So the touch firmware picks **one** companion radio at boot:
