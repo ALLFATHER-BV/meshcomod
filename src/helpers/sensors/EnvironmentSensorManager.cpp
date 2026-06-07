@@ -40,7 +40,7 @@ static uint32_t bsec_last_save_ms    = 0;
 #define BSEC_SAVE_INTERVAL_MS (8UL * 60 * 60 * 1000) // 8 hour state-save interval
 #endif
 
-#ifdef ENV_INCLUDE_BME680
+#if ENV_INCLUDE_BME680
 #ifndef TELEM_BME680_ADDRESS
 #define TELEM_BME680_ADDRESS 0x76
 #endif
@@ -49,7 +49,7 @@ static uint32_t bsec_last_save_ms    = 0;
 static Adafruit_BME680 BME680(TELEM_WIRE);
 #endif
 
-#ifdef ENV_INCLUDE_BMP085
+#if ENV_INCLUDE_BMP085
 #define TELEM_BMP085_SEALEVELPRESSURE_HPA (1013.25)
 #include <Adafruit_BMP085.h>
 static Adafruit_BMP085 BMP085;
@@ -254,7 +254,7 @@ static void query_ahtx0(uint8_t ch, uint8_t, CayenneLPP& lpp) {
 }
 #endif
 
-#ifdef ENV_INCLUDE_BME680
+#if ENV_INCLUDE_BME680
 static uint8_t init_bme680(TwoWire*, uint8_t addr) {
   // Wire was set in the static constructor; begin() takes address only.
   return BME680.begin(addr) ? 1 : 0;
@@ -437,7 +437,7 @@ static void query_vl53l0x(uint8_t ch, uint8_t, CayenneLPP& lpp) {
 }
 #endif
 
-#ifdef ENV_INCLUDE_BMP085
+#if ENV_INCLUDE_BMP085
 static uint8_t init_bmp085(TwoWire* wire, uint8_t) {
   return BMP085.begin(0, wire) ? 1 : 0;  // mode 0 = ULTRALOWPOWER
 }
@@ -558,7 +558,7 @@ static const SensorDef SENSOR_TABLE[] = {
 #if ENV_INCLUDE_AHTX0
   { TELEM_AHTX_ADDRESS,    "AHT10/AHT20", init_ahtx0,    query_ahtx0    },
 #endif
-#ifdef ENV_INCLUDE_BME680
+#if ENV_INCLUDE_BME680
   { TELEM_BME680_ADDRESS,  "BME680",       init_bme680,   query_bme680   },
 #endif
 #if ENV_INCLUDE_BME680_BSEC
@@ -597,7 +597,7 @@ static const SensorDef SENSOR_TABLE[] = {
 #if ENV_INCLUDE_VL53L0X
   { TELEM_VL53L0X_ADDRESS, "VL53L0X",      init_vl53l0x,  query_vl53l0x  },
 #endif
-#ifdef ENV_INCLUDE_BMP085
+#if ENV_INCLUDE_BMP085
   { 0x77,                  "BMP085",       init_bmp085,   query_bmp085   },
 #endif
 #if ENV_INCLUDE_RAK12035
@@ -635,9 +635,16 @@ bool EnvironmentSensorManager::begin() {
   MESH_DEBUG_PRINTLN("Second I2C initialized on pins SDA: %d SCL: %d", ENV_PIN_SDA, ENV_PIN_SCL);
   #endif
 
-  // Scan the I2C bus before touching any sensor library.
+  // Scan the I2C bus before touching any sensor library — but ONLY when there
+  // are I2C sensors compiled in to find. On boards with no I2C env sensors
+  // (e.g. T-Deck: GPS-only over UART, all ENV_INCLUDE_* I2C sensors = 0),
+  // TELEM_WIRE is the main bus shared with the keyboard + GT911 touch; probing
+  // all 128 addresses there at boot finds nothing and stalls startup — this was
+  // the regression that made beta_3 boot slowly on the T-Deck.
   bool detected[128] = {};
-  scanI2CBus(TELEM_WIRE, detected);
+  if (SENSOR_TABLE_SIZE > 0) {
+    scanI2CBus(TELEM_WIRE, detected);
+  }
 
   // Walk the sensor table and initialize only detected devices.
   _active_sensor_count = 0;
