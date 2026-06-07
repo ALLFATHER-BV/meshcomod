@@ -1,0 +1,23 @@
+# --- meshcomod_boot Spike 1 defaults ---
+# NOTE: the partition table (incl. the 'test'/recovery partition) is set via
+# `board_build.partitions = partitions_spike1.csv` in platformio.ini, NOT here.
+
+# 16 MB flash (T-Deck is N16R8).
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+
+# Route console (printf) to USB-Serial/JTAG = the T-Deck's USB-C port. The T-Deck
+# has no USB-UART bridge, so the default UART0 console goes to unconnected pins and
+# you'd see nothing on the cable.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+
+# --- The thing we are testing -------------------------------------------------
+# Hold a GPIO at boot -> the bootloader boots the 'test' (recovery) partition
+# instead of the normal (factory/OTA) app.
+CONFIG_BOOTLOADER_APP_TEST=y
+# GPIO 0 == the T-Deck trackball click (active-low). NOTE: GPIO0 is also the
+# USB-download strap, so the gesture is "reset, release, THEN hold the trackball
+# >=5 s" (holding it through reset enters USB download mode instead). For a first
+# clean test you can set this to a spare GPIO and jumper it to GND (see SPIKE1.md).
+CONFIG_BOOTLOADER_NUM_PIN_APP_TEST=0
+CONFIG_BOOTLOADER_APP_TEST_PIN_LOW=y
+# Hold time stays at the 5 s default (CONFIG_BOOTLOADER_HOLD_TIME_GPIO).

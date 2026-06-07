@@ -26,10 +26,19 @@
   #include <esp_timer.h>
   #include <esp_chip_info.h>
   #include <Esp.h>
+  #include <esp_ota_ops.h>     // A/B slot info + reboot-to-recovery (esp_ota_get_running_partition)
+  #include <esp_partition.h>   // find/erase otadata to fall back to the factory(recovery) slot
 #endif
 #if defined(HAS_TDECK_GT911)
   #include <SD.h>             // microSD (CS=39) on the shared LoRa SPI bus
+  #include "sd_diskio.h"      // internal Arduino-SD drive helpers (sdcard_init / sd_*_raw)
   extern SPIClass* tdeckSharedSPI();
+  // FatFs mkfs (the prebuilt ESP-IDF compiles f_setlabel OUT — FF_USE_LABEL=0 —
+  // so the "MESHCOMOD" volume label is written by hand via sd_*_raw, below).
+  extern "C" int f_mkfs(const char* path, uint8_t opt, uint32_t au, void* work, unsigned len);
+  #ifndef MC_FM_FAT32
+    #define MC_FM_FAT32 0x02  // FatFs f_mkfs option: force FAT32
+  #endif
   #ifndef PIN_SD_CS
     #define PIN_SD_CS 39      // T-Deck microSD chip-select
   #endif
@@ -1283,10 +1292,10 @@ static lv_obj_t* s_setup_pwd_ta    = nullptr;
 static void setupWizardOpen();            // fwd: re-trigger the flow (Device settings button)
 static void setupRerunCb(lv_event_t* e);  // fwd: "Run setup again" button callback
 
-// Our release number (the N in "pre-alpha_N"); -1 if this isn't a tagged build.
+// Our release number (the N in "beta_N"); -1 if this isn't a tagged build.
 static int firmwareReleaseN() {
   const char* t = FIRMWARE_RELEASE_TAG;
-  const char* pfx = "pre-alpha_";
+  const char* pfx = "beta_";
   const size_t pl = strlen(pfx);
   if (strncmp(t, pfx, pl) != 0) return -1;
   if (t[pl] < '0' || t[pl] > '9') return -1;
@@ -1313,17 +1322,17 @@ static void versionCheckUpdateUi() {
     snprintf(b, sizeof b, "Firmware %s\nDevelopment build — update check off", FIRMWARE_VERSION);
     lv_obj_set_style_text_color(s_update_about_lbl, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
   } else if (s_update_available && s_verchk_latest_n >= 0) {
-    snprintf(b, sizeof b, LV_SYMBOL_DOWNLOAD "  Update available: pre-alpha_%d\nYou have pre-alpha_%d — reflash via the web flasher",
+    snprintf(b, sizeof b, LV_SYMBOL_DOWNLOAD "  Update available: beta_%d\nYou have beta_%d — tap Install update below",
              s_verchk_latest_n, my_n);
     lv_obj_set_style_text_color(s_update_about_lbl, lv_color_hex(0xE2A23A), LV_PART_MAIN);
   } else if (s_verchk_latest_n >= 0) {
-    snprintf(b, sizeof b, LV_SYMBOL_OK "  Up to date (pre-alpha_%d)", my_n);
+    snprintf(b, sizeof b, LV_SYMBOL_OK "  Up to date (beta_%d)", my_n);
     lv_obj_set_style_text_color(s_update_about_lbl, lv_color_hex(0x6FCF6F), LV_PART_MAIN);
   } else if (s_verchk_ran) {
-    snprintf(b, sizeof b, "Firmware pre-alpha_%d\nCouldn't reach the update server", my_n);
+    snprintf(b, sizeof b, "Firmware beta_%d\nCouldn't reach the update server", my_n);
     lv_obj_set_style_text_color(s_update_about_lbl, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
   } else {
-    snprintf(b, sizeof b, "Firmware pre-alpha_%d\nChecking for updates over Wi-Fi…", my_n);
+    snprintf(b, sizeof b, "Firmware beta_%d\nChecking for updates over Wi-Fi…", my_n);
     lv_obj_set_style_text_color(s_update_about_lbl, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
   }
   lv_label_set_text(s_update_about_lbl, b);
@@ -1392,7 +1401,7 @@ static void otaInstallLatestCb(lv_event_t* e) {
   // failed "HTTP -1 connection refused").
   char url[200];
   snprintf(url, sizeof(url),
-           "http://app.meshcomod.com/firmware-download/prebuilt/releases/TOUCH/pre-alpha_%d/%s.bin",
+           "http://app.meshcomod.com/firmware-download/prebuilt/releases/TOUCH/beta_%d/%s.bin",
            s_verchk_latest_n, env);
   if (g_lv.task) {
     g_lv.task->showAlert("Starting update\xE2\x80\xA6 keep Wi-Fi on", 2500);
@@ -2979,6 +2988,35 @@ static void rebootCb(lv_event_t* e) {
   g_lv.task->rebootDevice();
 }
 
+#if defined(ESP32)
+// True when this device has a factory/recovery slot (the meshcomod_boot recovery lives there on
+// the dual-slot+recovery T-Deck image). Used to show "Reboot to recovery" only where it exists —
+// e.g. the Heltec V4 dual-OTA image has no factory partition, so the button stays hidden there.
+static bool touchHasRecoveryPartition() {
+  return esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_FACTORY, NULL) != NULL;
+}
+// Hand control to the meshcomod_boot recovery: record (for its "Boot firmware") which slot we run
+// from + that this was a DELIBERATE entry (so it shows its menu, not the auto-launch countdown),
+// then restart — the custom bootloader boots factory(recovery) by default (no one-shot raised).
+static void rebootToRecoveryCb(lv_event_t* e) {
+  if (lv_event_get_code(e) != LV_EVENT_CLICKED || !g_lv.task) return;
+  g_lv.task->showAlert("Rebooting to recovery\xE2\x80\xA6", 900);
+  g_lv.task->persistHistoryNow();   // flush chat before the reboot
+  const esp_partition_t* run = esp_ota_get_running_partition();
+  { Preferences p;
+    if (p.begin("mcboot", false)) {
+      p.putString("slot", (run && run->subtype == ESP_PARTITION_SUBTYPE_APP_OTA_1) ? "ota_1" : "ota_0");
+      p.putUInt("torec", 1);
+      p.end();
+    } }
+  // No otadata change needed: the custom bootloader boots factory(recovery) by
+  // default (it boots an ota slot only on its one-shot flag, which we don't raise
+  // here), so a plain restart lands in the recovery; torec makes it show the menu.
+  delay(300);
+  ESP.restart();
+}
+#endif
+
 // ---- Advert modal: pick flood (multi-hop) or zero-hop ----
 static void advertFloodCb(lv_event_t* e) {
   if (lv_event_get_code(e) != LV_EVENT_CLICKED || !g_lv.task) return;
@@ -3048,6 +3086,7 @@ static void discoveredAddCb(lv_event_t* e) {
 
   // Add the captured ContactInfo straight to the_mesh.
   if (the_mesh.addContact(e_disc.ci)) {
+    the_mesh.uiPersistContacts();   // write /contacts3 so the add survives reboot
     e_disc.in_contacts = true;
     g_lv.task->showAlert("Added to contacts", 1000);
     // Re-open the Discovered modal so the list updates immediately.
@@ -4101,6 +4140,7 @@ static void openLockWallPickerCb(lv_event_t* e);   // defined with the picker, b
 static void lockColorChosenCb(lv_event_t* e);
 #endif
 
+static void calibrateBatteryCb(lv_event_t* e);   // defined with the battery helpers below
 static void buildDeviceSettings() {
   // No "Device" group header — it just duplicates the sub-tab button name.
   lv_obj_t* body = createSettingsModal("", SettingsModalKind::Device);
@@ -4368,7 +4408,44 @@ static void buildDeviceSettings() {
   lv_obj_t* l_reboot = lv_label_create(b_reboot);
   lv_label_set_text(l_reboot, "Reboot device");
   lv_obj_center(l_reboot);
-  y += 46;
+  y += 42;
+
+  // Reboot to recovery — only on images that actually carry the recovery (factory slot).
+#if defined(ESP32)
+  if (touchHasRecoveryPartition()) {
+    lv_obj_t* b_rec = lv_btn_create(body);
+    lv_obj_set_size(b_rec, lv_pct(100), 34);
+    lv_obj_set_pos(b_rec, 2, y);
+    styleButton(b_rec);
+    lv_obj_set_style_bg_color(b_rec, lv_color_hex(0x8A5A2B), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(b_rec, lv_color_hex(0x6E481F), LV_PART_MAIN | LV_STATE_PRESSED);
+    lv_obj_set_style_text_color(b_rec, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
+    lv_obj_add_event_cb(b_rec, rebootToRecoveryCb, LV_EVENT_CLICKED, nullptr);
+    lv_obj_t* l_rec = lv_label_create(b_rec);
+    lv_label_set_text(l_rec, LV_SYMBOL_LOOP "  Reboot to recovery");
+    lv_obj_center(l_rec);
+    y += 46;
+  } else
+#endif
+  { y += 4; }
+
+  // Calibrate battery: capture the current voltage as 100% (for custom packs /
+  // builds whose full voltage isn't 4.2 V). Tap = set 100%; long-press = reset.
+  {
+    lv_obj_t* b_cal = lv_btn_create(body);
+    lv_obj_set_size(b_cal, lv_pct(100), 34);
+    lv_obj_set_pos(b_cal, 2, y);
+    styleButton(b_cal);
+    lv_obj_set_style_bg_color(b_cal, lv_color_hex(0x2F6B57), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(b_cal, lv_color_hex(0x244F41), LV_PART_MAIN | LV_STATE_PRESSED);
+    lv_obj_set_style_text_color(b_cal, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
+    lv_obj_add_event_cb(b_cal, calibrateBatteryCb, LV_EVENT_SHORT_CLICKED, nullptr);
+    lv_obj_add_event_cb(b_cal, calibrateBatteryCb, LV_EVENT_LONG_PRESSED, nullptr);
+    lv_obj_t* l_cal = lv_label_create(b_cal);
+    lv_label_set_text(l_cal, LV_SYMBOL_BATTERY_FULL "  Calibrate battery (full = 100%)");
+    lv_obj_center(l_cal);
+    y += 46;
+  }
 
   // ----- Live info panel (below action buttons) -----
   // Mirrors the web client's "Device (live)" block: firmware, model, public
@@ -7207,6 +7284,13 @@ static void joinPrivateChannelSubmitCb(lv_event_t* e) {
   if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
   kbMirrorSyncToReal();
   if (!s_addch_secret_ta) return;
+  char jname[32] = "Joined";   // default if the user leaves Name blank
+  if (s_addch_name_ta) {
+    strncpy(jname, lv_textarea_get_text(s_addch_name_ta), sizeof(jname) - 1);
+    jname[sizeof(jname) - 1] = '\0';
+    for (int i = (int)strlen(jname) - 1; i >= 0 && (jname[i] == ' ' || jname[i] == '\t'); --i) jname[i] = '\0';
+    if (jname[0] == '\0') strncpy(jname, "Joined", sizeof(jname));
+  }
   const char* raw = lv_textarea_get_text(s_addch_secret_ta);
   char hex[33]; int hn = 0;
   for (const char* p = raw; *p && hn < 32; ++p) {
@@ -7221,7 +7305,7 @@ static void joinPrivateChannelSubmitCb(lv_event_t* e) {
   }
   const int slot = the_mesh.findFirstEmptyChannelSlot();
   if (slot < 0) { setAddChannelError("Channel table is full."); return; }
-  if (!the_mesh.uiAddOrUpdateChannel(slot, "Joined", secret)) {
+  if (!the_mesh.uiAddOrUpdateChannel(slot, jname, secret)) {
     setAddChannelError("Failed to save channel.");
     return;
   }
@@ -7245,6 +7329,21 @@ static void openJoinPrivateChannelModal() {
   lv_label_set_text(hint, "Enter the 32-hex secret shared by the channel creator.");
   lv_obj_set_pos(hint, 2, y);
   y += 32;
+
+  lv_obj_t* name_l = lv_label_create(body);
+  lv_label_set_text(name_l, "Name");
+  lv_obj_set_style_text_color(name_l, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
+  lv_obj_set_style_text_font(name_l, &g_font_12, LV_PART_MAIN);
+  lv_obj_set_pos(name_l, 2, y);
+  y += 16;
+  s_addch_name_ta = lv_textarea_create(body);
+  lv_obj_set_size(s_addch_name_ta, lv_pct(100), 30);
+  lv_obj_set_pos(s_addch_name_ta, 2, y);
+  lv_textarea_set_one_line(s_addch_name_ta, true);
+  lv_textarea_set_placeholder_text(s_addch_name_ta, "Channel name");
+  lv_textarea_set_max_length(s_addch_name_ta, 30);
+  attachSettingsTaEvents(s_addch_name_ta);
+  y += 36;
 
   lv_obj_t* sec_l = lv_label_create(body);
   lv_label_set_text(sec_l, "Secret (32 hex chars)");
@@ -7669,45 +7768,123 @@ static void heartbeatAnimSize(void* var, int32_t v) {
 // ~100 %; running the EMA over that noise dragged the average DOWN (≈64 %) and
 // it never crossed the charge threshold. So gate both to the T-Deck and let the
 // V4 keep its prior direct read.
+
+// User-calibrated "full" voltage (the reading captured when the pack was fully
+// charged) = 100%. 0 = use the 4200 mV default Li-ion full point. Lets custom
+// packs / builds read 100%. Cached so the per-tick % calc doesn't hit NVS;
+// updated in place by the Calibrate-battery action.
+static uint16_t s_batt_full_mv = 0;
+static bool     s_batt_full_loaded = false;
+static uint16_t batteryFullMv() {
+  if (!s_batt_full_loaded) { s_batt_full_mv = touchPrefsGetBattFullMv(); s_batt_full_loaded = true; }
+  return s_batt_full_mv ? s_batt_full_mv : 4200;
+}
+
 #if defined(HAS_TDECK_GT911)
 static constexpr uint16_t kBattChargingMv = 4250;
 
-// Smoothed battery voltage (EMA over the noisy ADC) so the % doesn't jitter ±1
-// every tick. Shared by every battery readout. Returns 0 if unsupported.
-static uint16_t batteryMvSmoothed() {
+// Per-board battery sampler: EMA over the noisy ADC so the value doesn't jitter
+// ±1 every tick. Wrapped by batteryMvSmoothed() (below), which only publishes a
+// fresh value every 20 s. Returns 0 if unsupported.
+static uint16_t batteryMvSampled() {
   if (!g_lv.task) return 0;
   const uint16_t raw = g_lv.task->getBattMilliVolts();
   if (raw == 0) return 0;
   static float s_ema = 0.0f;
-  if (s_ema < 1.0f) s_ema = (float)raw;            // seed on first read
-  else              s_ema += ((float)raw - s_ema) * 0.15f;   // ~7-sample time constant
+  if (s_ema < 1.0f) {
+    s_ema = (float)raw;                            // seed on first read
+  } else {
+    const float d = (float)raw - s_ema;
+    // A charger plug/unplug steps the rail ~100 mV+ — snap straight to it so the
+    // charge state is recognized within a tick instead of crawling there over
+    // the EMA. Smaller deltas are ADC noise, so keep smoothing those.
+    if (d > 70.0f || d < -70.0f) s_ema = (float)raw;
+    else                         s_ema += d * 0.15f;   // ~7-sample time constant
+  }
   return (uint16_t)(s_ema + 0.5f);
 }
-static bool batteryIsCharging(uint16_t mv) { return mv >= kBattChargingMv; }
+static bool batteryIsCharging(uint16_t mv) { return mv >= (uint16_t)(batteryFullMv() + 50); }
 #else
 // V4 (and any non-T-Deck touch board): direct read, no charge-from-voltage.
-static uint16_t batteryMvSmoothed() { return g_lv.task ? g_lv.task->getBattMilliVolts() : 0; }
+static uint16_t batteryMvSampled() { return g_lv.task ? g_lv.task->getBattMilliVolts() : 0; }
 static bool batteryIsCharging(uint16_t) { return false; }
 #endif
 
+// Hold the battery reading steady: publish a fresh value only every 20 s so the
+// %, icon and voltage stop twitching tick-to-tick. The per-board sampler above
+// still runs on every call (keeps the T-Deck EMA fed); every readout just sees
+// the same held value for 20 s. The first call publishes immediately so there's
+// no blank battery at boot.
+static uint16_t batteryMvSmoothed() {
+  const uint16_t cur = batteryMvSampled();
+  if (cur == 0) return 0;                          // not ready / unsupported — don't latch a 0
+  static uint16_t      s_pub = 0;
+  static unsigned long s_pub_ms = 0;
+  const unsigned long  now = millis();
+  // Normally hold for 20 s to kill jitter — BUT publish at once when the charge
+  // state flips, so plugging/unplugging the charger is recognized immediately
+  // instead of waiting out the hold window.
+  const bool charge_flip = (s_pub != 0) && (batteryIsCharging(cur) != batteryIsCharging(s_pub));
+  if (s_pub == 0 || charge_flip || (unsigned long)(now - s_pub_ms) >= 20000UL) {
+    s_pub    = cur;
+    s_pub_ms = now;
+  }
+  return s_pub;
+}
+
+static int batteryPercentFromMv(uint16_t mv);   // fwd decl (icon derives from %)
 static const char* batteryGlyphForMv(uint16_t mv) {
-  if (mv == 0)                  return LV_SYMBOL_BATTERY_EMPTY;
-  if (batteryIsCharging(mv))    return LV_SYMBOL_CHARGE;   // on USB power
-  if (mv >= 4100)               return LV_SYMBOL_BATTERY_FULL;
-  if (mv >= 3950)               return LV_SYMBOL_BATTERY_3;
-  if (mv >= 3800)               return LV_SYMBOL_BATTERY_2;
-  if (mv >= 3650)               return LV_SYMBOL_BATTERY_1;
+  if (mv == 0)               return LV_SYMBOL_BATTERY_EMPTY;
+  if (batteryIsCharging(mv)) return LV_SYMBOL_CHARGE;   // on USB power
+  // Derive the icon from the (calibrated) percent so custom packs whose full
+  // voltage differs from 4.2 V still fill the icon at their real 100%.
+  const int pct = batteryPercentFromMv(mv);
+  if (pct >= 90) return LV_SYMBOL_BATTERY_FULL;
+  if (pct >= 65) return LV_SYMBOL_BATTERY_3;
+  if (pct >= 40) return LV_SYMBOL_BATTERY_2;
+  if (pct >= 15) return LV_SYMBOL_BATTERY_1;
   return LV_SYMBOL_BATTERY_EMPTY;
 }
 
 static int batteryPercentFromMv(uint16_t mv) {
-  // Rough Li-ion curve (3.30V empty, 4.20V full). While charging the rail reads
-  // above 4.2V (charger-driven) — cap the displayed % at 100 rather than show a
-  // bogus number; the real cell % isn't observable without a fuel gauge.
+  // Li-ion curve: 3.30 V empty, FULL = the calibrated full (default 4.20 V).
+  // While charging the rail reads above full (charger-driven) — cap at 100
+  // rather than show a bogus number; the real cell % isn't observable here.
   if (mv == 0) return -1;
-  if (mv >= 4200) return 100;
-  if (mv <= 3300) return 0;
-  return (int)((mv - 3300) * 100 / (4200 - 3300));
+  const uint16_t full = batteryFullMv();
+  if (mv >= full)  return 100;
+  if (mv <= 3300)  return 0;
+  return (int)((mv - 3300) * 100 / (full - 3300));
+}
+
+// Calibrate-battery action (Device settings). SHORT_CLICKED captures the current
+// voltage as the new 100%; LONG_PRESSED resets to the default Li-ion curve. Same
+// on V4 + T-Deck. SHORT_CLICKED (not CLICKED) so a long-press to reset doesn't
+// also fall through and calibrate.
+static void calibrateBatteryCb(lv_event_t* e) {
+  const lv_event_code_t code = lv_event_get_code(e);
+  if (code == LV_EVENT_LONG_PRESSED) {
+    touchPrefsSetBattFullMv(0);
+    s_batt_full_mv = 0; s_batt_full_loaded = true;
+    if (g_lv.task) g_lv.task->showAlert("Battery calibration reset to default", 2200);
+    return;
+  }
+  if (code != LV_EVENT_SHORT_CLICKED) return;
+  // Average a short burst so one noisy ADC sample (esp. the V4 direct read)
+  // doesn't skew the reference.
+  uint32_t sum = 0; int n = 0;
+  for (int i = 0; i < 8; ++i) { uint16_t s = batteryMvSampled(); if (s) { sum += s; ++n; } delay(20); }
+  const uint16_t mv = n ? (uint16_t)(sum / n) : 0;
+  if (mv < 3500) {   // implausibly low for a "full" pack — refuse rather than store junk
+    if (g_lv.task) g_lv.task->showAlert("Battery read too low — charge fully first", 2600);
+    return;
+  }
+  touchPrefsSetBattFullMv(mv);
+  s_batt_full_mv = mv; s_batt_full_loaded = true;
+  char b[72];
+  snprintf(b, sizeof b, "Calibrated: 100%% = %u.%02u V  (long-press to reset)",
+           (unsigned)(mv / 1000), (unsigned)((mv % 1000) / 10));
+  if (g_lv.task) g_lv.task->showAlert(b, 3000);
 }
 
 static void refreshHomeBattery() {
@@ -8583,7 +8760,9 @@ static void fmSdUnmount() {
   s_sd_retry_after_ms = 0;   // a reinsert should be able to mount right away
 }
 static void fmSdClickCb(lv_event_t* e) {
-  if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+  // SHORT_CLICKED (not CLICKED) so a long-press — which formats the card — does
+  // not also fall through and open it.
+  if (lv_event_get_code(e) != LV_EVENT_SHORT_CLICKED) return;
   if (s_sd_mounted) fmOpenStorage(&SD, "SD", "/");
 }
 
@@ -8618,7 +8797,8 @@ static void fmHideFormatOverlay() {
 // Confirm callback: paint the formatting notice, then defer the (blocking)
 // f_mkfs to UITask::loop so the notice is on-screen before the loop freezes.
 static void fmSdDoFormat() {
-  fmShowBusyOverlay("Formatting SD card (FAT32)\n\n"
+  fmShowBusyOverlay("Formatting SD as MESHCOMOD (FAT32)\n\n"
+                    "Creates the core folders too.\n"
                     "Do NOT power off, disconnect,\nor remove the card.\n\n"
                     "This can take up to a minute...");
   s_sd_format_pending = 2;
@@ -8628,7 +8808,94 @@ static void fmSdDoFormat() {
 static void fmSdMountOrFormatCb(lv_event_t* e) {
   if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
   if (fmSdTryMount()) { fmShowRoots(); return; }
-  showConfirm("Format SD as FAT32?\nAll data on the card will be erased.",
+  showConfirm("Format SD as MESHCOMOD (FAT32)?\nAll data on the card will be erased.",
+              "Format", fmSdDoFormat);
+}
+
+// Seed the core folder layout on a freshly-formatted MESHCOMOD card. These back
+// the recovery/launcher: BINS (flashable firmware), RECBCK (recovery backups),
+// SETTINGS (exported config), plus MAPS/LOGS. Idempotent (mkdir-if-absent), so
+// it's also safe to re-run on an already-set-up card.
+static void sdEnsureMeshcomodFolders() {
+  static const char* const folders[] = { "/BINS", "/UPDATES", "/RECBCK", "/SETTINGS", "/MAPS", "/LOGS" };
+  for (unsigned i = 0; i < sizeof(folders) / sizeof(folders[0]); ++i)
+    if (!SD.exists(folders[i])) SD.mkdir(folders[i]);
+  if (!SD.exists("/README.TXT")) {
+    File rf = SD.open("/README.TXT", FILE_WRITE);
+    if (rf) {
+      rf.print("MESHCOMOD recovery card\r\n\r\n"
+               "BINS/     firmware images for the recovery launcher\r\n"
+               "UPDATES/  firmware update images the launcher applies\r\n"
+               "RECBCK/   recovery backups (identity / settings snapshots)\r\n"
+               "SETTINGS/ exported settings (meshcore-backup.json)\r\n"
+               "MAPS/     offline map tile packs\r\n"
+               "LOGS/     diagnostic / packet logs\r\n");
+      rf.close();
+    }
+  }
+}
+
+// Set the FAT volume label by hand (the prebuilt ESP-IDF has FF_USE_LABEL=0, so
+// f_setlabel isn't linkable): patch the boot-sector BS_VolLab and add/replace
+// the root-directory volume-label entry via the Arduino SD raw-sector API. Call
+// right after f_mkfs with the card initialized at `pdrv` and the FS NOT mounted
+// (so there's no FATFS cache to fight). Best-effort — silently no-ops on any
+// layout it doesn't recognise. Handles both MBR-partitioned and superfloppy.
+static void sdWriteFatLabel(uint8_t pdrv, const char* label) {
+  uint8_t sec[512];
+  if (!sd_read_raw(pdrv, sec, 0)) return;
+  if (sec[510] != 0x55 || sec[511] != 0xAA) return;
+  uint32_t part_lba = 0;
+  const bool boot_at_0 = (sec[0] == 0xEB || sec[0] == 0xE9) &&
+                         (uint16_t)(sec[11] | (sec[12] << 8)) == 512;
+  if (!boot_at_0) {  // MBR: first partition entry @446, LBA-first @ +8 (454)
+    part_lba = (uint32_t)sec[454] | ((uint32_t)sec[455] << 8) |
+               ((uint32_t)sec[456] << 16) | ((uint32_t)sec[457] << 24);
+    if (!part_lba) return;
+  }
+  uint8_t bs[512];
+  if (!sd_read_raw(pdrv, bs, part_lba)) return;
+  if (bs[510] != 0x55 || bs[511] != 0xAA) return;
+  const uint16_t bps     = bs[11] | (bs[12] << 8);
+  const uint8_t  spc     = bs[13];
+  const uint16_t rsvd    = bs[14] | (bs[15] << 8);
+  const uint8_t  nfats   = bs[16];
+  const uint16_t fatsz16 = bs[22] | (bs[23] << 8);
+  const uint32_t fatsz32 = (uint32_t)bs[36] | ((uint32_t)bs[37] << 8) |
+                           ((uint32_t)bs[38] << 16) | ((uint32_t)bs[39] << 24);
+  const uint32_t rootcl  = (uint32_t)bs[44] | ((uint32_t)bs[45] << 8) |
+                           ((uint32_t)bs[46] << 16) | ((uint32_t)bs[47] << 24);
+  const uint32_t fatsz = fatsz16 ? fatsz16 : fatsz32;
+  if (bps != 512 || !spc || !nfats || !fatsz || rootcl < 2) return;  // not the FAT32 we expect
+
+  char lab[11]; memset(lab, ' ', sizeof lab);
+  for (int i = 0; i < 11 && label[i]; ++i) {
+    char c = label[i]; if (c >= 'a' && c <= 'z') c -= 32; lab[i] = c;
+  }
+  memcpy(bs + 71, lab, 11);                 // BS_VolLab (FAT32 boot sector)
+  sd_write_raw(pdrv, bs, part_lba);
+
+  const uint32_t root_lba = part_lba + rsvd + (uint32_t)nfats * fatsz +
+                            (rootcl - 2) * spc;
+  uint8_t rd[512];
+  if (!sd_read_raw(pdrv, rd, root_lba)) return;
+  int slot = -1;
+  for (int i = 0; i < 512; i += 32) {
+    if (rd[i] == 0x00 || rd[i] == 0xE5) { slot = i; break; }   // free slot
+    if (rd[i + 11] == 0x08) { slot = i; break; }               // existing volume label -> replace
+  }
+  if (slot < 0) return;
+  memset(rd + slot, 0, 32);
+  memcpy(rd + slot, lab, 11);
+  rd[slot + 11] = 0x08;                      // ATTR_VOLUME_ID
+  sd_write_raw(pdrv, rd, root_lba);
+}
+
+// Long-press the SD card row -> confirm -> explicit reformat (vs the tap, which
+// only mounts, or formats an already-unreadable card).
+static void fmSdLongPressFormatCb(lv_event_t* e) {
+  if (lv_event_get_code(e) != LV_EVENT_LONG_PRESSED) return;
+  showConfirm("Reformat SD as MESHCOMOD (FAT32)?\nALL data on the card will be erased.",
               "Format", fmSdDoFormat);
 }
 
@@ -9512,10 +9779,11 @@ static void fmShowRoots() {
   if ((s_sd_mounted || millis() >= s_sd_retry_after_ms) && fmSdTryMount()) {
     char sdl[48], cs[16];
     fmFmtSize64(s_sd_size, cs, sizeof cs);
-    snprintf(sdl, sizeof sdl, "SD card   %s", cs);
+    snprintf(sdl, sizeof sdl, "SD card   %s   (hold: format)", cs);
     lv_obj_t* sd = lv_list_add_btn(s_fm_list, LV_SYMBOL_SD_CARD, sdl);
     fmStyleRow(sd, COLOR_TEXT);
-    lv_obj_add_event_cb(sd, fmSdClickCb, LV_EVENT_CLICKED, nullptr);
+    lv_obj_add_event_cb(sd, fmSdClickCb, LV_EVENT_SHORT_CLICKED, nullptr);   // tap = open
+    lv_obj_add_event_cb(sd, fmSdLongPressFormatCb, LV_EVENT_LONG_PRESSED, nullptr);  // hold = format
   } else {
     lv_obj_t* sd = lv_list_add_btn(s_fm_list, LV_SYMBOL_SD_CARD, "SD card   (tap to mount/format)");
     fmStyleRow(sd, COLOR_SUB);
@@ -10498,7 +10766,7 @@ static int verchkFetchLatest(WiFiClient& client, HTTPClient& http) {
   const int code = http.GET();
   if (code != 200) { http.end(); return -1; }
   WiFiClient* st = http.getStreamPtr();
-  static const char PAT[] = "pre-alpha_";
+  static const char PAT[] = "beta_";
   const int patlen = (int)sizeof(PAT) - 1;
   int mp = 0, best = -1, curnum = -1;
   bool innum = false;
@@ -12715,10 +12983,16 @@ static bool textMentionsMe(const char* text) {
   const size_t nl = strlen(me);
   for (const char* p = text; *p; ++p) {
     if (*p != '@') continue;
-    if (strncasecmp(p + 1, me, nl) == 0) {
-      const char a = p[1 + nl];
-      if (a == '\0' || a == ' ' || a == '\n' || a == ',' || a == '.' ||
-          a == '!' || a == '?' || a == ':' || a == ';') return true;
+    // Accept both "@name" (bare) and "@[name]" (bracketed) mention syntax.
+    const bool bracket = (p[1] == '[');
+    const char* q = bracket ? p + 2 : p + 1;
+    if (strncasecmp(q, me, nl) != 0) continue;
+    const char a = q[nl];
+    if (bracket) {
+      if (a == ']') return true;
+    } else if (a == '\0' || a == ' ' || a == '\n' || a == ',' || a == '.' ||
+               a == '!' || a == '?' || a == ':' || a == ';') {
+      return true;
     }
   }
   return false;
@@ -12829,7 +13103,9 @@ static void msgMenuInfoCb(lv_event_t* e) {
   openMessageInfoPopup(idx);
 }
 
-// Insert "@<sender> " into the channel composer so you can @mention them.
+// Insert "@[<sender>] " into the channel composer so you can @mention them. The
+// bracketed form is the mention syntax the other clients use (textMentionsMe
+// also accepts a bare "@name" for backward-compat).
 static void msgMenuMentionCb(lv_event_t* e) {
   if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
   lv_indev_t* a = lv_indev_get_act();
@@ -12837,8 +13113,8 @@ static void msgMenuMentionCb(lv_event_t* e) {
   closeMsgActionMenu();
   LvChatPanel& p = g_lv.ch;                 // mentions are channel-only
   if (!p.composer_ta || !s_msg_menu_sender[0]) return;
-  char ins[UITask::MAX_SENDER_NAME + 4];
-  snprintf(ins, sizeof ins, "@%s ", s_msg_menu_sender);
+  char ins[UITask::MAX_SENDER_NAME + 8];
+  snprintf(ins, sizeof ins, "@[%s] ", s_msg_menu_sender);
   lv_textarea_add_text(p.composer_ta, ins);
   lv_textarea_set_cursor_pos(p.composer_ta, LV_TEXTAREA_CURSOR_LAST);
   showKb(&p);                               // focus composer so typing continues there
@@ -15929,16 +16205,14 @@ static void buildBootSplash() {
   lv_obj_move_foreground(s_splash_root);
   lv_obj_add_event_cb(s_splash_root, splashTapDismissCb, LV_EVENT_CLICKED, nullptr);
 
-  // ---- Title: ON-NET ----
+  // ---- Title: TOUCH BETA ----
   // The bootloader/early-boot screen already paints the pixelated
-  // "MESHCOMOD" wordmark, so repeating it here reads as duplication.
-  // Picked operator vocabulary instead: "ON-NET" is what a comms operator
-  // says when their radio is up and connected to the net. Short, white
-  // on black, fades up identical to the previous wordmark animation —
-  // feels like the next beat of the boot sequence rather than a brand
-  // splash.
+  // "MESHCOMOD" wordmark; this second beat names the build channel
+  // (TOUCH BETA). Short, white on black, fades up identical to the
+  // previous wordmark animation — feels like the next beat of the boot
+  // sequence rather than a brand splash.
   lv_obj_t* title = lv_label_create(s_splash_root);
-  lv_label_set_text(title, "ON-NET");
+  lv_label_set_text(title, "TOUCH BETA");
   // UNSCII_16 is a 16-pixel-tall bitmap font — same pixelated style as
   // the bootloader's MESHCOMOD wordmark, so the splash reads as a
   // continuation of the boot screen instead of a re-styled "designed"
@@ -17770,6 +18044,19 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   s_tiles_fs_ready = s_tiles_fs.begin(true /*formatOnFail*/, "/tiles_lfs",
                                        10 /*maxOpenFiles*/, "tiles");
 #if defined(ESP32)
+  // Mount failed outright: the Arduino LittleFS wrapper only auto-formats when
+  // esp_vfs_littlefs_register returns exactly ESP_FAIL — but grow_on_mount=true
+  // means a grow mismatch (or other error) returns a DIFFERENT code, so the
+  // partition is left unmounted and the map showed "Reflash the tiles partition"
+  // forever even though the partition is present. format() targets the stored
+  // "tiles" label, so force a wipe + remount. Tiles are a re-downloadable cache.
+  if (!s_tiles_fs_ready) {
+    Serial.println("[TILE] tiles begin() failed — forcing format() + remount");
+    s_tiles_fs.format();
+    s_tiles_fs_ready = s_tiles_fs.begin(true, "/tiles_lfs", 10, "tiles");
+    Serial.printf("[TILE] forced reformat -> ready=%d totalBytes=%u\n",
+                  (int)s_tiles_fs_ready, (unsigned)s_tiles_fs.totalBytes());
+  }
   // Corruption guard: the partition-table change (pre-alpha_12 grew the OTA
   // slots) left some devices with a tiles FS that MOUNTS but has a broken
   // superblock — block_count reads as 0, so the first mkdir on a fresh zoom dir
@@ -19042,15 +19329,38 @@ void UITask::loop() {
   if (s_sd_format_pending && --s_sd_format_pending == 0) {
     disableLoopWDT();
     SPIClass* spi = tdeckSharedSPI();
-    bool ok = spi && SD.begin(PIN_SD_CS, *spi, 4000000, "/sd", 3, /*format_if_empty=*/true);
+    bool ok = false;
+    if (spi) {
+      // Explicit reformat (not SD.begin's format_if_empty, which only formats an
+      // already-unreadable card): init the card to register the FatFs diskio at
+      // pdrv (no mount), f_mkfs to FAT32, write the MESHCOMOD label by hand while
+      // unmounted, release, then remount the fresh FS via SD.begin. Works on any
+      // card (FAT32, exFAT, blank) since f_mkfs hardware-inits + overwrites it.
+      SD.end();                                          // drop any existing mount
+      uint8_t pdrv = sdcard_init(PIN_SD_CS, spi, 4000000);
+      if (pdrv != 0xFF) {
+        char drv[3] = { (char)('0' + pdrv), ':', 0 };
+        void* work = malloc(4096);                       // f_mkfs scratch (>= FF_MAX_SS)
+        if (work) {
+          if (f_mkfs(drv, MC_FM_FAT32, 0, work, 4096) == 0 /*FR_OK*/) {
+            sdWriteFatLabel(pdrv, "MESHCOMOD");
+            ok = true;
+          }
+          free(work);
+        }
+        sdcard_uninit(pdrv);
+      }
+      if (ok) ok = SD.begin(PIN_SD_CS, *spi, 4000000, "/sd", 3);
+    }
     enableLoopWDT();
     fmHideFormatOverlay();
     if (ok && SD.cardType() != CARD_NONE) {
       s_sd_mounted = true;
       s_sd_size = SD.cardSize();
-      char done[40], cs[16];
+      sdEnsureMeshcomodFolders();                        // BINS / RECBCK / SETTINGS / MAPS / LOGS
+      char done[56], cs[16];
       fmFmtSize64(s_sd_size, cs, sizeof cs);
-      snprintf(done, sizeof done, "SD formatted - %s FAT32", cs);
+      snprintf(done, sizeof done, "SD formatted - %s (MESHCOMOD)", cs);
       showAlert(done, 3500);
     } else {
       s_sd_mounted = false;

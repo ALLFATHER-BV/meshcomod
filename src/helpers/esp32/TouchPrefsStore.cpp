@@ -275,6 +275,23 @@ bool touchPrefsSetUiRotation(uint8_t rot) {
   return ok;
 }
 
+static const char* KEY_BATT_FULL = "battfull";
+
+uint16_t touchPrefsGetBattFullMv() {
+  if (!s_begun) touchPrefsBegin();
+  return s_prefs.getUShort(KEY_BATT_FULL, 0);   // 0 = not calibrated -> default 4200
+}
+
+bool touchPrefsSetBattFullMv(uint16_t mv) {
+  if (!s_begun) touchPrefsBegin();
+  s_prefs.end();
+  if (!s_prefs.begin(TOUCH_NS, false)) return false;
+  bool ok = s_prefs.putUShort(KEY_BATT_FULL, mv) > 0;
+  s_prefs.end();
+  s_begun = s_prefs.begin(TOUCH_NS, true);
+  return ok;
+}
+
 // Wi-Fi profile slots ----------------------------------------------------
 //
 // NVS keys: "wsl_<idx>_l" (label), "wsl_<idx>_s" (ssid), "wsl_<idx>_p" (pwd).

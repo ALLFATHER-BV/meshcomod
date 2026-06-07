@@ -1,0 +1,11 @@
+# Resident table for the launcher model (must match bootloader_launcher/partitions.csv).
+# `bootsel` (4 KB) holds the one-shot launch flag the custom bootloader reads.
+# factory = recovery launcher, ota_0 = firmware slot, spiffs = firmware userdata.
+#
+# Name,    Type, SubType,  Offset,    Size,      Flags
+nvs,       data, nvs,      0x9000,    0x4000,
+bootsel,   data, 0x40,     0xd000,    0x1000,
+otadata,   data, ota,      0xe000,    0x2000,
+factory,   app,  factory,  0x10000,   0x200000,
+ota_0,     app,  ota_0,    0x210000,  0x700000,
+spiffs,    data, spiffs,   0x910000,  0x6F0000,

@@ -7,14 +7,18 @@
 #include "AbstractUITask.h"
 
 /*------------ Frame Protocol --------------*/
+// Keep the fork's companion-protocol lineage (27 — a superset of upstream's 13)
+// so the existing meshcomod web/phone client still matches. 1.16's new companion
+// commands (raw packet, un-scoped flood, anon req) are added as handlers below;
+// advertising them by bumping this is a coordinated client change for later.
 #define FIRMWARE_VER_CODE 27
 
 #ifndef FIRMWARE_BUILD_DATE
-#define FIRMWARE_BUILD_DATE "22 May 2026"
+#define FIRMWARE_BUILD_DATE "7 Jun 2026"
 #endif
 
 #ifndef FIRMWARE_VERSION
-#define FIRMWARE_VERSION "v1.15.0.5"
+#define FIRMWARE_VERSION "v1.16.0-touch"
 #endif
 
 #if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
@@ -556,6 +560,12 @@ public:
     return true;
   }
 
+  /** Persist the in-RAM contact table to flash (/contacts3). Public wrapper so
+   *  UI paths that insert via the base addContact() — e.g. the Discovered-list
+   *  "Add to contacts" button — can persist; otherwise that contact is RAM-only
+   *  and lost on reboot. */
+  bool uiPersistContacts() { saveContacts(); return true; }
+
   /** Clear channel slot `idx` (zero name + secret), persist, and ping the UI
    *  so the chats list drops the entry. Returns false if the index is out of
    *  range. Used by the long-press → Delete action on the chats list. */
@@ -589,6 +599,9 @@ public:
     if (_ui) _ui->onThreadsChanged();
     return true;
   }
+
+  // To check if there is pending work
+  bool hasPendingWork() const;
 
 private:
   void writeOKFrame();
@@ -626,7 +639,7 @@ private:
 
   // helpers, short-cuts
   void saveChannels() { _store->saveChannels(this); }
-  void saveContacts() { _store->saveContacts(this); }
+  void saveContacts();
 
   DataStore* _store;
   NodePrefs _prefs;
@@ -659,6 +672,7 @@ private:
   uint32_t _active_ble_pin;
   bool _iter_started;
   bool _cli_rescue;
+  bool send_unscoped;   // force un-scoped flood (instead of using send_scope)
   char cli_command[80];
   uint8_t app_target_ver;
   uint8_t *sign_data;

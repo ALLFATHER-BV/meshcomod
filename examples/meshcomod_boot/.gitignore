@@ -1,0 +1,10 @@
+# PlatformIO / ESP-IDF build output
+.pio/
+build/
+# generated per-env sdkconfig, but keep the tracked defaults
+sdkconfig
+sdkconfig.*
+!sdkconfig.defaults
+
+# macOS
+.DS_Store

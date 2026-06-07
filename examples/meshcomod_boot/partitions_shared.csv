@@ -1,0 +1,30 @@
+# meshcomod_boot SHARED partition table — DUAL-SLOT (A/B) + factory recovery,
+# CUSTOM 2nd-stage bootloader (bootloader_launcher).
+#
+# 16 MB. The custom bootloader boots `factory` (the recovery) by DEFAULT and the
+# otadata-selected ota slot ONCE when a launcher raises the `bootsel` one-shot
+# flag (then clears it). So recovery-first is enforced by the BOOTLOADER, not the
+# app — it holds for ANY firmware in a slot (meshcomod, Meshtastic, a crashing
+# build). otadata still selects WHICH ota slot (A/B), so in-firmware OTA works:
+#   - meshcomod OTA writes the spare slot + sets otadata -> reboot -> recovery
+#     countdown -> launches the otadata-selected (new) slot.
+#   - recovery "Boot firmware"/"Add firmware" sets otadata + raises bootsel.
+#
+#   factory  @0x10000 (1 MB)   : meshcomod_boot recovery (permanent)
+#   ota_0    @0x110000 (3.25 MB) ┐ A/B meshcomod app slots
+#   ota_1    @0x450000 (3.25 MB) ┘
+#   tiles / spiffs              : map-tile cache + user data (found by LABEL)
+#
+# Updating either component is a fixed-offset esptool write (factory @0x10000,
+# ota_0 @0x110000); each preserves the other + nvs/tiles/spiffs.
+#
+# Name,     Type, SubType,  Offset,    Size,      Flags
+nvs,        data, nvs,      0x9000,    0x4000,
+bootsel,    data, 0x40,     0xd000,    0x1000,
+otadata,    data, ota,      0xe000,    0x2000,
+factory,    app,  factory,  0x10000,   0x100000,
+ota_0,      app,  ota_0,    0x110000,  0x340000,
+ota_1,      app,  ota_1,    0x450000,  0x340000,
+tiles,      data, 0x83,     0x790000,  0x4A0000,
+spiffs,     data, spiffs,   0xC30000,  0x3C0000,
+coredump,   data, coredump, 0xFF0000,  0x10000,

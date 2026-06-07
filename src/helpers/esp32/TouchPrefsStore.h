@@ -53,6 +53,12 @@ bool touchPrefsSetUseMiles(bool use_miles);
 uint8_t touchPrefsGetUiRotation();
 bool    touchPrefsSetUiRotation(uint8_t rot);
 
+/** Calibrated battery "full" voltage in mV — the reading captured when the pack
+ *  was fully charged, treated as 100%. 0 = not calibrated (use the 4200 mV
+ *  default Li-ion full point). Lets custom batteries / builds read 100%. */
+uint16_t touchPrefsGetBattFullMv();
+bool     touchPrefsSetBattFullMv(uint16_t mv);
+
 /** Saved Wi-Fi profile slots. The "active" credentials still live in the
  *  meshcomod NVS namespace (WifiRuntimeStore.cpp) and are what
  *  wifiConfigApply() uses; these slots are a touch-UI convenience so the

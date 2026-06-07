@@ -207,7 +207,7 @@ void setup() {
     halt();
   }
 
-  fast_rng.begin(radio_get_rng_seed());
+  fast_rng.begin(radio_driver.getRngSeed());   // 1.16: free fn removed
 
   FILESYSTEM *fs;
 #if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)

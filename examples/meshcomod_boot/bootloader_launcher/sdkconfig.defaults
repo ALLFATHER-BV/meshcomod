@@ -1,0 +1,6 @@
+# Build the custom bootloader for the T-Deck (ESP32-S3, 16 MB, QIO 80 MHz) — must
+# match the Arduino recovery/firmware flash settings so it boots their app images.
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
+CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
+CONFIG_BOOTLOADER_LOG_LEVEL_INFO=y
