@@ -103,11 +103,9 @@ void wifiConfigSetRadioEnabled(bool enabled) {
   s_prefs.end();
   if (!s_prefs.begin(WIFI_CONFIG_NAMESPACE, false)) return;
   s_prefs.putUChar(WIFI_CONFIG_RADIO_EN_KEY, enabled ? 1 : 0);
-  // Enabling the radio is an explicit "use Wi-Fi" choice — remember it (sticky)
-  // so the touch build can bring Wi-Fi up to scan/configure even before any
-  // creds exist (see wifiConfigWantsWifi). Fresh devices never call this with
-  // the default-on pref, so they stay on BLE until the user actually picks
-  // Wi-Fi. Non-touch builds ignore the flag.
+  // Enabling the radio records the (now-vestigial) "Wi-Fi chosen" flag; on touch
+  // wifiConfigWantsWifi() already treats radio-on as Wi-Fi, so this only matters
+  // for back-compat. Non-touch builds ignore the flag.
   if (enabled) s_prefs.putUChar(WIFI_CONFIG_WIFI_CHOSEN_KEY, 1);
   s_prefs.end();
   s_begun = s_prefs.begin(WIFI_CONFIG_NAMESPACE, true);
@@ -138,9 +136,13 @@ bool wifiConfigWantsWifi() {
   if (!wifiConfigGetRadioEnabled()) return false;
   if (wifiConfigHasRuntime()) return true;
 #ifdef HAS_TOUCH_UI
-  // Touch: the user can pick Wi-Fi with no creds yet and scan on-device, so
-  // bring the radio up (STA, scannable) in that case too.
-  return wifiConfigGetWifiChosen();
+  // Touch default: Wi-Fi is the primary transport. The radio-enabled pref is
+  // on out of the box, so a freshly-flashed device comes up on Wi-Fi (STA,
+  // scannable) with BLE off — letting the setup wizard scan + pick a network
+  // on-device with no creds typed yet. Switching to BLE is an explicit choice
+  // (the Bluetooth toggle clears radio_en). The old "wifi_chosen" gate that
+  // kept fresh devices on BLE is retired.
+  return true;
 #else
   return false;
 #endif

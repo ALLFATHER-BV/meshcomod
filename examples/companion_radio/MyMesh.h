@@ -499,6 +499,11 @@ private:
 public:
   void savePrefs() { _store->savePrefs(_prefs, sensors.node_lat, sensors.node_lon); }
 
+  // Re-apply the persisted radio settings (freq/bw/sf/cr, TX power, RX-boost) to
+  // the live radio — the same calls begin() makes at boot. Lets the UI change
+  // region / radio params and have them take effect immediately, no reboot.
+  void applyRadioFromPrefs();
+
   /** Find the first unused channel slot, or -1 if the table is full. A slot
    *  is considered free when its name is empty (matches getNumChannels). */
   int findFirstEmptyChannelSlot() {

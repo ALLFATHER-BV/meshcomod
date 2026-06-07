@@ -21,16 +21,17 @@ bool wifiConfigGetRadioEnabled();
 void wifiConfigSetRadioEnabled(bool enabled);
 
 /* "Wi-Fi chosen" sticky flag: set whenever the radio is explicitly enabled
- * (setRadioEnabled(true)). Lets the touch build bring Wi-Fi up to scan/configure
- * before any credentials exist. A fresh device never explicitly enables the
- * (default-on) radio, so it stays on BLE until the user actually picks Wi-Fi. */
+ * (setRadioEnabled(true)). Historically gated whether the touch build brought
+ * Wi-Fi up with no creds; now vestigial — touch defaults to Wi-Fi whenever the
+ * radio is on (see wifiConfigWantsWifi). Kept for compatibility. */
 bool wifiConfigGetWifiChosen();
 void wifiConfigSetWifiChosen(bool chosen);
 
 /* The actual BLE-vs-Wi-Fi transport decision used at boot and in the main loop.
- * True = bring Wi-Fi up (STA). Classic rule = radio enabled AND creds present;
- * on the touch build it's also true when the user has chosen Wi-Fi but has no
- * creds yet (so they can scan + pick a network on-device). */
+ * True = bring Wi-Fi up (STA). Non-touch rule = radio enabled AND creds present.
+ * On the touch build Wi-Fi is the primary transport: radio-enabled (the fresh
+ * default) is enough — Wi-Fi comes up scannable even with no creds, so a brand
+ * new device lands on Wi-Fi with BLE off. BLE is opt-in (clears radio_en). */
 bool wifiConfigWantsWifi();
 
 /* Request an immediate (re)apply of current Wi-Fi settings from the main loop.

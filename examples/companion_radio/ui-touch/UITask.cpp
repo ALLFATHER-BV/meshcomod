@@ -1289,6 +1289,7 @@ static lv_obj_t* s_setup_region_list = nullptr;
 static int       s_setup_region_sel  = -1;     // selected preset index, -1 = keep default
 static lv_obj_t* s_setup_ssid_ta   = nullptr;
 static lv_obj_t* s_setup_pwd_ta    = nullptr;
+static bool      s_setup_wifi_autoscan_done = false;  // auto-open the picker once per wizard run
 static void setupWizardOpen();            // fwd: re-trigger the flow (Device settings button)
 static void setupRerunCb(lv_event_t* e);  // fwd: "Run setup again" button callback
 
@@ -4834,6 +4835,7 @@ static void buildBluetoothSettings() {
 static char    s_pending_wifi_ssid[WIFI_CONFIG_SSID_MAX];
 static char    s_pending_wifi_pwd[WIFI_CONFIG_PWD_MAX];
 static bool    s_pending_wifi_radio_on = false;
+static bool    s_pending_wifi_was_wifi = false;   // Wi-Fi already the live transport at save time?
 
 static void doApplyWifi() {
   if (!wifiConfigSetSsid(s_pending_wifi_ssid)) {
@@ -4846,6 +4848,17 @@ static void doApplyWifi() {
   }
   wifiConfigSetRadioEnabled(s_pending_wifi_radio_on);
   wifiConfigRequestApply();
+
+  // A reboot is only needed to switch transports: BLE->Wi-Fi (Bluedroid must be
+  // torn down before esp_wifi_init can grab its heap) or Wi-Fi->BLE (BLE only
+  // inits in setup()). When Wi-Fi is already live and stays on, the main loop
+  // re-begins with the new creds (consumeApplyRequest path) — no reboot needed.
+  const bool reboot_needed = !(s_pending_wifi_was_wifi && s_pending_wifi_radio_on);
+  if (!reboot_needed) {
+    if (g_lv.task) g_lv.task->showAlert("Saved — reconnecting\xE2\x80\xA6", 1600);
+    refreshStatusLabels();
+    return;
+  }
   if (g_lv.task) {
     g_lv.task->showAlert("Saved — rebooting", 1400);
     g_lv.task->persistHistoryNow();   // persist chat before reboot
@@ -4937,6 +4950,16 @@ static void saveWifiCb(lv_event_t* e) {
   if (!s_pending_wifi_radio_on && s_pending_wifi_ssid[0] != '\0') {
     s_pending_wifi_radio_on = true;
     lv_obj_add_state(g_set_modal.wifi_sw, LV_STATE_CHECKED);
+  }
+  // Capture the live transport now, before doApplyWifi flips any pref. If Wi-Fi
+  // is already up and stays on, saving new creds is a hot reconnect — apply
+  // straight away (the main loop re-begins), no reboot and no confirm to
+  // interrupt. Only a transport switch (to/from BLE) reboots, so keep the
+  // confirm prompt for that case.
+  s_pending_wifi_was_wifi = wifiConfigWantsWifi();
+  if (s_pending_wifi_was_wifi && s_pending_wifi_radio_on) {
+    doApplyWifi();
+    return;
   }
   showConfirm(s_pending_wifi_radio_on
                 ? "Save Wi-Fi and reboot? Bluetooth will be turned off."
@@ -5030,6 +5053,25 @@ static void openWifiScanPopup() {
   lv_obj_set_scrollbar_mode(s_wifi_scan_list, LV_SCROLLBAR_MODE_AUTO);
 }
 
+// Open the picker and kick a fresh scan on the core-0 worker. Shows the last
+// results instantly (if any) while the rescan lands. Shared by the Settings
+// Wi-Fi page, the setup wizard's Scan button, and the wizard's auto-scan on
+// arrival. Caller must have already confirmed wifiConfigWantsWifi() (radio up).
+static void wifiScanOpenAndKick() {
+  hideKb();   // unbind the keyboard mirror so it can't later revert the picked SSID
+  openWifiScanPopup();
+  if (s_wifiscan_count > 0) {
+    wifiScanFillList();   // show last results immediately, refresh when the rescan lands
+  } else if (s_wifi_scan_list) {
+    lv_obj_t* l = lv_label_create(s_wifi_scan_list);
+    lv_label_set_text(l, "Scanning\xE2\x80\xA6");
+    lv_obj_set_style_text_color(l, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
+    lv_obj_set_style_text_font(l, &g_font_14, LV_PART_MAIN);
+  }
+  ensureTileFetchTaskRunning();   // the worker idles out after 5 s — respawn it
+  s_wifiscan_request = true;
+}
+
 // Switch into Wi-Fi mode (reboot) so a scan can run — WITHOUT needing creds
 // first. Used when the user taps Scan while BLE is the active transport.
 // setRadioEnabled(true) marks Wi-Fi "chosen", so wantsWifi() brings the radio
@@ -5054,18 +5096,7 @@ static void wifiScanStartCb(lv_event_t* e) {
                 "Switch", doSwitchToWifiForScan);
     return;
   }
-  hideKb();   // unbind the keyboard mirror so it can't later revert the picked SSID
-  openWifiScanPopup();
-  if (s_wifiscan_count > 0) {
-    wifiScanFillList();   // show last results immediately, refresh when the rescan lands
-  } else {
-    lv_obj_t* l = lv_label_create(s_wifi_scan_list);
-    lv_label_set_text(l, "Scanning\xE2\x80\xA6");
-    lv_obj_set_style_text_color(l, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
-    lv_obj_set_style_text_font(l, &g_font_14, LV_PART_MAIN);
-  }
-  ensureTileFetchTaskRunning();   // the worker idles out after 5 s — respawn it
-  s_wifiscan_request = true;
+  wifiScanOpenAndKick();
 #endif
 }
 
@@ -16420,7 +16451,7 @@ static void setupRegionNextCb(lv_event_t* e) {
 static void setupFinishCb(lv_event_t* e) {
   if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
   kbMirrorSyncToReal();
-  touchPrefsSetSetupDone(true);   // mark done BEFORE the reboot so it won't reappear
+  touchPrefsSetSetupDone(true);   // mark done so the wizard won't reappear on next boot
 #if defined(ESP32) && defined(MULTI_TRANSPORT_COMPANION)
   if (s_setup_ssid_ta) {
     char ssid[WIFI_CONFIG_SSID_MAX];
@@ -16441,12 +16472,12 @@ static void setupFinishCb(lv_event_t* e) {
     }
   }
 #endif
-  hideKb();
-  if (g_lv.task) g_lv.task->showAlert("Finishing setup\xE2\x80\xA6", 1200);
-  // Reboot so the radio re-inits with the chosen region (the base branch has no
-  // live applyRadioFromPrefs) and Wi-Fi associates from a clean STA bring-up.
-  delay(900);
-  ESP.restart();
+  // Region was applied live when the user advanced past the region step
+  // (setRadioParams -> applyRadioFromPrefs), and Wi-Fi re-associates live via the
+  // apply request above — so nothing here needs a reboot. Just close the wizard
+  // back to the main UI.
+  setupWizardClose();
+  if (g_lv.task) g_lv.task->showAlert("Setup complete", 1400);
 }
 
 // Tap a region row: select it + recolour in place (keeps the scroll position).
@@ -16486,31 +16517,17 @@ static void setupFillRegionList() {
 static void setupWifiScanCb(lv_event_t* e) {
   if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
 #if defined(ESP32) && defined(MULTI_TRANSPORT_COMPANION)
-  // CRITICAL: a Wi-Fi scan needs the Wi-Fi driver up. On a fresh device BLE is
-  // the active transport (BLE-vs-Wi-Fi heap mutex in main.cpp: with no saved
-  // creds + radio-on, Bluedroid grabs the internal heap), so kicking a scan
-  // would call esp_wifi_init under OOM → panic. Only scan when Wi-Fi is already
-  // the live transport; otherwise tell the user to type the name (it connects
-  // after the finishing reboot, and they can scan later in Settings → Network,
-  // which offers a one-tap switch-to-Wi-Fi). We don't reboot-to-scan mid-wizard
-  // since name/region aren't saved yet.
+  // A Wi-Fi scan needs the Wi-Fi driver up. Touch boots Wi-Fi-first (BLE off),
+  // so on a fresh device this is normally live and the scan just works. The
+  // guard only trips if this device was switched to BLE — then the radio is
+  // down (BLE-vs-Wi-Fi heap mutex) and a scan would panic; tell the user to
+  // type the name (it connects after the finishing reboot) or re-enable Wi-Fi.
   if (!wifiConfigWantsWifi()) {
     if (g_lv.task)
-      g_lv.task->showAlert("Type your network name — scanning works in Settings after setup", 3000);
+      g_lv.task->showAlert("Type your network name — or switch to Wi-Fi in Settings to scan", 3000);
     return;
   }
-  hideKb();   // unbind the keyboard mirror so it can't later revert the picked SSID
-  openWifiScanPopup();
-  if (s_wifiscan_count > 0) {
-    wifiScanFillList();
-  } else if (s_wifi_scan_list) {
-    lv_obj_t* l = lv_label_create(s_wifi_scan_list);
-    lv_label_set_text(l, "Scanning\xE2\x80\xA6");
-    lv_obj_set_style_text_color(l, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
-    lv_obj_set_style_text_font(l, &g_font_14, LV_PART_MAIN);
-  }
-  ensureTileFetchTaskRunning();
-  s_wifiscan_request = true;
+  wifiScanOpenAndKick();
 #endif
 }
 
@@ -16582,9 +16599,10 @@ static void setupShowStep(int step) {
   } else {
     int y = setupHeader("Connect to Wi-Fi", "Optional — type your network, or leave blank to skip.", "Step 3 of 3");
 #if defined(ESP32) && defined(MULTI_TRANSPORT_COMPANION)
-    // Live scanning is only possible when Wi-Fi is already the active transport.
-    // On a fresh device BLE owns the radio (heap mutex), so we hide Scan and let
-    // the user type the SSID — it connects after the finishing reboot.
+    // Live scanning needs Wi-Fi up. Touch boots Wi-Fi-first (BLE off), so on a
+    // fresh device this is true and Scan is shown; it only goes false if this
+    // device was switched to BLE (radio down — then we hide Scan and the user
+    // types the SSID, which connects after the finishing reboot).
     const bool can_scan = wifiConfigWantsWifi();
     const int scan_w = 76, gap = 6;
     s_setup_ssid_ta = lv_textarea_create(s_setup_root);
@@ -16623,6 +16641,13 @@ static void setupShowStep(int step) {
     // Let the scan popup drop the chosen SSID straight into our field.
     g_set_modal.wifi_ssid_ta = s_setup_ssid_ta;
     g_set_modal.wifi_pwd_ta  = s_setup_pwd_ta;
+    // Auto-present the network picker once on arrival so nearby SSIDs show up
+    // immediately (no need to tap Scan first). Once per wizard run; the user can
+    // Close it to type a hidden network instead.
+    if (can_scan && !s_setup_wifi_autoscan_done) {
+      s_setup_wifi_autoscan_done = true;
+      wifiScanOpenAndKick();
+    }
 #else
     lv_obj_t* na = lv_label_create(s_setup_root);
     lv_label_set_text(na, "Wi-Fi isn't available on this build.");
@@ -16647,6 +16672,7 @@ static void setupWizardOpen() {
   lv_obj_set_style_pad_all(s_setup_root, 0, LV_PART_MAIN);
   lv_obj_clear_flag(s_setup_root, LV_OBJ_FLAG_SCROLLABLE);
   s_setup_region_sel = -1;
+  s_setup_wifi_autoscan_done = false;   // re-arm the one-shot auto-scan for this run
   setupShowStep(0);
   lv_obj_move_foreground(s_setup_root);
 }
@@ -18013,6 +18039,18 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   _display    = display;
   _sensors    = sensors;
   _node_prefs = node_prefs;
+
+  // GPS resume: initBasicGPS() always leaves the module stopped at boot, so a
+  // saved "GPS on" pref never actually starts the hardware until the user
+  // toggles it — and since the pref already reads "on", the first tap turns it
+  // OFF, so it takes an off/on dance to get a fix. Re-apply the saved pref here
+  // (runs after sensors.begin()) so GPS resumes automatically after a reboot.
+  // setSettingValue("gps") is a no-op on boards without GPS; on the T-Deck the
+  // flaky boot-time gps_detected race is disabled (ENV_SKIP_GPS_DETECT), so this
+  // reliably starts the NMEA reader.
+  if (_sensors && _node_prefs && _node_prefs->gps_enabled) {
+    _sensors->setSettingValue("gps", "1");
+  }
 #if defined(ESP32)
   // Bump the CPU above the 80 MHz base-config default. The base was
   // chosen for power on a headless companion build; on a touch device
@@ -18735,7 +18773,7 @@ bool UITask::setRadioParams(float freq_mhz, float bw_khz, uint8_t sf, uint8_t cr
   _node_prefs->tx_power_dbm = tx_dbm;
   _node_prefs->airtime_factor = airtime_factor;
   the_mesh.savePrefs();
-  // Base meshcomod branch does not expose applyRadioFromPrefs(); changes persist via prefs.
+  the_mesh.applyRadioFromPrefs();   // take effect immediately — no reboot needed
   return true;
 }
 

@@ -2306,6 +2306,17 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
 #endif
 }
 
+void MyMesh::applyRadioFromPrefs() {
+  radio_driver.setParams(_prefs.freq, _prefs.bw, _prefs.sf, _prefs.cr);
+  radio_driver.setTxPower(_prefs.tx_power_dbm);
+#if defined(USE_SX1262) || defined(USE_SX1268)
+  _prefs.rx_boosted_gain = _prefs.rx_boosted_gain ? 1 : 0;
+  radio_driver.setRxBoostedGainMode(_prefs.rx_boosted_gain != 0);
+  MESH_DEBUG_PRINTLN("RX Boosted Gain Mode: %s",
+                     radio_driver.getRxBoostedGainMode() ? "Enabled" : "Disabled");
+#endif
+}
+
 void MyMesh::begin(bool has_display) {
   BaseChatMesh::begin();
 
@@ -2372,14 +2383,7 @@ void MyMesh::begin(bool has_display) {
   addChannel("Public", PUBLIC_GROUP_PSK); // pre-configure Andy's public channel
   _store->loadChannels(this);
 
-  radio_driver.setParams(_prefs.freq, _prefs.bw, _prefs.sf, _prefs.cr);
-  radio_driver.setTxPower(_prefs.tx_power_dbm);
-#if defined(USE_SX1262) || defined(USE_SX1268)
-  _prefs.rx_boosted_gain = _prefs.rx_boosted_gain ? 1 : 0;
-  radio_driver.setRxBoostedGainMode(_prefs.rx_boosted_gain != 0);
-  MESH_DEBUG_PRINTLN("RX Boosted Gain Mode: %s",
-                     radio_driver.getRxBoostedGainMode() ? "Enabled" : "Disabled");
-#endif
+  applyRadioFromPrefs();   // freq/bw/sf/cr + TX power + RX-boost (shared with the live UI apply)
 #if defined(DISPLAY_CLASS)
   // Boot diag: identity prefix + radio config so we can confirm the touch
   // firmware's pubkey is stable across flashes (replies are addressed to
