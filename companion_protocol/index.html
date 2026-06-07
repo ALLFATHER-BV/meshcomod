@@ -785,13 +785,30 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="6. Send Channel Data Datagram">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#registered-data_type-values" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Registered data_type values
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
         
           <li class="md-nav__item">
-  <a href="#6-get-message" class="md-nav__link">
+  <a href="#receive-channel-data-datagram" class="md-nav__link">
     <span class="md-ellipsis">
       
-        6. Get Message
+        Receive Channel Data Datagram
       
     </span>
   </a>
@@ -799,10 +816,21 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#7-get-battery-and-storage" class="md-nav__link">
+  <a href="#7-get-message" class="md-nav__link">
     <span class="md-ellipsis">
       
-        7. Get Battery and Storage
+        7. Get Message
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#8-get-battery-and-storage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Get Battery and Storage
       
     </span>
   </a>
@@ -925,6 +953,17 @@
   
     <nav class="md-nav" aria-label="Response Parsing">
       <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#terminology" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Terminology
+      
+    </span>
+  </a>
+  
+</li>
         
           <li class="md-nav__item">
   <a href="#packet-types" class="md-nav__link">
@@ -1642,13 +1681,30 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="6. Send Channel Data Datagram">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#registered-data_type-values" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Registered data_type values
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
         
           <li class="md-nav__item">
-  <a href="#6-get-message" class="md-nav__link">
+  <a href="#receive-channel-data-datagram" class="md-nav__link">
     <span class="md-ellipsis">
       
-        6. Get Message
+        Receive Channel Data Datagram
       
     </span>
   </a>
@@ -1656,10 +1712,21 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#7-get-battery-and-storage" class="md-nav__link">
+  <a href="#7-get-message" class="md-nav__link">
     <span class="md-ellipsis">
       
-        7. Get Battery and Storage
+        7. Get Message
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#8-get-battery-and-storage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Get Battery and Storage
       
     </span>
   </a>
@@ -1782,6 +1849,17 @@
   
     <nav class="md-nav" aria-label="Response Parsing">
       <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#terminology" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Terminology
+      
+    </span>
+  </a>
+  
+</li>
         
           <li class="md-nav__item">
   <a href="#packet-types" class="md-nav__link">
@@ -2077,7 +2155,7 @@
 <p><strong>Send Initial Commands</strong></p>
 <ul>
 <li>Send <code>CMD_APP_START</code> to identify your app to firmware and get radio settings</li>
-<li>Send <code>CMD_DEVICE_QEURY</code> to fetch device info and negotiate supported protocol versions</li>
+<li>Send <code>CMD_DEVICE_QUERY</code> to fetch device info and negotiate supported protocol versions</li>
 <li>Send <code>CMD_SET_DEVICE_TIME</code> to set the firmware clock</li>
 <li>Send <code>CMD_GET_CONTACTS</code> to fetch all contacts</li>
 <li>Send <code>CMD_GET_CHANNEL</code> multiple times to fetch all channel slots</li>
@@ -2237,24 +2315,130 @@ Bytes 7+: Message Text (UTF-8, variable length)
 <p><strong>Response</strong>: <code>PACKET_MSG_SENT</code> (0x06) on success</p>
 <hr />
 <h3 id="6-send-channel-data-datagram">6. Send Channel Data Datagram</h3>
-<p><strong>Purpose</strong>: Send binary datagram data to a channel.</p>
+<p><strong>Purpose</strong>: Send a binary datagram to a channel. Unlike channel text messages, datagrams carry no built-in sender identity and no timestamp — applications needing either must encode them inside the binary payload.</p>
 <p><strong>Command Format</strong>:</p>
-<pre><code>Byte 0: 0x3E
-Bytes 1-2: Data Type (`data_type`, 16-bit little-endian)
-Byte 3: Channel Index (0-7)
-Bytes 4+: Binary payload bytes (variable length)
+<pre><code>Byte 0:                         0x3E
+Byte 1:                         Channel Index (0-7)
+Byte 2:                         Path Length (0xFF = flood, otherwise actual path length)
+Bytes 3 .. 2+path_len:          Path (omitted when path_len == 0xFF)
+Next 2 bytes (little-endian):   Data Type (`data_type`, uint16)
+Remaining bytes:                Binary payload (variable length)
+</code></pre>
+<p><strong>Example</strong> (flood, <code>DATA_TYPE_DEV</code>, payload <code>A1 B2 C3</code>, channel 1):</p>
+<pre><code>3E 01 FF FF FF A1 B2 C3
 </code></pre>
 <p><strong>Data Type / Transport Mapping</strong>:
-- <code>0x0000</code> is invalid for this command.
+- <code>0x0000</code> (<code>DATA_TYPE_RESERVED</code>) is invalid and rejected with <code>PACKET_ERROR</code>.
 - <code>0xFFFF</code> (<code>DATA_TYPE_DEV</code>) is the developer namespace for experimenting and developing apps.
-- Other non-zero values can be used as assigned application/community namespaces.</p>
-<p><strong>Note</strong>: Applications that need a timestamp should encode it inside the binary payload.</p>
+- Values <code>0x0001</code>–<code>0xFFFE</code> are available for registered application/community namespaces. See the <a href="#registered-data_type-values">Registered data_type values</a> table below.</p>
 <p><strong>Limits</strong>:
-- Maximum payload length is <code>163</code> bytes.
-- Larger payloads are rejected with <code>PACKET_ERROR</code>.</p>
-<p><strong>Response</strong>: <code>PACKET_OK</code> (0x00) on success</p>
+- Maximum payload length is <code>MAX_CHANNEL_DATA_LENGTH = MAX_FRAME_SIZE - 9 = 163</code> bytes.
+- Larger payloads are rejected with <code>PACKET_ERROR</code> (<code>ERR_CODE_ILLEGAL_ARG</code>).</p>
+<p><strong>Response</strong>: <code>PACKET_OK</code> (0x00) on success, or <code>PACKET_ERROR</code> (0x01) with one of:
+- <code>ERR_CODE_NOT_FOUND</code> (2) — unknown <code>channel_idx</code>
+- <code>ERR_CODE_ILLEGAL_ARG</code> (6) — invalid <code>path_len</code>, reserved <code>data_type</code> (<code>0x0000</code>), or payload larger than <code>MAX_CHANNEL_DATA_LENGTH</code>
+- <code>ERR_CODE_TABLE_FULL</code> (3) — outbound send queue is full; retry later</p>
+<p><strong>Inbound datagrams</strong> are delivered to the host via <code>RESP_CODE_CHANNEL_DATA_RECV</code> (0x1B); see <a href="#receive-channel-data-datagram">Receive Channel Data Datagram</a>.</p>
+<h4 id="registered-data_type-values">Registered <code>data_type</code> values</h4>
+<p><code>data_type</code> is an <strong>application identifier</strong>, not a payload-format identifier. Each registered value identifies an application that owns its own internal payload schemas. The firmware does not inspect payload contents — <code>data_type</code> is transported opaquely.</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Constant</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0x0000</td>
+<td><code>DATA_TYPE_RESERVED</code></td>
+<td>Reserved; invalid on send</td>
+</tr>
+<tr>
+<td>0x0001 – 0x00FF</td>
+<td>—</td>
+<td>Reserved for internal use</td>
+</tr>
+<tr>
+<td>0x0100 – 0xFEFF</td>
+<td>—</td>
+<td>Registered application namespaces (see <a href="../number_allocations/">number_allocations.md</a>)</td>
+</tr>
+<tr>
+<td>0xFF00 – 0xFFFE</td>
+<td>—</td>
+<td>Testing/development; no registration required</td>
+</tr>
+<tr>
+<td>0xFFFF</td>
+<td><code>DATA_TYPE_DEV</code></td>
+<td>Developer/experimental namespace</td>
+</tr>
+</tbody>
+</table>
+<p>To register a new application, submit a PR adding a row to the table in <a href="../number_allocations/">docs/number_allocations.md</a>. Internal sub-formats within an allocated application ID are owned by that application and are not tracked in MeshCore firmware or this document.</p>
 <hr />
-<h3 id="6-get-message">6. Get Message</h3>
+<h3 id="receive-channel-data-datagram">Receive Channel Data Datagram</h3>
+<p>Inbound group datagrams (radio-level <code>PAYLOAD_TYPE_GRP_DATA</code>, 0x06) are forwarded to the host as <code>RESP_CODE_CHANNEL_DATA_RECV</code> notifications.</p>
+<p><strong>Frame Format</strong> (<code>RESP_CODE_CHANNEL_DATA_RECV</code>, 0x1B):</p>
+<pre><code>Byte 0:                 0x1B (packet type)
+Byte 1:                 SNR (signed int8, scaled ×4 — divide by 4.0 to recover dB)
+Bytes 2-3:              Reserved (clients MUST ignore)
+Byte 4:                 Channel Index (0-7)
+Byte 5:                 Path Length (actual path length when flooded, otherwise 0xFF for direct)
+Bytes 6-7:              Data Type (uint16 little-endian)
+Byte 8:                 Data Length
+Bytes 9 .. 8+data_len:  Payload
+</code></pre>
+<p><strong>Path bytes are not forwarded</strong>: Only <code>path_len</code> is reported in the receive frame — the path itself is not copied to the host. There are no path bytes between byte 5 and the data_type field at bytes 6–7, regardless of <code>path_len</code>.</p>
+<p><strong>Path Length semantics differ between send and receive</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Direction</th>
+<th><code>path_len = 0xFF</code></th>
+<th><code>path_len ≠ 0xFF</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Send</td>
+<td>Flood the network</td>
+<td>Direct route; the encoded path follows (low 6 bits = hash count, top 2 bits + 1 = hash size; on-wire byte count = <code>hash_count × hash_size</code>)</td>
+</tr>
+<tr>
+<td>Receive</td>
+<td>Packet arrived via direct route</td>
+<td>Packet was flooded; this is the encoded <code>pkt-&gt;path_len</code> field as observed (no path bytes follow)</td>
+</tr>
+</tbody>
+</table>
+<p>In other words, the meaning of <code>0xFF</code> is inverted between the two directions, and on receive the field carries metadata only — never a routable path. <code>path_len</code> is an encoded byte (see <code>Packet::isValidPathLen</code> / <code>Packet::writePath</code> in <code>src/Packet.cpp</code>), not a raw byte count.</p>
+<p><strong>Note</strong>: The device may also emit <code>PACKET_MESSAGES_WAITING</code> (0x83) to notify the host that datagrams are queued; poll with <code>CMD_SYNC_NEXT_MESSAGE</code> (0x0A) to retrieve them.</p>
+<p><strong>Parsing Pseudocode</strong>:</p>
+<pre><code class="language-python">def parse_channel_data_recv(data):
+    if len(data) &lt; 9:
+        return None
+    snr_byte = data[1]
+    snr = (snr_byte if snr_byte &lt; 128 else snr_byte - 256) / 4.0
+    channel_idx = data[4]
+    path_len = data[5]
+    data_type = int.from_bytes(data[6:8], 'little')
+    data_len = data[8]
+    if 9 + data_len &gt; len(data):
+        return None
+    payload = data[9:9 + data_len]
+    return {
+        'snr': snr,
+        'channel_idx': channel_idx,
+        'path_len': path_len,
+        'data_type': data_type,
+        'payload': bytes(payload),
+    }
+</code></pre>
+<hr />
+<h3 id="7-get-message">7. Get Message</h3>
 <p><strong>Purpose</strong>: Request the next queued message from the device.</p>
 <p><strong>Command Format</strong>:</p>
 <pre><code>Byte 0: 0x0A
@@ -2265,10 +2449,11 @@ Bytes 4+: Binary payload bytes (variable length)
 <p><strong>Response</strong>: 
 - <code>PACKET_CHANNEL_MSG_RECV</code> (0x08) or <code>PACKET_CHANNEL_MSG_RECV_V3</code> (0x11) for channel messages
 - <code>PACKET_CONTACT_MSG_RECV</code> (0x07) or <code>PACKET_CONTACT_MSG_RECV_V3</code> (0x10) for contact messages
+- <code>PACKET_CHANNEL_DATA_RECV</code> (0x1B) for channel data datagrams
 - <code>PACKET_NO_MORE_MSGS</code> (0x0A) if no messages available</p>
 <p><strong>Note</strong>: Poll this command periodically to retrieve queued messages. The device may also send <code>PACKET_MESSAGES_WAITING</code> (0x83) as a notification when messages are available.</p>
 <hr />
-<h3 id="7-get-battery-and-storage">7. Get Battery and Storage</h3>
+<h3 id="8-get-battery-and-storage">8. Get Battery and Storage</h3>
 <p><strong>Purpose</strong>: Query device battery voltage and storage usage.</p>
 <p><strong>Command Format</strong>:</p>
 <pre><code>Byte 0: 0x14
@@ -2451,6 +2636,13 @@ Bytes 11+: Message Text (UTF-8)
 - Include a chunk indicator (e.g., "[1/3] message text")</p>
 <hr />
 <h2 id="response-parsing">Response Parsing</h2>
+<h3 id="terminology">Terminology</h3>
+<p>This document uses a spec-level naming convention (<code>PACKET_*</code>) for bytes the firmware sends back to the host. In the firmware source these same values are split across two <code>#define</code> families by purpose:</p>
+<ul>
+<li><code>RESP_CODE_*</code> — direct replies to a command (e.g. <code>RESP_CODE_CHANNEL_DATA_RECV</code> = <code>PACKET_CHANNEL_DATA_RECV</code> = 0x1B).</li>
+<li><code>PUSH_CODE_*</code> — asynchronous notifications not tied to a specific command (e.g. <code>PUSH_CODE_MSG_WAITING</code> = <code>PACKET_MESSAGES_WAITING</code> = 0x83).</li>
+</ul>
+<p>Byte values are authoritative; names are aliases. When reading firmware source, <code>RESP_CODE_X</code> / <code>PUSH_CODE_X</code> correspond to this doc's <code>PACKET_X</code> of the same numeric value.</p>
 <h3 id="packet-types">Packet Types</h3>
 <table>
 <thead>
@@ -2540,6 +2732,11 @@ Bytes 11+: Message Text (UTF-8)
 <td>0x12</td>
 <td>PACKET_CHANNEL_INFO</td>
 <td>Channel information</td>
+</tr>
+<tr>
+<td>0x1B</td>
+<td>PACKET_CHANNEL_DATA_RECV</td>
+<td>Channel data datagram</td>
 </tr>
 <tr>
 <td>0x80</td>
@@ -2704,58 +2901,49 @@ Bytes 6-9: Suggested Timeout (32-bit little-endian, milliseconds)
 Bytes 1-6: ACK Code (6 bytes, hex)
 </code></pre>
 <h3 id="error-codes">Error Codes</h3>
-<p><strong>PACKET_ERROR</strong> (0x01) may include an error code in byte 1:</p>
+<p><code>PACKET_ERROR</code> (0x01) carries a single-byte error code in byte 1. Values match the <code>ERR_CODE_*</code> constants defined in <code>examples/companion_radio/MyMesh.cpp</code>:</p>
 <table>
 <thead>
 <tr>
-<th>Error Code</th>
+<th>Code</th>
+<th>Constant (firmware)</th>
 <th>Description</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>0x00</td>
-<td>Generic error (no specific code)</td>
+<td>1</td>
+<td><code>ERR_CODE_UNSUPPORTED_CMD</code></td>
+<td>Unknown or unsupported command byte / sub-command</td>
 </tr>
 <tr>
-<td>0x01</td>
-<td>Invalid command</td>
+<td>2</td>
+<td><code>ERR_CODE_NOT_FOUND</code></td>
+<td>Target not found (channel, contact, message, etc.)</td>
 </tr>
 <tr>
-<td>0x02</td>
-<td>Invalid parameter</td>
+<td>3</td>
+<td><code>ERR_CODE_TABLE_FULL</code></td>
+<td>Internal queue or table is full — retry later</td>
 </tr>
 <tr>
-<td>0x03</td>
-<td>Channel not found</td>
+<td>4</td>
+<td><code>ERR_CODE_BAD_STATE</code></td>
+<td>Operation not valid in current device state (e.g. iterator already running)</td>
 </tr>
 <tr>
-<td>0x04</td>
-<td>Channel already exists</td>
+<td>5</td>
+<td><code>ERR_CODE_FILE_IO_ERROR</code></td>
+<td>Filesystem or storage I/O failure</td>
 </tr>
 <tr>
-<td>0x05</td>
-<td>Channel index out of range</td>
-</tr>
-<tr>
-<td>0x06</td>
-<td>Secret mismatch</td>
-</tr>
-<tr>
-<td>0x07</td>
-<td>Message too long</td>
-</tr>
-<tr>
-<td>0x08</td>
-<td>Device busy</td>
-</tr>
-<tr>
-<td>0x09</td>
-<td>Not enough storage</td>
+<td>6</td>
+<td><code>ERR_CODE_ILLEGAL_ARG</code></td>
+<td>Invalid argument (bad length, out-of-range value, reserved field, etc.)</td>
 </tr>
 </tbody>
 </table>
-<p><strong>Note</strong>: Error codes may vary by firmware version. Always check byte 1 of <code>PACKET_ERROR</code> response.</p>
+<p><strong>Note</strong>: Error codes may vary by firmware version. Always check byte 1 of <code>PACKET_ERROR</code> response, and treat unknown codes as generic errors.</p>
 <h3 id="frame-handling">Frame Handling</h3>
 <p>BLE implementations enqueue and deliver one protocol frame per BLE write/notification at the firmware layer.</p>
 <ul>
@@ -2793,7 +2981,8 @@ Bytes 1-6: ACK Code (6 bytes, hex)
 <li><code>GET_CHANNEL</code> → <code>PACKET_CHANNEL_INFO</code></li>
 <li><code>SET_CHANNEL</code> → <code>PACKET_OK</code> or <code>PACKET_ERROR</code></li>
 <li><code>SEND_CHANNEL_MESSAGE</code> → <code>PACKET_MSG_SENT</code></li>
-<li><code>GET_MESSAGE</code> → <code>PACKET_CHANNEL_MSG_RECV</code>, <code>PACKET_CONTACT_MSG_RECV</code>, or <code>PACKET_NO_MORE_MSGS</code></li>
+<li><code>GET_MESSAGE</code> → <code>PACKET_CHANNEL_MSG_RECV</code>, <code>PACKET_CONTACT_MSG_RECV</code>, <code>PACKET_CHANNEL_DATA_RECV</code>, or <code>PACKET_NO_MORE_MSGS</code></li>
+<li><code>SEND_CHANNEL_DATA</code> → <code>PACKET_OK</code> or <code>PACKET_ERROR</code></li>
 <li><code>GET_BATTERY</code> → <code>PACKET_BATTERY</code></li>
 </ul>
 </li>
@@ -2895,7 +3084,7 @@ response = wait_for_response(PACKET_MSG_SENT)
 </li>
 <li>Send <code>CMD_SYNC_NEXT_MESSAGE</code> when <code>PUSH_CODE_MSG_WAITING</code> is received</li>
 <li>
-<p>Implement message deduplication to avoid display the same message twice</p>
+<p>Implement message deduplication to avoid displaying the same message twice</p>
 </li>
 <li>
 <p><strong>Channel Management</strong>:</p>

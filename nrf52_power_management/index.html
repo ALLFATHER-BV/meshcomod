@@ -1360,13 +1360,38 @@
 <li>Allows firmware to determine why it last shut down (user request, low voltage, boot protection)</li>
 </ul>
 <h3 id="shutdown-reason-tracking">Shutdown Reason Tracking</h3>
-<p>Shutdown reason codes (stored in GPREGRET2):
-| Code | Name | Description |
-|------|------|-------------|
-| 0x00 | NONE | Normal boot / no previous shutdown |
-| 0x4C | LOW_VOLTAGE | Runtime low voltage threshold reached |
-| 0x55 | USER | User requested powerOff() |
-| 0x42 | BOOT_PROTECT | Boot voltage protection triggered |</p>
+<p>Shutdown reason codes (stored in GPREGRET2):</p>
+<table>
+<thead>
+<tr>
+<th>Code</th>
+<th>Name</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0x00</td>
+<td>NONE</td>
+<td>Normal boot / no previous shutdown</td>
+</tr>
+<tr>
+<td>0x4C</td>
+<td>LOW_VOLTAGE</td>
+<td>Runtime low voltage threshold reached</td>
+</tr>
+<tr>
+<td>0x55</td>
+<td>USER</td>
+<td>User requested powerOff()</td>
+</tr>
+<tr>
+<td>0x42</td>
+<td>BOOT_PROTECT</td>
+<td>Boot voltage protection triggered</td>
+</tr>
+</tbody>
+</table>
 <h2 id="supported-boards">Supported Boards</h2>
 <table>
 <thead>
@@ -1562,25 +1587,115 @@
 - Use 50mV hysteresis for noise immunity
 - Wake the device from SYSTEMOFF when triggered</p>
 <p>VBUS wake is enabled via the POWER peripheral USBDETECTED event whenever <code>configureVoltageWake()</code> is used. This requires USB VBUS to be routed to the nRF52 (typical on nRF52840 boards with native USB).</p>
-<p><strong>LPCOMP Reference Selection (PWRMGT_LPCOMP_REFSEL)</strong>:
-| REFSEL | Fraction | VBAT @ 1M/1M divider (VDD=3.0-3.3) | VBAT @ 1.5M/1M divider (VDD=3.0-3.3) |
-|--------|----------|------------------------------------|--------------------------------------|
-| 0 | 1/8 | 0.75-0.82 V | 0.94-1.03 V |
-| 1 | 2/8 | 1.50-1.65 V | 1.88-2.06 V |
-| 2 | 3/8 | 2.25-2.47 V | 2.81-3.09 V |
-| 3 | 4/8 | 3.00-3.30 V | 3.75-4.12 V |
-| 4 | 5/8 | 3.75-4.12 V | 4.69-5.16 V |
-| 5 | 6/8 | 4.50-4.95 V | 5.62-6.19 V |
-| 6 | 7/8 | 5.25-5.77 V | 6.56-7.22 V |
-| 7 | ARef | - | - |
-| 8 | 1/16 | 0.38-0.41 V | 0.47-0.52 V |
-| 9 | 3/16 | 1.12-1.24 V | 1.41-1.55 V |
-| 10 | 5/16 | 1.88-2.06 V | 2.34-2.58 V |
-| 11 | 7/16 | 2.62-2.89 V | 3.28-3.61 V |
-| 12 | 9/16 | 3.38-3.71 V | 4.22-4.64 V |
-| 13 | 11/16 | 4.12-4.54 V | 5.16-5.67 V |
-| 14 | 13/16 | 4.88-5.36 V | 6.09-6.70 V |
-| 15 | 15/16 | 5.62-6.19 V | 7.03-7.73 V |</p>
+<p><strong>LPCOMP Reference Selection (PWRMGT_LPCOMP_REFSEL)</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>REFSEL</th>
+<th>Fraction</th>
+<th>VBAT @ 1M/1M divider (VDD=3.0-3.3)</th>
+<th>VBAT @ 1.5M/1M divider (VDD=3.0-3.3)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>1/8</td>
+<td>0.75-0.82 V</td>
+<td>0.94-1.03 V</td>
+</tr>
+<tr>
+<td>1</td>
+<td>2/8</td>
+<td>1.50-1.65 V</td>
+<td>1.88-2.06 V</td>
+</tr>
+<tr>
+<td>2</td>
+<td>3/8</td>
+<td>2.25-2.47 V</td>
+<td>2.81-3.09 V</td>
+</tr>
+<tr>
+<td>3</td>
+<td>4/8</td>
+<td>3.00-3.30 V</td>
+<td>3.75-4.12 V</td>
+</tr>
+<tr>
+<td>4</td>
+<td>5/8</td>
+<td>3.75-4.12 V</td>
+<td>4.69-5.16 V</td>
+</tr>
+<tr>
+<td>5</td>
+<td>6/8</td>
+<td>4.50-4.95 V</td>
+<td>5.62-6.19 V</td>
+</tr>
+<tr>
+<td>6</td>
+<td>7/8</td>
+<td>5.25-5.77 V</td>
+<td>6.56-7.22 V</td>
+</tr>
+<tr>
+<td>7</td>
+<td>ARef</td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td>8</td>
+<td>1/16</td>
+<td>0.38-0.41 V</td>
+<td>0.47-0.52 V</td>
+</tr>
+<tr>
+<td>9</td>
+<td>3/16</td>
+<td>1.12-1.24 V</td>
+<td>1.41-1.55 V</td>
+</tr>
+<tr>
+<td>10</td>
+<td>5/16</td>
+<td>1.88-2.06 V</td>
+<td>2.34-2.58 V</td>
+</tr>
+<tr>
+<td>11</td>
+<td>7/16</td>
+<td>2.62-2.89 V</td>
+<td>3.28-3.61 V</td>
+</tr>
+<tr>
+<td>12</td>
+<td>9/16</td>
+<td>3.38-3.71 V</td>
+<td>4.22-4.64 V</td>
+</tr>
+<tr>
+<td>13</td>
+<td>11/16</td>
+<td>4.12-4.54 V</td>
+<td>5.16-5.67 V</td>
+</tr>
+<tr>
+<td>14</td>
+<td>13/16</td>
+<td>4.88-5.36 V</td>
+<td>6.09-6.70 V</td>
+</tr>
+<tr>
+<td>15</td>
+<td>15/16</td>
+<td>5.62-6.19 V</td>
+<td>7.03-7.73 V</td>
+</tr>
+</tbody>
+</table>
 <p><strong>Important</strong>: For boards with a voltage divider on the battery sense pin, LPCOMP measures the divided voltage. Use:
 <code>VBAT_threshold ≈ (VDD * fraction) * divider_scale</code>, where <code>divider_scale = (Rtop + Rbottom) / Rbottom</code> (e.g., 2.0 for 1M/1M, 2.5 for 1.5M/1M, 3.0 for XIAO).</p>
 <h3 id="softdevice-compatibility">SoftDevice Compatibility</h3>
