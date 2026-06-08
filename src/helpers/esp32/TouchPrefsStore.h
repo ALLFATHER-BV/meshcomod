@@ -44,6 +44,11 @@ bool touchPrefsSetDutyMeterShown(bool show);
 bool touchPrefsGetUseMiles();
 bool touchPrefsSetUseMiles(bool use_miles);
 
+/** Map tile source: false = tile server + on-device cache (default), true = read tiles off the
+ *  microSD card (/tiles/<z>/<x>/<y>.jpg). T-Deck only (the V4 TFT has no SD slot). */
+bool touchPrefsGetTilesFromSd();
+bool touchPrefsSetTilesFromSd(bool from_sd);
+
 /** Global UI orientation, applied at boot before the screens are built so the
  *  whole layout reflows to the rotated resolution. Stored as the raw LVGL
  *  rotation code: 0 = portrait (LV_DISP_ROT_NONE), 1 = 90° (LV_DISP_ROT_90),

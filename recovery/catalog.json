@@ -4,11 +4,11 @@
   "firmwares": [
     {
       "name": "Meshcomod Touch",
-      "version": "beta_5",
+      "version": "beta_6",
       "type": "app",
-      "url": "http://app.meshcomod.com/firmware-download/prebuilt/releases/TOUCH/beta_5/LilyGo_TDeck_companion_radio_touch.bin",
-      "size": 2719952,
-      "md5": "64db419060aa3a2fe80d8750af91c85b"
+      "url": "http://app.meshcomod.com/firmware-download/prebuilt/releases/TOUCH/beta_6/LilyGo_TDeck_companion_radio_touch.bin",
+      "size": 2721472,
+      "md5": "68576c9674bfd3dd2d0fd67073e467e7"
     }
   ]
 }

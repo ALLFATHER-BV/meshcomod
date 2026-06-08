@@ -240,6 +240,7 @@ bool touchPrefsSetDutyMeterShown(bool show) {
 }
 
 static const char* KEY_USE_MILES = "use_miles";
+static const char* KEY_TILES_FROM_SD = "tiles_sd";
 
 bool touchPrefsGetUseMiles() {
   if (!s_begun) touchPrefsBegin();
@@ -251,6 +252,21 @@ bool touchPrefsSetUseMiles(bool use_miles) {
   s_prefs.end();
   if (!s_prefs.begin(TOUCH_NS, false)) return false;
   bool ok = s_prefs.putBool(KEY_USE_MILES, use_miles);
+  s_prefs.end();
+  s_begun = s_prefs.begin(TOUCH_NS, true);
+  return ok;
+}
+
+bool touchPrefsGetTilesFromSd() {
+  if (!s_begun) touchPrefsBegin();
+  return s_prefs.getBool(KEY_TILES_FROM_SD, false);   // default = tile server
+}
+
+bool touchPrefsSetTilesFromSd(bool from_sd) {
+  if (!s_begun) touchPrefsBegin();
+  s_prefs.end();
+  if (!s_prefs.begin(TOUCH_NS, false)) return false;
+  bool ok = s_prefs.putBool(KEY_TILES_FROM_SD, from_sd);
   s_prefs.end();
   s_begun = s_prefs.begin(TOUCH_NS, true);
   return ok;

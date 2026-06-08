@@ -615,7 +615,15 @@ struct LvDiscoveredEntry {
   uint32_t recv_ms;
   ContactInfo ci;
 };
-static LvDiscoveredEntry s_discovered[DISCOVERED_MAX];
+// PSRAM-first allocator (falls back to internal RAM) for moving large static UI buffers off
+// the scarce internal SRAM. Safe as a static initializer: PSRAM is up before C++ ctors run,
+// and the fallback keeps the original internal behaviour if PSRAM is ever unavailable.
+static void* psAlloc(size_t n) {
+    void* p = heap_caps_malloc(n, MALLOC_CAP_SPIRAM);
+    if (!p) p = heap_caps_malloc(n, MALLOC_CAP_8BIT);
+    return p;
+}
+static LvDiscoveredEntry* s_discovered = (LvDiscoveredEntry*)psAlloc(sizeof(LvDiscoveredEntry) * DISCOVERED_MAX);
 static uint32_t s_discovered_seq = 0;
 
 // ---- Touch-init deferred flag ----
@@ -4041,6 +4049,10 @@ static void buildSystemInfoSettings() {
   lv_obj_set_style_text_font(mbl, &g_font_14, LV_PART_MAIN);
   lv_obj_center(mbl);
 }
+
+// Map tile source: false = tile server + on-device cache, true = read tiles off the microSD.
+// The toggle + its callback (mapOptTilesSdCb) live in the map options popup, further down.
+static bool s_tiles_from_sd = false;
 
 // Distance units toggle (km <-> miles). Applies immediately — saves the
 // pref and forces the contacts list to re-render its distance badges.
@@ -11133,6 +11145,7 @@ static bool ensureTileFetchTaskRunning() {
 // tile was queued recently. Called from renderMapTiles after a SPIFFS
 // miss; the actual fetch happens off-thread.
 static void queueTileForFetch(uint8_t z, int32_t x, int32_t y) {
+  if (s_tiles_from_sd) return;            // microSD tile source: never fetch from the server
   if (WiFi.status() != WL_CONNECTED) return;
   if (tileFetchSeenRecently(z, x, y)) return;
   ensureTileFetchTaskRunning();
@@ -11185,16 +11198,30 @@ static void queueZoomPackForCenter() {
 static bool loadTileJpeg(uint8_t z, int32_t x, int32_t y,
                          uint8_t** out_data, size_t* out_len) {
 #if defined(ESP32)
-  if (!s_tiles_fs_ready) return false;
+  // JPEG only. We deliberately do NOT fall back to .png: this device can't decode PNG
+  // without RGB565 noise + a 256 KB ARGB8888 buffer per tile. Offline packs + the Wi-Fi
+  // proxy are both .jpg, so an SD tile tree must be .jpg too.
   char path[48];
-  // JPEG only. We deliberately do NOT fall back to .png: this device can't
-  // decode PNG without producing RGB565 noise + stalling the UI (lodepng
-  // needs a 256 KB ARGB8888 buffer per tile). Offline packs are .jpg and
-  // the Wi-Fi proxy now transcodes to .jpg, so a .png on disk is a stale
-  // artifact from an earlier build — treat it as absent so the fetcher
-  // re-downloads it as .jpg.
   snprintf(path, sizeof(path), "/tiles/%u/%ld/%ld.jpg",
            (unsigned)z, (long)x, (long)y);
+#if defined(HAS_TDECK_GT911)
+  if (s_tiles_from_sd) {
+    // Tile source = microSD: read straight off the card (fully offline, no server fetch).
+    if (!fmSdTryMount()) return false;
+    File fsd = SD.open(path, FILE_READ);
+    if (!fsd) return false;
+    const size_t szsd = fsd.size();
+    if (szsd == 0 || szsd > 80 * 1024) { fsd.close(); return false; }
+    uint8_t* bufsd = (uint8_t*)lvglPsramAlloc(szsd);
+    if (!bufsd) { fsd.close(); return false; }
+    const size_t nsd = fsd.read(bufsd, szsd);
+    fsd.close();
+    if (nsd != szsd) { lvglPsramFree(bufsd); return false; }
+    *out_data = bufsd; *out_len = szsd;
+    return true;
+  }
+#endif
+  if (!s_tiles_fs_ready) return false;
   if (!s_tiles_fs.exists(path)) return false;
   File f = s_tiles_fs.open(path, "r");
   if (!f) return false;
@@ -11414,6 +11441,15 @@ static void renderMapTiles() {
   }
 
 #if defined(ESP32)
+#if defined(HAS_TDECK_GT911)
+  if (s_tiles_from_sd) {
+    lv_label_set_text(s_map_status_lbl,
+        "Map tiles: microSD\n\n"
+        "Reading from /tiles\n"
+        "(JPEG: /tiles/z/x/y.jpg)\n\n"
+        "Map appears when a tile\nfor this area is found.");
+  } else
+#endif
   if (!s_tiles_fs_ready) {
     lv_label_set_text(s_map_status_lbl,
         "Map storage error.\nReflash the tiles partition.");
@@ -11631,6 +11667,21 @@ static void mapOptLinesCb(lv_event_t* e) {
   renderMapMarkers();   // rebuild links to reflect the new state
 }
 
+#if defined(HAS_TDECK_GT911)
+// Map tile source toggle (in the map options popup): ON = read tiles off the microSD
+// (fully offline, no server fetch); OFF = tile server + on-device cache.
+static void mapOptTilesSdCb(lv_event_t* e) {
+  if (lv_event_get_code(e) != LV_EVENT_VALUE_CHANGED) return;
+  const bool on = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED);
+  touchPrefsSetTilesFromSd(on);
+  s_tiles_from_sd = on;
+  if (on) fmSdTryMount();        // mount now so the reload below can read from the card
+  freeMapTiles();                // drop stale tile widgets → reload from the new source
+  renderMapTiles();
+  if (g_lv.task) g_lv.task->showAlert(on ? "Map tiles: microSD" : "Map tiles: server", 1400);
+}
+#endif
+
 // "Reload tiles" — delete the currently-visible tiles from the LittleFS cache
 // and re-queue them for download, so a corrupted/partial tile in view can be
 // repaired without wiping the whole pack. Bounded to the 9 on-screen tiles at
@@ -11760,7 +11811,7 @@ static void openMapOptions() {
   const lv_coord_t cardw = sw - 24;
   lv_obj_t* card = lv_obj_create(s_map_opts_root);
   lv_obj_remove_style_all(card);
-  lv_obj_set_size(card, cardw, 192);
+  lv_obj_set_size(card, cardw, 210);   // tall enough for the (T-Deck) SD-tiles row + About
   lv_obj_align(card, LV_ALIGN_TOP_MID, 0, 8);
   styleSurface(card, COLOR_PANEL, 8);
   lv_obj_set_style_border_color(card, lv_color_hex(0x18191A), LV_PART_MAIN);
@@ -11773,7 +11824,7 @@ static void openMapOptions() {
   lv_obj_set_style_text_font(title, &g_font_14, LV_PART_MAIN);
   lv_obj_set_style_text_color(title, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
   lv_obj_set_pos(title, 0, 0);
-  int y = 30;
+  int y = 26;
 
   // Row: Lines toggle.
   lv_obj_t* ll = lv_label_create(card);
@@ -11787,6 +11838,22 @@ static void openMapOptions() {
   lv_obj_add_event_cb(sw_lines, mapOptLinesCb, LV_EVENT_VALUE_CHANGED, nullptr);
   y += 40;
 
+#if defined(HAS_TDECK_GT911)
+  // Row: tile source — microSD (offline) vs the tile server.
+  {
+    lv_obj_t* tl = lv_label_create(card);
+    lv_label_set_text(tl, "Tiles from SD card");
+    lv_obj_set_style_text_color(tl, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
+    lv_obj_set_style_text_font(tl, &g_font_14, LV_PART_MAIN);
+    lv_obj_set_pos(tl, 2, y + 4);
+    lv_obj_t* sw_sd = lv_switch_create(card);
+    lv_obj_align(sw_sd, LV_ALIGN_TOP_RIGHT, 0, y);
+    if (s_tiles_from_sd) lv_obj_add_state(sw_sd, LV_STATE_CHECKED);
+    lv_obj_add_event_cb(sw_sd, mapOptTilesSdCb, LV_EVENT_VALUE_CHANGED, nullptr);
+    y += 40;
+  }
+#endif
+
   auto mk_row_btn = [&](const char* txt, lv_event_cb_t cb) {
     lv_obj_t* b = lv_btn_create(card);
     lv_obj_set_size(b, cardw - 24, 38);
@@ -11798,7 +11865,7 @@ static void openMapOptions() {
     lv_obj_set_style_text_font(l, &g_font_14, LV_PART_MAIN);
     lv_obj_set_style_text_color(l, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
     lv_obj_align(l, LV_ALIGN_LEFT_MID, 8, 0);
-    y += 44;
+    y += 40;
   };
   mk_row_btn(LV_SYMBOL_REFRESH "  Reload tiles in view", mapOptReloadCb);
   mk_row_btn(LV_SYMBOL_EYE_OPEN "  About / credits",     mapOptInfoCb);
@@ -12010,14 +12077,14 @@ static void mapContactsFillList() {
   lv_obj_clean(s_map_contacts_list);
 
   // Collect GPS-bearing contacts + their distance/age keys.
-  static MapContactEntry ents[64];
+  static MapContactEntry* ents = (MapContactEntry*)psAlloc(sizeof(MapContactEntry) * 64);
   int n = 0;
   const double self_lat = g_lv.task ? g_lv.task->getNodeLat() : 0.0;
   const double self_lon = g_lv.task ? g_lv.task->getNodeLon() : 0.0;
   uint32_t now_secs = 0;
   { mesh::RTCClock* rtc = the_mesh.getRTCClock(); if (rtc) now_secs = rtc->getCurrentTime(); }
   const uint32_t total = the_mesh.getNumContacts();
-  for (uint32_t i = 0; i < total && n < (int)(sizeof(ents)/sizeof(ents[0])); ++i) {
+  for (uint32_t i = 0; i < total && n < 64; ++i) {
     ContactInfo c;
     if (!the_mesh.getContactByIdx(i, c)) continue;
     if (c.gps_lat == 0 && c.gps_lon == 0) continue;
@@ -13888,7 +13955,7 @@ static void refreshContactsList() {
     int32_t  gps_lon;
     char     name[40];
   };
-  static Entry s_entries[128];
+  static Entry* s_entries = (Entry*)psAlloc(sizeof(Entry) * 128);
   int n_entries = 0;
   // Snapshot the favorites blob once per refresh. touchPrefsIsFavorite
   // hits NVS on every call, and with N contacts the contact-list rebuild
@@ -13916,7 +13983,7 @@ static void refreshContactsList() {
     }
     search_lc[n] = '\0';
   }
-  for (int i = 0; i < curr_count && n_entries < (int)(sizeof(s_entries)/sizeof(s_entries[0])); ++i) {
+  for (int i = 0; i < curr_count && n_entries < 128; ++i) {
     ContactInfo c;
     if (!the_mesh.getContactByIdx(static_cast<uint32_t>(i), c) || !c.name[0]) continue;
     const bool is_rep = (c.type == ADV_TYPE_REPEATER);
@@ -18051,6 +18118,7 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   if (_sensors && _node_prefs && _node_prefs->gps_enabled) {
     _sensors->setSettingValue("gps", "1");
   }
+  s_tiles_from_sd = touchPrefsGetTilesFromSd();   // map tile source: server (default) vs microSD
 #if defined(ESP32)
   // Bump the CPU above the 80 MHz base-config default. The base was
   // chosen for power on a headless companion build; on a touch device

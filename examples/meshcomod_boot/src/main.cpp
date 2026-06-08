@@ -24,11 +24,15 @@
 #include "esp_ota_ops.h"
 #include "esp_partition.h"
 #include "esp_image_format.h"
+#include "esp_heap_caps.h"
 #include "mbedtls/md.h"
 #include "backup.h"
 #include "launcher_bootloader.h"
 #include "TDeckTrackball.h"
 #include "TDeckKeyboard.h"
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <ArduinoJson.h>
 
 static const int16_t SCRW = 320, SCRH = 240;
 #define PIN_KB_SDA 18
@@ -40,6 +44,16 @@ SPIClass spiBus(HSPI);
 Adafruit_ST7789 tft(&spiBus, PIN_TFT_CS, PIN_TFT_DC, -1);
 static bool s_disp = false;
 static Preferences s_prefs;
+
+// Shared 4 KB scratch for the SD/flash copy loops, kept in PSRAM (lazily allocated) to free
+// internal SRAM. These loops never overlap (a backup always completes before an install /
+// restore writes), so one buffer is safe; a bad flash write is caught by esp_image_verify.
+#define IO_SZ 4096
+static uint8_t *ioBuf() {
+    static uint8_t *b = (uint8_t *)heap_caps_malloc(IO_SZ, MALLOC_CAP_SPIRAM);
+    if (!b) b = (uint8_t *)malloc(IO_SZ);   // fallback to internal RAM if PSRAM is unavailable
+    return b;
+}
 
 #define COL_BG  ST77XX_BLACK
 #define COL_HDR 0x02B5
@@ -76,10 +90,11 @@ static void printHashTwoLines(const char *hex, int16_t y) {
 
 // ---------------- menu ----------------
 static const char *MENU[] = {
-    "Firmwares", "Add firmware", "Backup to SD card", "Device info",
+    "Firmwares", "Add firmware", "Install over Wi-Fi", "Backup to SD card", "Device info",
     "Restore from SD", "Boot firmware", "Reboot device"
 };
-#define MENU_N 7
+#define MENU_N 8
+static void actWifiInstall();   // fwd decl (defined with the Wi-Fi block below)
 static int s_sel = 0;
 static void runLauncherCountdown();          // fwd decl
 static bool backupFirmware(const String &folder, bool wait);   // fwd decl (P3 auto-backup)
@@ -414,7 +429,23 @@ static void mountWithRetry(const char *title) {
 // descriptor magic (0xABCD5432) sits at +0x20. Robust to layout -- works for an app-only
 // image (offset 0) and a merged/factory bin (app at a 64 KB-aligned offset), regardless of
 // where (or whether) a partition table sits. Returns the app image's file offset.
-static bool findAppImage(File &f, uint32_t fsz, uint32_t *appOff) {
+// Read source for the installer: an SD File OR an in-RAM (PSRAM) buffer, so a Wi-Fi download
+// reuses the exact same install path. Mirrors File's size()/seek()/read() so call sites are
+// unchanged — only the helper/installer signatures flip from File& to BinSrc&.
+struct BinSrc {
+    File          *file = nullptr;
+    const uint8_t *mem  = nullptr; uint32_t mlen = 0, mpos = 0;
+    uint32_t size() { return file ? (uint32_t)file->size() : mlen; }
+    bool     seek(uint32_t p) { if (file) return file->seek(p); if (p > mlen) return false; mpos = p; return true; }
+    int      read(uint8_t *b, uint32_t n) {
+        if (file) return file->read(b, n);
+        if (mpos >= mlen) return 0; uint32_t k = mlen - mpos; if (k > n) k = n;
+        memcpy(b, mem + mpos, k); mpos += k; return (int)k;
+    }
+    void     close() { if (file) file->close(); }
+};
+
+static bool findAppImage(BinSrc &f, uint32_t fsz, uint32_t *appOff) {
     for (uint32_t off = 0; off + 0x24 <= fsz; off += 0x10000) {      // app parts are 64KB-aligned
         uint8_t b0 = 0, d[4] = {0};
         if (!f.seek(off) || f.read(&b0, 1) != 1) break;
@@ -428,7 +459,7 @@ static bool findAppImage(File &f, uint32_t fsz, uint32_t *appOff) {
 }
 // Exact byte length of the ESP app image at file offset `base`: 24-byte header + segments
 // + 1 checksum byte (16-aligned) + optional appended SHA-256. 0 = not a valid image.
-static uint32_t espAppImageLen(File &f, uint32_t base) {
+static uint32_t espAppImageLen(BinSrc &f, uint32_t base) {
     uint8_t hdr[24];
     if (!f.seek(base) || f.read(hdr, 24) != 24 || hdr[0] != 0xE9) return 0;
     uint8_t segs = hdr[1]; bool hashApp = (hdr[23] == 1);
@@ -450,7 +481,7 @@ static void md5sum(const uint8_t *d, size_t n, uint8_t out[16]) {
     mbedtls_md(mbedtls_md_info_from_type(MBEDTLS_MD_MD5), d, n, out);
 }
 // Read the firmware merged bin's OWN partition table (file offset 0x8000).
-static int mergedParseTable(File &f, PEntry *out, int maxn) {
+static int mergedParseTable(BinSrc &f, PEntry *out, int maxn) {
     int n = 0; uint8_t e[32];
     for (int i = 0; i < 32 && n < maxn; i++) {
         if (!f.seek(0x8000 + (uint32_t)i * 32) || f.read(e, 32) != 32) break;
@@ -524,14 +555,12 @@ static bool validatePartBin(const uint8_t *pt) {
 }
 // Install an SD .bin into ota_0. Accepts an app-only image OR a merged/factory bin (we
 // extract the app from the latter). Returns true on success (esp_ota validates the image).
-static bool installBin(const String &path) {
-    String name = path; int sl0 = name.lastIndexOf('/'); if (sl0 >= 0) name = name.substring(sl0 + 1);
+static bool installBinCore(BinSrc &f, const String &name) {
     header("Switch firmware"); bodyClear();
     textAt(8, 44, COL_TXT, 1, ("Installing " + name).c_str());
     const esp_partition_t *o0 = otaSlot();
-    File f = SD.open(path, FILE_READ);
-    if (!o0 || !f) { textAt(8, 70, COL_ERR, 1, "Cannot open file / slot."); return false; }
-    uint32_t fsz = (uint32_t)f.size();
+    if (!o0) { textAt(8, 70, COL_ERR, 1, "No OTA slot."); return false; }
+    uint32_t fsz = f.size();
     uint32_t appOff = 0, appLen = 0;
     if (!findAppImage(f, fsz, &appOff)) {
         // No app signature found -- dump what the file actually starts with, so we can tell.
@@ -576,10 +605,10 @@ static bool installBin(const String &path) {
     char b[48]; snprintf(b, sizeof b, "Writing %u KB into the slot...", (unsigned)(appLen / 1024)); textAt(8, 100, COL_TXT, 1, b);
     // RAW per-sector erase+write of the app into ota_0 (esp_ota_begin conflicts in our
     // launch-flag model; per-sector keeps each flash op short so the watchdog stays fed).
-    static uint8_t buf[4096]; uint32_t done = 0; esp_err_t err = ESP_OK; s_next_mark = 0;
+    uint8_t *buf = ioBuf(); uint32_t done = 0; esp_err_t err = ESP_OK; s_next_mark = 0;
     f.seek(appOff);
     while (done < appLen) {
-        uint32_t want = appLen - done; if (want > sizeof buf) want = sizeof buf;
+        uint32_t want = appLen - done; if (want > IO_SZ) want = IO_SZ;
         int rd = f.read(buf, want); if (rd <= 0) { err = ESP_FAIL; break; }
         if (esp_partition_erase_range(o0, done, 0x1000) != ESP_OK) { err = ESP_FAIL; break; }
         if (esp_partition_write(o0, done, buf, rd) != ESP_OK)      { err = ESP_FAIL; break; }
@@ -606,6 +635,21 @@ static bool installBin(const String &path) {
     textAt(8, 120, COL_OK, 1, "Installed. Booting firmware...");
     delay(800);
     return true;
+}
+// SD entry point: open the file, wrap it, run the shared installer.
+static bool installBin(const String &path) {
+    String name = path; int sl0 = name.lastIndexOf('/'); if (sl0 >= 0) name = name.substring(sl0 + 1);
+    File file = SD.open(path, FILE_READ);
+    if (!file) { header("Switch firmware"); bodyClear(); textAt(8, 70, COL_ERR, 1, "Cannot open file."); return false; }
+    BinSrc f; f.file = &file;
+    bool ok = installBinCore(f, name);
+    file.close();
+    return ok;
+}
+// Wi-Fi entry point: install a bin already downloaded into a (PSRAM) buffer.
+static bool installBinMem(const uint8_t *buf, uint32_t len, const String &name) {
+    BinSrc f; f.mem = buf; f.mlen = len;
+    return installBinCore(f, name);
 }
 // The firmware library: list SD *.bin, mark the one in the slot, run the chosen one.
 // ---------------- firmware library: /firmwares/<name>/{bins,backups} ----------------
@@ -868,9 +912,9 @@ static String latestBackupDir(const String &folder) {
 }
 static bool backupOnePartition(const esp_partition_t *p, const String &path) {
     File f = SD.open(path, FILE_WRITE); if (!f) return false;
-    static uint8_t buf[4096]; uint32_t done = 0; bool ok = true; s_next_mark = 0;
+    uint8_t *buf = ioBuf(); uint32_t done = 0; bool ok = true; s_next_mark = 0;
     while (done < p->size) {
-        uint32_t want = p->size - done; if (want > sizeof buf) want = sizeof buf;
+        uint32_t want = p->size - done; if (want > IO_SZ) want = IO_SZ;
         if (esp_partition_read(p, done, buf, want) != ESP_OK) { ok = false; break; }
         if (f.write(buf, want) != (size_t)want) { ok = false; break; }
         done += want; progressCb(done, p->size); delay(0);
@@ -968,10 +1012,10 @@ static void loadSnapshot(const String &dir) {
         header("Load backup"); bodyClear();
         textAt(8, 44, COL_TXT, 1, ("Restoring " + String(label)).c_str());
         char l[48]; snprintf(l, sizeof l, "%s  @0x%X", label, (unsigned)off); textAt(8, 70, COL_DIM, 1, l);
-        static uint8_t rb[4096]; uint32_t done = 0, tot = (uint32_t)rf.size();
+        uint8_t *rb = ioBuf(); uint32_t done = 0, tot = (uint32_t)rf.size();
         if (tot > sz) tot = sz; s_next_mark = 0;
         while (done < tot) {
-            uint32_t want = tot - done; if (want > sizeof rb) want = sizeof rb;
+            uint32_t want = tot - done; if (want > IO_SZ) want = IO_SZ;
             int rd = rf.read(rb, want); if (rd <= 0) { ok = false; break; }
             if (esp_flash_erase_region(NULL, off + done, 0x1000) != ESP_OK) { ok = false; break; }
             if (esp_flash_write(NULL, rb, off + done, (rd + 3) & ~3) != ESP_OK) { ok = false; break; }
@@ -1039,9 +1083,9 @@ static int listBinsIn(const String &dir, String *out, int maxn) {
 static bool flashAppFromFile(File &f, uint32_t appOff, uint32_t appLen, const esp_partition_t *o0) {
     const esp_partition_t *run = esp_ota_get_running_partition();
     if (!o0 || (run && run->address == o0->address)) return false;   // never erase the running app
-    static uint8_t buf[4096]; uint32_t done = 0; s_next_mark = 0; f.seek(appOff);
+    uint8_t *buf = ioBuf(); uint32_t done = 0; s_next_mark = 0; f.seek(appOff);
     while (done < appLen) {
-        uint32_t want = appLen - done; if (want > sizeof buf) want = sizeof buf;
+        uint32_t want = appLen - done; if (want > IO_SZ) want = IO_SZ;
         int rd = f.read(buf, want); if (rd <= 0) return false;
         if (esp_partition_erase_range(o0, done, 0x1000) != ESP_OK) return false;
         if (esp_partition_write(o0, done, buf, rd) != ESP_OK)      return false;
@@ -1145,8 +1189,9 @@ static void actUpdateFirmware(const String &folder) {
     File f = SD.open(path, FILE_READ);
     if (!f) { textAt(8, 90, COL_ERR, 1, "Cannot open the update bin."); footer("click / Enter: back"); waitForSelect(); return; }
     uint32_t fsz = (uint32_t)f.size(), appOff = 0;
-    if (!findAppImage(f, fsz, &appOff)) { f.close(); textAt(8, 90, COL_ERR, 1, "No app image in this bin."); footer("click / Enter: back"); waitForSelect(); return; }
-    uint32_t appLen = espAppImageLen(f, appOff);
+    BinSrc bs; bs.file = &f;
+    if (!findAppImage(bs, fsz, &appOff)) { f.close(); textAt(8, 90, COL_ERR, 1, "No app image in this bin."); footer("click / Enter: back"); waitForSelect(); return; }
+    uint32_t appLen = espAppImageLen(bs, appOff);
     if (appLen == 0 || (uint64_t)appOff + appLen > fsz) { f.close(); textAt(8, 90, COL_ERR, 1, "Bad app image in this bin."); footer("click / Enter: back"); waitForSelect(); return; }
     if (appLen > o0->size) { f.close(); textAt(8, 90, COL_ERR, 1, "App larger than the slot."); footer("click / Enter: back"); waitForSelect(); return; }
     // app-only OR merged bin: flash just the app into ota_0 (keeps the fixed table + all data),
@@ -1346,6 +1391,281 @@ static void runLauncherCountdown() {
 }
 
 // ---------------- arduino ----------------
+// ===================== Wi-Fi + firmware catalog (install/update over Wi-Fi) =====================
+// A JSON catalog lists installable firmwares; each entry carries its OWN download URL (the
+// firmwares are NOT hosted by meshcomod — the catalog just points to them). All fetches are
+// plain HTTP (mbedTLS won't fit the 1 MB factory partition); the meshcomod mirror serves the
+// catalog + meshcomod bins over HTTP, and a foreign HTTPS-only bin would be exposed via a
+// meshcomod HTTP proxy. Install reuses the existing installBin() path (app-only or merged).
+static const char *CATALOG_URL = "http://app.meshcomod.com/firmware-download/recovery/catalog.json";
+
+struct CatEntry { String name, version, type, url, md5; uint32_t size; };
+static const int CAT_MAX = 16;
+static CatEntry s_cat[CAT_MAX];
+static int s_catN = 0;
+
+// Filesystem-safe SD library folder name for a firmware (one folder per firmware).
+static String fsSafe(const String &s) {
+    String o; for (uint32_t i = 0; i < s.length(); i++) { char c = s[i];
+        o += (isalnum((unsigned char)c) || c == '-' || c == '_') ? c : '_'; }
+    return o.length() ? o : String("firmware");
+}
+
+// Always return a folder that doesn't exist yet: base, base_2, base_3, ... so every install
+// gets its OWN new firmware folder instead of overwriting/reusing an existing one.
+static String uniqueFwFolder(const String &base) {
+    String name = base;
+    for (int i = 2; i < 1000; i++) {
+        File d = SD.open(("/firmwares/" + name).c_str());
+        bool exists = d && d.isDirectory(); if (d) d.close();
+        if (!exists) break;
+        name = base + "_" + String(i);
+    }
+    return name;
+}
+
+// Read the companion app's saved Wi-Fi creds from shared NVS (namespace "meshcomod",
+// keys written by WifiRuntimeStore in the touch firmware). Returns true if an SSID exists.
+static bool readSavedWifi(String &ssid, String &pwd) {
+    Preferences p;
+    if (!p.begin("meshcomod", true)) return false;   // read-only
+    ssid = p.getString("wifi_ssid", "");
+    pwd  = p.getString("wifi_pwd", "");
+    p.end();
+    return ssid.length() > 0;
+}
+
+static bool wifiConnect(const String &ssid, const String &pwd) {
+    header("Wi-Fi"); bodyClear();
+    textAt(8, 44, COL_TXT, 1, ("Connecting to " + ssid).c_str());
+    WiFi.persistent(false);
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(ssid.c_str(), pwd.length() ? pwd.c_str() : nullptr);
+    uint32_t t0 = millis(); int dots = 0;
+    while (WiFi.status() != WL_CONNECTED && millis() - t0 < 20000) {
+        delay(250);
+        if (++dots % 4 == 0) { tft.fillRect(8, 62, SCRW - 16, 12, COL_BG);
+            char d[20]; int nd = (dots/4) % 8; memset(d,'.',nd); d[nd]=0; textAt(8,62,COL_DIM,1,d); }
+    }
+    if (WiFi.status() != WL_CONNECTED) { textAt(8, 80, COL_ERR, 1, "Connect failed - check password / signal."); return false; }
+    char ip[44]; snprintf(ip, sizeof ip, "Connected: %s", WiFi.localIP().toString().c_str());
+    textAt(8, 80, COL_OK, 1, ip);
+    char hp[44]; snprintf(hp, sizeof hp, "free heap %u KB", (unsigned)(ESP.getFreeHeap() / 1024));
+    textAt(8, 98, COL_DIM, 1, hp);
+    return true;
+}
+
+// On-screen-keyboard password entry. Enter = submit, Backspace = delete, Esc(`) = cancel.
+static bool enterPassword(const String &ssid, String &out) {
+    out = "";
+    header("Wi-Fi password"); bodyClear();
+    textAt(8, 40, COL_DIM, 1, ssid.c_str());
+    footer("type password    Enter: connect    `: cancel");
+    for (;;) {
+        tdeckKeyboardPoll();
+        int k = tdeckKeyboardReadKey();
+        if (k == '\r' || k == '\n') return out.length() > 0;
+        else if (k == 8 || k == 127) { if (out.length()) out.remove(out.length() - 1); }
+        else if (k == '`' || k == 27) return false;
+        else if (k >= 32 && k < 127) out += (char)k;
+        else { delay(8); continue; }
+        tft.fillRect(8, 64, SCRW - 16, 22, COL_BG);
+        String mask; for (uint32_t i = 0; i < out.length(); i++) mask += '*';
+        textAt(8, 64, COL_TXT, 2, mask.c_str());
+        delay(8);
+    }
+}
+
+static bool wifiScanPick(String &ssid) {
+    header("Wi-Fi"); bodyClear(); textAt(8, 44, COL_TXT, 1, "Scanning for networks...");
+    WiFi.mode(WIFI_STA); WiFi.disconnect(); delay(100);
+    int n = WiFi.scanNetworks();
+    if (n <= 0) { textAt(8, 70, COL_ERR, 1, "No networks found (2.4 GHz only)"); delay(1400); return false; }
+    static String names[24]; if (n > 24) n = 24;
+    for (int i = 0; i < n; i++) names[i] = WiFi.SSID(i);
+    int idx = browseList("Select network", names, n, "click: choose    (top row: back)");
+    if (idx < 0) return false;
+    ssid = names[idx];
+    return true;
+}
+
+// Bring Wi-Fi up: reuse the app's saved creds first (one-tap), else scan + pick + password.
+static bool ensureWifi() {
+    if (WiFi.status() == WL_CONNECTED) return true;
+    String ssid, pwd;
+    if (readSavedWifi(ssid, pwd) && wifiConnect(ssid, pwd)) { delay(600); return true; }
+    if (!wifiScanPick(ssid)) return false;
+    if (!enterPassword(ssid, pwd)) return false;
+    bool ok = wifiConnect(ssid, pwd); delay(800); return ok;
+}
+
+// GET a (small) URL into a String. HTTP only — mbedTLS/HTTPS would blow the 1 MB factory
+// partition. The catalog + meshcomod bins live on the HTTP mirror; a foreign firmware whose
+// URL is HTTPS-only must be exposed over HTTP (a meshcomod download proxy, like the tile proxy).
+// Integrity doesn't rely on TLS: bins are MD5-checked against the catalog before flashing.
+static bool httpGetString(const String &url, String &out) {
+    WiFiClient c; HTTPClient http;
+    if (!http.begin(c, url)) return false;
+    http.setUserAgent("meshcomod-recovery");
+    int code = http.GET();
+    if (code == 200) out = http.getString();
+    http.end();
+    return code == 200;
+}
+
+static bool fetchCatalog() {
+    header("Firmware catalog"); bodyClear(); textAt(8, 44, COL_TXT, 1, "Fetching catalog...");
+    String json;
+    if (!httpGetString(CATALOG_URL, json)) { textAt(8, 70, COL_ERR, 1, "Catalog fetch failed"); delay(1600); return false; }
+    DynamicJsonDocument doc(8192);
+    if (deserializeJson(doc, json)) { textAt(8, 70, COL_ERR, 1, "Catalog parse error"); delay(1600); return false; }
+    s_catN = 0;
+    for (JsonObject o : doc["firmwares"].as<JsonArray>()) {
+        if (s_catN >= CAT_MAX) break;
+        CatEntry &c = s_cat[s_catN++];
+        c.name = (const char *)(o["name"] | "?"); c.version = (const char *)(o["version"] | "");
+        c.type = (const char *)(o["type"] | "app"); c.url = (const char *)(o["url"] | "");
+        c.md5 = (const char *)(o["md5"] | ""); c.size = o["size"] | 0u;
+    }
+    if (s_catN == 0) { textAt(8, 70, COL_ERR, 1, "Catalog has no firmwares"); delay(1600); return false; }
+    return true;
+}
+
+static void drawDlBar(uint32_t got, uint32_t total) {
+    if (!s_disp || !total) return;
+    int16_t x = 8, y = 110, w = SCRW - 16, h = 14;
+    tft.drawRect(x, y, w, h, COL_DIM);
+    int fw = (int)((uint64_t)(w - 2) * got / total); if (fw < 0) fw = 0; if (fw > w - 2) fw = w - 2;
+    tft.fillRect(x + 1, y + 1, fw, h - 2, COL_BAR);
+    char p[40]; snprintf(p, sizeof p, "%u / %u KB", (unsigned)(got / 1024), (unsigned)(total / 1024));
+    tft.fillRect(x, y + h + 3, w, 12, COL_BG); textAt(x, y + h + 3, COL_DIM, 1, p);
+}
+
+static String md5Hex(const uint8_t *buf, uint32_t len) {
+    uint8_t out[16];
+    const mbedtls_md_info_t *info = mbedtls_md_info_from_type(MBEDTLS_MD_MD5);
+    if (!info || mbedtls_md(info, buf, len, out) != 0) return "";
+    char hex[33]; for (int i = 0; i < 16; i++) sprintf(hex + i * 2, "%02x", out[i]); hex[32] = 0;
+    return String(hex);
+}
+
+// Stream a bin over HTTP into a PSRAM buffer (T-Deck has 8 MB; bins ~2.7 MB) with a progress
+// bar. Returns the heap_caps buffer + length (caller frees with heap_caps_free), or false.
+// Enforces the catalog's expected size when given.
+static bool httpDownloadPsram(const String &url, uint32_t expectLen, uint8_t **outBuf, uint32_t *outLen) {
+    *outBuf = nullptr; *outLen = 0;
+    WiFiClient c; HTTPClient http;
+    if (!http.begin(c, url)) return false;
+    http.setUserAgent("meshcomod-recovery");
+    int code = http.GET();
+    if (code != 200) { http.end(); return false; }
+    int clen = http.getSize();
+    uint32_t cap = (clen > 0) ? (uint32_t)clen : (expectLen ? expectLen : 4u * 1024 * 1024);
+    uint8_t *buf = (uint8_t *)heap_caps_malloc(cap, MALLOC_CAP_SPIRAM);
+    if (!buf) { http.end(); return false; }
+    WiFiClient *st = http.getStreamPtr();
+    uint32_t got = 0, last = 0, total = (clen > 0) ? (uint32_t)clen : cap;
+    while (got < cap) {
+        size_t avail = st->available();
+        if (avail) {
+            uint32_t want = (got + avail > cap) ? (cap - got) : (uint32_t)avail;
+            int r = st->readBytes(buf + got, want);
+            if (r <= 0) break;
+            got += (uint32_t)r;
+            if (millis() - last > 120) { drawDlBar(got, total); last = millis(); }
+        } else {
+            if (!http.connected()) break;
+            delay(2);
+        }
+        if (clen > 0 && got >= (uint32_t)clen) break;
+    }
+    http.end();
+    drawDlBar(got, total);
+    bool ok = (got > 0) && (clen <= 0 || got == (uint32_t)clen) && (expectLen == 0 || got == expectLen);
+    if (!ok) { heap_caps_free(buf); return false; }
+    *outBuf = buf; *outLen = got;
+    return true;
+}
+
+// Main menu action: connect -> fetch catalog -> pick -> download (MD5) -> install -> boot.
+static void actWifiInstall() {
+    if (!ensureWifi()) { delay(800); return; }
+    if (!fetchCatalog()) return;
+    static String names[CAT_MAX];
+    for (int i = 0; i < s_catN; i++) {
+        names[i] = s_cat[i].name;
+        if (s_cat[i].version.length()) names[i] += " " + s_cat[i].version;
+    }
+    for (;;) {
+        int idx = browseList("Install over Wi-Fi", names, s_catN, "click: install   (top: back)");
+        if (idx < 0) return;
+        CatEntry &e = s_cat[idx];
+        // confirm
+        header("Install firmware"); bodyClear();
+        textAt(8, 44, COL_TXT, 2, e.name.c_str());
+        char l[60]; snprintf(l, sizeof l, "type=%s   %u KB", e.type.c_str(), (unsigned)(e.size / 1024));
+        textAt(8, 76, COL_DIM, 1, l);
+        textAt(8, 104, COL_TXT, 1, "Replace the installed firmware (ota_0)?");
+        footer("click / Enter: install      `: cancel");
+        bool go = false; armClick();
+        for (;;) {
+            tdeckKeyboardPoll(); int k = tdeckKeyboardReadKey();
+            if (k == '\r' || k == '\n' || k == ' ') { go = true; break; }
+            if (k == '`' || k == 27) break;
+            if (clickPressEdge()) { go = true; break; }
+            delay(12);
+        }
+        if (!go) continue;
+        // download -> PSRAM
+        header("Install firmware"); bodyClear();
+        textAt(8, 40, COL_TXT, 1, ("Downloading " + e.name).c_str()); footer("");
+        uint8_t *buf = nullptr; uint32_t len = 0;
+        if (!httpDownloadPsram(e.url, e.size, &buf, &len)) {
+            textAt(8, 150, COL_ERR, 1, "Download failed (HTTP / size)."); footer("click: back"); waitForSelect(); continue;
+        }
+        // verify MD5 against the catalog before flashing
+        if (e.md5.length()) {
+            textAt(8, 150, COL_DIM, 1, "Verifying MD5...");
+            if (!md5Hex(buf, len).equalsIgnoreCase(e.md5)) {
+                heap_caps_free(buf);
+                textAt(8, 150, COL_ERR, 1, "MD5 mismatch - not flashing."); footer("click: back"); waitForSelect(); continue;
+            }
+            textAt(8, 150, COL_OK, 1, "MD5 verified."); delay(500);
+        }
+        // If an SD card is present, mirror the SD-based install: snapshot the outgoing firmware,
+        // then make this a first-class library entry (folder + saved bin) and mark it current — so
+        // a Wi-Fi install shows in Firmwares, is restorable, and is tracked like any SD install.
+        // sdBegin() is false with no card, so all of this is skipped then (install still proceeds).
+        if (sdBegin()) {
+            String cur = currentFw();
+            if (cur.length()) backupFirmware(cur, false);          // roll-back point for the outgoing fw
+            String fid  = uniqueFwFolder(fsSafe(e.name));           // always a fresh folder, never reuse
+            SD.mkdir("/firmwares");
+            String fdir = "/firmwares/" + fid;
+            SD.mkdir(fdir.c_str()); SD.mkdir((fdir + "/bins").c_str());
+            String binpath = fdir + "/bins/" + fid + ".bin";
+            SD.remove(binpath.c_str());
+            File wf = SD.open(binpath.c_str(), FILE_WRITE);
+            if (wf) {
+                textAt(8, 168, COL_DIM, 1, "Saving to SD library...");
+                uint32_t off = 0; bool werr = false;
+                while (off < len) {
+                    uint32_t w = (len - off > 4096) ? 4096 : (len - off);
+                    if (wf.write(buf + off, w) != w) { werr = true; break; }
+                    off += w; if ((off & 0x1FFFF) == 0) delay(0);
+                }
+                wf.flush(); wf.close();
+                if (werr) SD.remove(binpath.c_str()); else setCurrentFw(fid);   // track it as loaded
+            }
+        }
+        // install via the shared installer (app-only or merged), then boot it
+        bool ok = installBinMem(buf, len, e.name);
+        heap_caps_free(buf);
+        if (ok) { delay(500); launchFirmware(); }     // reboots into the new firmware; never returns
+        footer("click: back"); waitForSelect();
+    }
+}
+
 void setup() {
     Serial.begin(115200);
     pinMode(PIN_PERIPH_POWER, OUTPUT); digitalWrite(PIN_PERIPH_POWER, HIGH);
@@ -1390,11 +1710,12 @@ void loop() {
         switch (s_sel) {
             case 0: actFirmwares();       break;
             case 1: actAddFirmware();     break;
-            case 2: actBackup();          break;
-            case 3: actInfo();            break;
-            case 4: actRestore();         break;
-            case 5: actBootFirmware();    break;
-            case 6: actRebootDevice();    break;
+            case 2: actWifiInstall();     break;
+            case 3: actBackup();          break;
+            case 4: actInfo();            break;
+            case 5: actRestore();         break;
+            case 6: actBootFirmware();    break;
+            case 7: actRebootDevice();    break;
         }
         drainTrackball(); armClick(); drawMenu();
     }
