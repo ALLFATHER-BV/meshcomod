@@ -1,0 +1,14 @@
+{
+  "_comment": "Meshcomod recovery firmware catalog. The on-device recovery fetches this list and installs the chosen firmware over Wi-Fi. Each entry carries its OWN download URL (meshcomod does not host the firmware images; the catalog just points to them). Fields: name (shown), version (shown), type ('app' = app-only image written to ota_0; 'merged' = full/merged image, the recovery extracts the app + synthesizes a partition table so it runs with its own filesystem), url (HTTP — the recovery has no TLS, so an HTTPS-only firmware must be exposed over an HTTP proxy), size (bytes), md5 (verified before flashing). Add a firmware = append an entry here; no recovery reflash needed.",
+  "schema": 1,
+  "firmwares": [
+    {
+      "name": "Meshcomod Touch",
+      "version": "beta_5",
+      "type": "app",
+      "url": "http://app.meshcomod.com/firmware-download/prebuilt/releases/TOUCH/beta_5/LilyGo_TDeck_companion_radio_touch.bin",
+      "size": 2719952,
+      "md5": "64db419060aa3a2fe80d8750af91c85b"
+    }
+  ]
+}
