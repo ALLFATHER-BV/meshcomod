@@ -17162,6 +17162,11 @@ static void buildUiTree() {
   lv_obj_set_style_bg_color(g_lv.keyboard, lv_color_hex(0x1B2B3A),    LV_PART_ITEMS);
   lv_obj_set_style_border_color(g_lv.keyboard, lv_color_hex(0x18191A), LV_PART_ITEMS);
   lv_obj_set_style_text_color(g_lv.keyboard,  lv_color_hex(COLOR_TEXT), LV_PART_ITEMS);
+  // Key labels use the extended font (montserrat + Cyrillic/Greek/Arabic fallback)
+  // so the secondary keyboard layouts render real glyphs instead of tofu boxes.
+  // Plain LV_FONT_DEFAULT (montserrat_14, no fallback) showed non-Latin keys as ▯.
+  // g_font_14 is the same size, so key sizing/spacing is unchanged.
+  lv_obj_set_style_text_font(g_lv.keyboard, &g_font_14, LV_PART_ITEMS);
   lv_obj_set_style_bg_color(g_lv.keyboard, lv_color_hex(COLOR_ACCENT),
                              LV_PART_ITEMS | LV_STATE_PRESSED);
   // Pre-warm the keyboard: force LVGL to compute its full button-matrix
