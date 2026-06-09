@@ -3821,8 +3821,11 @@ static void buildQuickReplySettings() {
     lv_textarea_set_text(ta, buf);
     lv_obj_set_style_text_color(ta, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
     lv_obj_set_style_text_font(ta, &g_font_12, LV_PART_MAIN);
-    lv_obj_add_event_cb(ta, composerFocusCb, LV_EVENT_FOCUSED, nullptr);
-    lv_obj_add_event_cb(ta, kbActivityPressCb, LV_EVENT_PRESSED, nullptr);
+    // Bind tap -> keyboard mirror exactly like every other settings field.
+    // (The old composerFocusCb path is a chat-composer callback that no-ops
+    // for a null panel, so QR fields never bound the keyboard and couldn't be
+    // typed into; saveQuickRepliesCb already syncs the mirror back on save.)
+    attachSettingsTaEvents(ta);
     g_set_modal.qr_tas[i] = ta;
     y += 36;
   }
@@ -10639,6 +10642,39 @@ static lv_obj_t* s_map_status_lbl  = nullptr;
 static fs::LittleFSFS s_tiles_fs;
 static bool           s_tiles_fs_ready = false;
 
+// Active tile-cache backend + path prefix. Normally the dedicated "tiles"
+// LittleFS partition above (prefix ""). When that partition is ABSENT — e.g.
+// running under bmorcelli's Launcher, whose partition table has no "tiles"
+// partition — we fall back to the SD card under /meshcomod/tiles so Wi-Fi tiles
+// still cache + display (see the mount logic in begin()). All cache access goes
+// through the tileCache* helpers, which apply s_tile_root and route to the
+// active fs. Concurrency is fine on either backend: esp_littlefs locks the
+// partition internally, and FATFS is built FF_FS_REENTRANT=1 (per-volume mutex),
+// so the core-0 fetch task and the core-1 render thread can't corrupt the SD.
+static fs::FS*        s_tile_fs   = nullptr;
+static char           s_tile_root[16] = "";
+
+static inline bool tileCacheExists(const char* rel) {
+  if (!s_tile_fs) return false;
+  char p[80]; snprintf(p, sizeof p, "%s%s", s_tile_root, rel);
+  return s_tile_fs->exists(p);
+}
+static inline File tileCacheOpen(const char* rel, const char* mode) {
+  if (!s_tile_fs) return File();
+  char p[80]; snprintf(p, sizeof p, "%s%s", s_tile_root, rel);
+  return s_tile_fs->open(p, mode);
+}
+static inline void tileCacheRemove(const char* rel) {
+  if (!s_tile_fs) return;
+  char p[80]; snprintf(p, sizeof p, "%s%s", s_tile_root, rel);
+  s_tile_fs->remove(p);
+}
+static inline void tileCacheMkdir(const char* rel) {
+  if (!s_tile_fs) return;
+  char p[80]; snprintf(p, sizeof p, "%s%s", s_tile_root, rel);
+  s_tile_fs->mkdir(p);
+}
+
 // ----- Wi-Fi tile fetcher (Phase 4.1c) -----
 //
 // When the user is on the Map tab AND Wi-Fi is up, any tile that fails
@@ -10876,10 +10912,10 @@ static void ensureTilesDirPath(uint8_t z, int32_t x) {
   // LittleFS requires explicit mkdir; opening a deep path won't auto-
   // create the parents.
   char p[40];
-  snprintf(p, sizeof(p), "/tiles");                       s_tiles_fs.mkdir(p);
-  snprintf(p, sizeof(p), "/tiles/%u", (unsigned)z);        s_tiles_fs.mkdir(p);
+  snprintf(p, sizeof(p), "/tiles");                       tileCacheMkdir(p);
+  snprintf(p, sizeof(p), "/tiles/%u", (unsigned)z);        tileCacheMkdir(p);
   snprintf(p, sizeof(p), "/tiles/%u/%ld",
-           (unsigned)z, (long)x);                          s_tiles_fs.mkdir(p);
+           (unsigned)z, (long)x);                          tileCacheMkdir(p);
 }
 
 // ----- Firmware version check (reuses the core-0 fetch worker) -----
@@ -11065,13 +11101,13 @@ static void tileFetchTaskFn(void* arg) {
              "/tiles/%u/%ld/%ld.jpg", (unsigned)req.z, (long)req.x, (long)req.y);
     snprintf(path_png, sizeof(path_png),
              "/tiles/%u/%ld/%ld.png", (unsigned)req.z, (long)req.x, (long)req.y);
-    if (s_tiles_fs.exists(path_jpg)) {
+    if (tileCacheExists(path_jpg)) {
       ++s_tile_fetch_ok;
       if (s_tile_fetch_pending > 0) --s_tile_fetch_pending;
       continue;
     }
-    if (s_tiles_fs.exists(path_png)) {
-      s_tiles_fs.remove(path_png);   // stale noise-tile — reclaim the space
+    if (tileCacheExists(path_png)) {
+      tileCacheRemove(path_png);   // stale noise-tile — reclaim the space
     }
 
     // Heap-safety gate: opening a TCP socket costs ~6 KB of internal DMA
@@ -11131,7 +11167,7 @@ static void tileFetchTaskFn(void* arg) {
       int content_len = http.getSize();
       // Sanity cap — refuse anything > 100 KB. Tiles are typically 10-30 KB.
       if (content_len > 0 && content_len <= 100 * 1024) {
-        File f = s_tiles_fs.open(path_jpg, "w");
+        File f = tileCacheOpen(path_jpg, "w");
         if (f) {
           WiFiClient* stream = http.getStreamPtr();
           uint8_t buf[1024];
@@ -11145,7 +11181,7 @@ static void tileFetchTaskFn(void* arg) {
           }
           f.close();
           if (remaining == 0) wrote = true;
-          else                s_tiles_fs.remove(path_jpg);  // partial write — discard
+          else                tileCacheRemove(path_jpg);  // partial write — discard
         }
       }
     }
@@ -11274,9 +11310,9 @@ static void queueZoomPackForCenter() {
     const int32_t ty = (int32_t)floor(wy / 256.0);
     char path[48];
     snprintf(path, sizeof path, "/tiles/%u/%ld/%ld.jpg", (unsigned)z, (long)tx, (long)ty);
-    if (s_tiles_fs.exists(path)) continue;    // already have an offline pack tile
+    if (tileCacheExists(path)) continue;    // already have an offline pack tile
     snprintf(path, sizeof path, "/tiles/%u/%ld/%ld.png", (unsigned)z, (long)tx, (long)ty);
-    if (s_tiles_fs.exists(path)) continue;    // already Wi-Fi-fetched
+    if (tileCacheExists(path)) continue;    // already Wi-Fi-fetched
     queueTileForFetch(z, tx, ty);
   }
 }
@@ -11347,8 +11383,8 @@ static bool loadTileJpeg(uint8_t z, int32_t x, int32_t y,
   }
 #endif
   if (!s_tiles_fs_ready) return false;
-  if (!s_tiles_fs.exists(path)) return false;
-  File f = s_tiles_fs.open(path, "r");
+  if (!tileCacheExists(path)) return false;
+  File f = tileCacheOpen(path, "r");
   if (!f) return false;
   const size_t sz = f.size();
   if (sz == 0 || sz > 80 * 1024) { f.close(); return false; }  // sanity cap
@@ -11385,7 +11421,7 @@ static uint8_t bestAvailableZoom(double lat, double lon) {
     const int32_t ty = (int32_t)floor(wy / 256.0);
     char path[48];
     snprintf(path, sizeof(path), "/tiles/%d/%ld/%ld.jpg", z, (long)tx, (long)ty);
-    if (s_tiles_fs.exists(path)) return (uint8_t)z;
+    if (tileCacheExists(path)) return (uint8_t)z;
   }
   return 0;
 #else
@@ -11580,8 +11616,17 @@ static void renderMapTiles() {
   } else
 #endif
   if (!s_tiles_fs_ready) {
+#if defined(HAS_TDECK_GT911)
+    if (SD.cardType() != CARD_NONE)
+      lv_label_set_text(s_map_status_lbl,
+          "Map storage error.\n\nSD card detected but the\ntile cache didn't mount.\nReboot to retry.");
+    else
+      lv_label_set_text(s_map_status_lbl,
+          "No map storage.\n\nInsert an SD card to cache\nWi-Fi tiles (or reflash to\nrestore the tiles partition).");
+#else
     lv_label_set_text(s_map_status_lbl,
         "Map storage error.\nReflash the tiles partition.");
+#endif
   } else if (wifi_up) {
     // Wi-Fi up: the missing tiles were just queued for download. Reassure
     // the user it's working — the screen repaints (s_tile_fetch_dirty) as
@@ -11839,7 +11884,7 @@ static void mapReloadVisibleTiles() {
       char path[48];
       snprintf(path, sizeof(path), "/tiles/%u/%ld/%ld.jpg",
                (unsigned)s_map_zoom, (long)tx, (long)ty);
-      if (s_tiles_fs_ready && s_tiles_fs.exists(path)) s_tiles_fs.remove(path);
+      if (s_tiles_fs_ready && tileCacheExists(path)) tileCacheRemove(path);
       // Clear the dedup ring entry so queueTileForFetch doesn't skip it as
       // "seen recently".
       const uint32_t k = tileFetchDedupKey(s_map_zoom, tx, ty);
@@ -12515,9 +12560,9 @@ static bool mapZoomReachable(uint8_t z) {
   const long ty = (long)floor(wy / 256.0);
   char path[48];
   snprintf(path, sizeof(path), "/tiles/%u/%ld/%ld.jpg", (unsigned)z, tx, ty);
-  if (s_tiles_fs.exists(path)) return true;
+  if (tileCacheExists(path)) return true;
   snprintf(path, sizeof(path), "/tiles/%u/%ld/%ld.png", (unsigned)z, tx, ty);
-  if (s_tiles_fs.exists(path)) return true;
+  if (tileCacheExists(path)) return true;
 #if defined(MULTI_TRANSPORT_COMPANION)
   if (WiFi.status() == WL_CONNECTED) return true;   // renderMapTiles will fetch it
 #endif
@@ -18383,6 +18428,38 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
       Serial.printf("[TILE] reformat -> ready=%d totalBytes=%u\n",
                     (int)s_tiles_fs_ready, (unsigned)s_tiles_fs.totalBytes());
     }
+  }
+
+  // Pick the active tile-cache backend now the partition mount has been tried.
+  // Prefer the dedicated "tiles" partition; if it's absent — e.g. running under
+  // Launcher, whose partition table has no "tiles" partition — fall back to the
+  // SD card under /meshcomod/tiles so Wi-Fi tiles still cache + display instead
+  // of failing with "Map storage error". s_tiles_fs_ready then means "a tile
+  // cache (partition OR SD) is available".
+  if (s_tiles_fs_ready) {
+    s_tile_fs = &s_tiles_fs;
+    s_tile_root[0] = '\0';
+  }
+#if defined(HAS_TDECK_GT911)
+  // Under Launcher there's no "tiles" partition; cache to the SD card instead.
+  // main.cpp already mounted the card for SD data storage (boot runs well before
+  // ui_task.begin()), so PREFER that live mount via SD.cardType(). Calling
+  // fmSdTryMount() unconditionally would SD.end()+remount the card mid-boot and
+  // can fail while DataStore holds the volume — which left the map stuck on the
+  // storage error. Only walk the mount ladder if the card isn't already up.
+  else if (SD.cardType() != CARD_NONE || fmSdTryMount()) {
+    s_sd_mounted = true;     // trust the live mount; skip future remount ladders
+    SD.mkdir("/meshcomod");
+    SD.mkdir("/meshcomod/tiles");
+    s_tile_fs = &SD;
+    strncpy(s_tile_root, "/meshcomod", sizeof s_tile_root - 1);
+    s_tiles_fs_ready = true;
+    Serial.printf("[TILE] no tiles partition -> caching Wi-Fi tiles on SD /meshcomod/tiles (cardType=%d)\n",
+                  (int)SD.cardType());
+  }
+#endif
+  else {
+    s_tile_fs = nullptr;   // no cache backend at all -> map shows the storage notice
   }
 #endif
 

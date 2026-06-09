@@ -296,8 +296,27 @@ void setup() {
 #if defined(HAS_TDECK_GT911)
   {
     extern SPIClass* tdeckSharedSPI();
-    bool want_sd = !spiffs_ok;            // no SPIFFS partition -> must use SD
-    { Preferences _p; if (_p.begin("touch", true)) { if (_p.getBool("use_sd", false)) want_sd = true; _p.end(); } }
+    bool use_sd_pref = false, setup_done = false;
+    { Preferences _p; if (_p.begin("touch", true)) {
+        use_sd_pref = _p.getBool("use_sd", false);    // explicit user choice
+        setup_done  = _p.getBool("setup_ok", false);  // finished first-run setup
+        _p.end();
+    } }
+
+    // First-run SD default: the very first time meshcomod boots on a brand-new
+    // device — the user hasn't finished setup yet AND nothing is stored on
+    // SPIFFS — prefer the SD card when one is present. Keeps internal flash free
+    // and is Launcher-friendly. The "no SPIFFS data" guard is what makes this
+    // safe: a device that already holds data on internal flash (e.g. one updated
+    // from an earlier build) is never silently migrated onto an empty card.
+    bool spiffs_has_data = spiffs_ok &&
+        (SPIFFS.exists("/new_prefs") || SPIFFS.exists("/node_prefs") ||
+         SPIFFS.exists("/identity/_main.id"));
+    bool fresh_install = !use_sd_pref && !setup_done && !spiffs_has_data;
+
+    bool want_sd = !spiffs_ok      // no usable SPIFFS partition -> must use SD
+                || use_sd_pref     // user opted in
+                || fresh_install;  // brand-new device: try SD first
     SPIClass* _spi = tdeckSharedSPI();
     if (want_sd && _spi) {
       for (int a = 0; a < 4 && !sd_storage; ++a) {   // short mount ladder (cold cards)
@@ -306,6 +325,12 @@ void setup() {
         if (SD.begin(PIN_SD_CS, *_spi, 4000000, "/sd", 3) && SD.cardType() != CARD_NONE) {
           sd_storage = store.useSdStorage();
         }
+      }
+      // On a genuine first run, persist the auto-pick so the "Store data on SD"
+      // toggle reflects it and the choice sticks on every later boot.
+      if (fresh_install && sd_storage && !use_sd_pref) {
+        Preferences _p; if (_p.begin("touch", false)) { _p.putBool("use_sd", true); _p.end(); }
+        Serial.println("[BOOT] first run + SD card present -> data defaults to SD");
       }
     }
   }
