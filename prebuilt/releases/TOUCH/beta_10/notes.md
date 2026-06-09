@@ -4,6 +4,12 @@ A small, **Heltec V4 TFT–focused** drop. **LilyGo T-Deck users can skip this o
 if they want — there's nothing T-Deck-specific in it (the T-Deck already had
 everything here). Built on MeshCore 1.16.0.
 
+> **🔧 Hotfix re-publish (09-Jun-2026):** the on-screen keyboard now renders real
+> **Cyrillic / Greek / Arabic** glyphs when you switch languages on the V4 — the
+> first beta_10 build showed them as tofu boxes. The version tag is **unchanged**,
+> so **re-flash or re-install (app-only) to pick it up** — a device already on
+> beta_10 won't be re-prompted by OTA since the version is the same.
+
 ---
 
 ## ⬆️ Updating from beta_9 — no reflash needed
