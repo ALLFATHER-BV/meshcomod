@@ -586,6 +586,8 @@ static lv_obj_t* s_addct_error_l = nullptr;
 static uint8_t   s_kb_rotation       = 0;
 static lv_obj_t* s_kb_rot_left_btn   = nullptr;
 static lv_obj_t* s_kb_rot_right_btn  = nullptr;
+static lv_obj_t* s_kb_lang_btn       = nullptr;   // on-screen language-cycle key (boards w/o a physical keyboard)
+static lv_obj_t* s_kb_lang_lbl       = nullptr;   // its label — the active layout's 2-letter code
 
 // ---- Global UI orientation (persistent) ----
 // The base orientation of the whole UI, loaded from NVS ("uirot") and applied
@@ -1582,6 +1584,8 @@ static void kbApplyLayoutForRotation(uint8_t rot) {
   const lv_coord_t y_off = -(scr_h - arrow_bottom_y_from_screen_top);
   if (s_kb_rot_left_btn)  lv_obj_align(s_kb_rot_left_btn,  LV_ALIGN_BOTTOM_LEFT,  4, y_off);
   if (s_kb_rot_right_btn) lv_obj_align(s_kb_rot_right_btn, LV_ALIGN_BOTTOM_RIGHT, -4, y_off);
+  // Language key sits just right of the left rotate arrow.
+  if (s_kb_lang_btn)      lv_obj_align(s_kb_lang_btn,      LV_ALIGN_BOTTOM_LEFT,  40, y_off);
 }
 
 static void kbApplyRotation(uint8_t rot) {
@@ -1617,6 +1621,30 @@ static void kbSaveRotationPref() {
 static void kbSetRotateArrowsOpa(lv_opa_t opa) {
   if (s_kb_rot_left_btn)  lv_obj_set_style_opa(s_kb_rot_left_btn,  opa, LV_PART_MAIN);
   if (s_kb_rot_right_btn) lv_obj_set_style_opa(s_kb_rot_right_btn, opa, LV_PART_MAIN);
+  if (s_kb_lang_btn)      lv_obj_set_style_opa(s_kb_lang_btn,      opa, LV_PART_MAIN);
+}
+
+// ---- On-screen language-cycle key ----------------------------------------
+// Boards without a physical keyboard (e.g. Heltec V4 TFT) can't double-tap a
+// hardware SPACE to switch keyboard languages, so the on-screen keyboard carries
+// a little key showing the active layout's 2-letter code; tapping it cycles
+// English -> each enabled secondary layout -> back, like the T-Deck's SPACE.
+static const char* kbLayoutCode(KeyboardLayoutId id) {
+  static const char* k_codes[] = { "EN", "BG", "RU", "UK", "SR", "EL", "AR" };
+  const uint8_t i = static_cast<uint8_t>(id);
+  return (i < (sizeof k_codes / sizeof k_codes[0])) ? k_codes[i] : "EN";
+}
+static void kbLangBtnRefresh() {
+  if (s_kb_lang_lbl) lv_label_set_text(s_kb_lang_lbl, kbLayoutCode(keyboardLayoutsGetCurrent()));
+}
+static void kbLangCycleCb(lv_event_t* e) {
+  if (lv_event_get_code(e) != LV_EVENT_CLICKED || !keyboardLayoutsAnySecondary()) return;
+  KeyboardLayoutId next = keyboardLayoutsCycle(g_lv.keyboard);
+#if defined(ESP32)
+  touchPrefsSetKeyboardLayout(static_cast<uint8_t>(next));
+#endif
+  kbLangBtnRefresh();
+  if (g_lv.task) g_lv.task->showAlert(keyboardLayoutName(next), 800);
 }
 
 static void kbShowRotateArrows(bool show) {
@@ -1624,12 +1652,17 @@ static void kbShowRotateArrows(bool show) {
                                : lv_obj_add_flag  (s_kb_rot_left_btn,  LV_OBJ_FLAG_HIDDEN);
   if (s_kb_rot_right_btn) show ? lv_obj_clear_flag(s_kb_rot_right_btn, LV_OBJ_FLAG_HIDDEN)
                                : lv_obj_add_flag  (s_kb_rot_right_btn, LV_OBJ_FLAG_HIDDEN);
+  // Language key: only when ≥1 secondary layout is enabled (else nothing to cycle).
+  const bool lang_show = show && keyboardLayoutsAnySecondary();
+  if (s_kb_lang_btn) lang_show ? lv_obj_clear_flag(s_kb_lang_btn, LV_OBJ_FLAG_HIDDEN)
+                               : lv_obj_add_flag  (s_kb_lang_btn, LV_OBJ_FLAG_HIDDEN);
   if (show) {
     // Each new show starts at full opacity; the first keystroke fades arrows
     // to ~20% so they're out of the way while typing but still tappable.
     kbSetRotateArrowsOpa(LV_OPA_COVER);
     if (s_kb_rot_left_btn)  lv_obj_move_foreground(s_kb_rot_left_btn);
     if (s_kb_rot_right_btn) lv_obj_move_foreground(s_kb_rot_right_btn);
+    if (lang_show) { kbLangBtnRefresh(); lv_obj_move_foreground(s_kb_lang_btn); }
   }
 }
 
@@ -4376,7 +4409,11 @@ static void buildDeviceSettings() {
     y += 16;
 
     lv_obj_t* hint = lv_label_create(body);
+#if defined(HAS_TDECK_KEYBOARD)
     lv_label_set_text(hint, "double-tap SPACE cycles through the ones you enable");
+#else
+    lv_label_set_text(hint, "tap the language key (e.g. EN) on the keyboard to cycle the ones you enable");
+#endif
     lv_obj_set_style_text_color(hint, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
     lv_obj_set_style_text_font(hint, &g_font_12, LV_PART_MAIN);
     lv_obj_set_pos(hint, 2, y);
@@ -17162,6 +17199,11 @@ static void buildUiTree() {
   // tells the user which way the display will turn.
   s_kb_rot_left_btn  = makeRotBtn(LV_SYMBOL_REFRESH, kbRotLeftCb);
   s_kb_rot_right_btn = makeRotBtn(LV_SYMBOL_REFRESH, kbRotRightCb);
+  // On-screen language-cycle key (boards without a physical keyboard). Its label
+  // is the active layout's 2-letter code; kbShowRotateArrows reveals it only when
+  // a secondary layout is enabled.
+  s_kb_lang_btn = makeRotBtn(kbLayoutCode(keyboardLayoutsGetCurrent()), kbLangCycleCb);
+  s_kb_lang_lbl = lv_obj_get_child(s_kb_lang_btn, 0);
 
   // Restore saved keyboard rotation preference (portrait by default).
 #if defined(ESP32)

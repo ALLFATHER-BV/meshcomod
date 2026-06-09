@@ -677,7 +677,7 @@ bool ESP32Board::startHttpOtaFromUrl(const char* url, char* reply) {
     return true;
   }
   if (clen > 0 && (size_t)clen > max_sketch) {
-    snprintf(reply, 128, "ERR: image %u > OTA %u", (unsigned)clen, (unsigned)max_sketch);
+    snprintf(reply, 128, "ERR: too big for OTA slot (%u > %u). Re-flash the merged image once over USB to enable OTA.", (unsigned)clen, (unsigned)max_sketch);
     p_https->end();
     tlsStop();
     p_plain->stop();
