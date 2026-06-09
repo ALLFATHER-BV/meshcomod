@@ -1607,20 +1607,28 @@ bool MyMesh::isAutoAddEnabled() const {
 }
 
 bool MyMesh::shouldAutoAddContactType(uint8_t contact_type) const {
-  // Person-to-person ("Chat") peers are always auto-added regardless of the
-  // user's manual-add preference: otherwise a stranger DM-ing the device can
-  // never get decoded (the receiver needs the sender's pub key, which only
-  // arrives via their advert) and the chat would silently never appear.
-  // Repeater / room / sensor adverts still respect the user's prefs because
-  // those clutter the contact list more aggressively.
-  if (contact_type == ADV_TYPE_CHAT) return true;
-
+  // Manual-add OFF: auto-add every type.
   if ((_prefs.manual_add_contacts & 1) == 0) {
     return true;
   }
 
+  // Manual-add ON: honor each type's autoadd_config bit. Chat/person peers are
+  // included now — they used to be force-added here unconditionally, which made
+  // the UI's "auto-add chats" toggle a no-op and surprised users who'd turned
+  // auto-add off (person adverts still landed straight in Contacts). With the
+  // chat bit off they now go to the Discovered/"Found" list to be added by hand.
+  //
+  // Trade-off: decoding a sender's DM needs their pub key, which only arrives in
+  // their advert — so a brand-new sender's *first* DM can't be decoded until
+  // they're added. Add them from Found first, or turn the "auto-add chats"
+  // toggle back on if you want strangers' messages to land automatically.
+  // (A future enhancement can auto-add a sender the moment a DM from them
+  // actually decodes, keeping Found clean while not dropping cold DMs.)
   uint8_t type_bit = 0;
   switch (contact_type) {
+    case ADV_TYPE_CHAT:
+      type_bit = AUTO_ADD_CHAT;
+      break;
     case ADV_TYPE_REPEATER:
       type_bit = AUTO_ADD_REPEATER;
       break;

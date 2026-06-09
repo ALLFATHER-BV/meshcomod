@@ -625,6 +625,11 @@ struct LvDiscoveredEntry {
 static void* psAlloc(size_t n) {
     void* p = heap_caps_malloc(n, MALLOC_CAP_SPIRAM);
     if (!p) p = heap_caps_malloc(n, MALLOC_CAP_8BIT);
+    // Zero-init: these buffers replace zero-initialized static UI arrays, and
+    // their callers rely on that — e.g. s_discovered[].used is the validity flag
+    // for the "Found" list. Without this, fresh-boot PSRAM garbage makes random
+    // entries look "used" and the Found list shows corrupt contacts.
+    if (p) memset(p, 0, n);
     return p;
 }
 static LvDiscoveredEntry* s_discovered = (LvDiscoveredEntry*)psAlloc(sizeof(LvDiscoveredEntry) * DISCOVERED_MAX);
@@ -1330,12 +1335,12 @@ static void versionCheckUpdateUi() {
   otaButtonRefreshState();   // enable/grey the OTA button to match the result
   if (!s_update_about_lbl) return;
   const int my_n = firmwareReleaseN();
-  char b[110];
+  char b[140];
   if (my_n < 0) {
     snprintf(b, sizeof b, "Firmware %s\nDevelopment build — update check off", FIRMWARE_VERSION);
     lv_obj_set_style_text_color(s_update_about_lbl, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
   } else if (s_update_available && s_verchk_latest_n >= 0) {
-    snprintf(b, sizeof b, LV_SYMBOL_DOWNLOAD "  Update available: beta_%d\nYou have beta_%d — tap Install update below",
+    snprintf(b, sizeof b, LV_SYMBOL_DOWNLOAD "  Update available: beta_%d\nYou have beta_%d — update manually at flasher.meshcomod.com",
              s_verchk_latest_n, my_n);
     lv_obj_set_style_text_color(s_update_about_lbl, lv_color_hex(0xE2A23A), LV_PART_MAIN);
   } else if (s_verchk_latest_n >= 0) {
@@ -1390,61 +1395,19 @@ static void otaButtonRefreshState() {
 
 static void otaInstallLatestCb(lv_event_t* e) {
   if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
-#if defined(ESP32) && defined(MULTI_TRANSPORT_COMPANION)
-  const char* env = FIRMWARE_OTA_ENV;
-  if (!env || !env[0]) {
-    if (g_lv.task) g_lv.task->showAlert("OTA not available on this build", 1800);
-    return;
-  }
-  if (s_verchk_latest_n < 0) {
-    if (g_lv.task) g_lv.task->showAlert("No update info yet — check Wi-Fi", 1800);
-    return;
-  }
-  if (!s_update_available) {   // already current (button is greyed, but guard anyway)
-    if (g_lv.task) g_lv.task->showAlert("Already on the latest version", 1600);
-    return;
-  }
-  if (WiFi.status() != WL_CONNECTED) {
-    if (g_lv.task) g_lv.task->showAlert("Connect Wi-Fi to update", 1800);
-    return;
-  }
-  // App-only image over PLAIN HTTP via app.meshcomod.com — it serves
-  // /firmware-download/ directly (200), whereas flasher./repeater. 301-redirect
-  // port 80 → HTTPS, which the RAM-tight touch build can't follow (the OTA then
-  // failed "HTTP -1 connection refused").
-  char url[200];
-  snprintf(url, sizeof(url),
-           "http://app.meshcomod.com/firmware-download/prebuilt/releases/TOUCH/beta_%d/%s.bin",
-           s_verchk_latest_n, env);
-  if (g_lv.task) {
-    g_lv.task->showAlert("Starting update\xE2\x80\xA6 keep Wi-Fi on", 2500);
-    g_lv.task->persistHistoryNow();   // flush chat before the device reboots into the new image
-  }
-  // Reclaim internal heap before the download: HTTPClient's socket + the OTA
-  // write need a few KB of internal DMA RAM, which is scarce on this build. Drop
-  // the decoded map tiles (PSRAM + their widgets) so the working set is minimal.
-  freeMapTiles();
+  // Wi-Fi (OTA) self-update is temporarily disabled while we sort out update
+  // issues (OTA partition-slot sizing on V4 / T-Deck). The version check and the
+  // "update available" badge stay on — this button now points the user at the
+  // manual flasher instead of running the (currently unreliable) OTA path.
   if (s_ota_status_lbl) {
-    char b[80];
-    snprintf(b, sizeof b, "Downloading update\xE2\x80\xA6 do not power off (heap %uK)",
-             (unsigned)(ESP.getFreeHeap() / 1024));
-    lv_label_set_text(s_ota_status_lbl, b);
+    lv_label_set_text(s_ota_status_lbl,
+      "Wi-Fi update is paused while we fix some issues.\n"
+      "Please update manually at flasher.meshcomod.com\n"
+      "(T-Deck under Launcher: reinstall the new bin there).");
     lv_obj_set_style_text_color(s_ota_status_lbl, lv_color_hex(0xE2A23A), LV_PART_MAIN);
-    lv_refr_now(NULL);
   }
-  // startHttpOtaFromUrl blocks until done (streams to flash, then reboots on
-  // success). `board` is visible via target.h (included through MyMesh.h).
-  char reply[140] = {0};
-  board.startHttpOtaFromUrl(url, reply);
-  // We only reach here on FAILURE (success reboots into the new image).
-  if (s_ota_status_lbl) {
-    char b[160];
-    snprintf(b, sizeof b, "Update failed: %s", reply[0] ? reply : "unknown error");
-    lv_label_set_text(s_ota_status_lbl, b);
-    lv_obj_set_style_text_color(s_ota_status_lbl, lv_color_hex(0xE08080), LV_PART_MAIN);
-  }
-  if (g_lv.task) g_lv.task->showAlert(reply[0] ? reply : "Update failed", 2500);
-#endif
+  if (g_lv.task)
+    g_lv.task->showAlert("Update manually at flasher.meshcomod.com\n(Wi-Fi update is paused for now)", 3500);
 }
 
 // Trigger a check once Wi-Fi is up (then every 6 h); apply the result when ready.
@@ -3218,28 +3181,35 @@ static void openDiscoveredModalCb(lv_event_t* e) {
     int idx = order[k];
     LvDiscoveredEntry& e_disc = s_discovered[idx];
 
-    // Card background
+    // Card background — full content width (was a fixed 222 px, leaving a gap).
+    const lv_coord_t cw     = s_settings_content_w;
+    const int        pad    = 4, add_w = 56, gap = 8;
+    const lv_coord_t card_h = 52;
+    const lv_coord_t name_h = lv_font_get_line_height(&g_font_14);
+    const lv_coord_t text_w = cw - 2 * pad - add_w - gap;   // room for name/meta beside Add
+
     lv_obj_t* card = lv_obj_create(body);
     lv_obj_remove_style_all(card);
-    lv_obj_set_size(card, 222, 58);
+    lv_obj_set_size(card, cw, card_h);
     lv_obj_set_pos(card, 0, y);
     lv_obj_set_style_bg_opa(card, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_style_bg_color(card, lv_color_hex(COLOR_PANEL), LV_PART_MAIN);
     lv_obj_set_style_radius(card, 6, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(card, 4, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(card, pad, LV_PART_MAIN);
     lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
 
-    // Name label
+    // Name label — clamped to ONE line (height = line height) so a long name
+    // ellipsises instead of wrapping down onto the meta row below it.
     lv_obj_t* nm = lv_label_create(card);
     char nm_buf[40];
     copyUtf8ReplacingMissingGlyphs(&g_font_14, nm_buf, sizeof(nm_buf), e_disc.ci.name);
     lv_label_set_text(nm, nm_buf[0] ? nm_buf : "(unnamed)");
     lv_obj_set_style_text_color(nm, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
     lv_label_set_long_mode(nm, LV_LABEL_LONG_DOT);
-    lv_obj_set_width(nm, 152);
-    lv_obj_set_pos(nm, 2, 2);
+    lv_obj_set_size(nm, text_w, name_h);
+    lv_obj_set_pos(nm, 2, 3);
 
-    // Type + hops + key prefix
+    // Type + hops + key prefix (single line, ellipsised, below the name)
     lv_obj_t* meta = lv_label_create(card);
     const char* type_label = "node";
     switch (e_disc.ci.type) {
@@ -3259,12 +3229,14 @@ static void openDiscoveredModalCb(lv_event_t* e) {
     lv_label_set_text(meta, meta_buf);
     lv_obj_set_style_text_color(meta, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
     lv_obj_set_style_text_font(meta, &g_font_12, LV_PART_MAIN);
-    lv_obj_set_pos(meta, 2, 22);
+    lv_label_set_long_mode(meta, LV_LABEL_LONG_DOT);
+    lv_obj_set_width(meta, text_w);
+    lv_obj_set_pos(meta, 2, 3 + name_h + 2);
 
-    // "Add" button on the right
+    // "Add" button on the right, vertically centred
     lv_obj_t* add_btn = lv_btn_create(card);
-    lv_obj_set_size(add_btn, 56, 44);
-    lv_obj_set_pos(add_btn, 158, 4);
+    lv_obj_set_size(add_btn, add_w, card_h - 2 * pad - 2);
+    lv_obj_align(add_btn, LV_ALIGN_RIGHT_MID, 0, 0);
     styleButton(add_btn);
     s_disc_add_ctx[idx].slot_idx = idx;
     lv_obj_add_event_cb(add_btn, discoveredAddCb, LV_EVENT_CLICKED, &s_disc_add_ctx[idx]);
@@ -3272,7 +3244,7 @@ static void openDiscoveredModalCb(lv_event_t* e) {
     lv_label_set_text(add_lbl, "Add");
     lv_obj_center(add_lbl);
 
-    y += 64;
+    y += card_h + 6;
   }
 }
 
@@ -5049,6 +5021,18 @@ static void wifiSlotLoadCb(lv_event_t* e) {
   if (g_lv.task) g_lv.task->showAlert(msg, 1300);
 }
 
+// Per-slot "Saved profiles" row labels, so a slot Save refreshes just that row
+// in place (below) instead of tearing down + rebuilding the page. Rebuilding
+// from this callback called buildWifiSettings() with s_settings_inline_parent
+// already null, which spawned a rogue modal on lv_layer_top() over the inline
+// Network sub-tab and stranded the Close button (reboot was the only way out).
+static lv_obj_t* s_wifi_slot_row_lbl[TOUCH_WIFI_SLOT_COUNT] = { nullptr };
+static void wifiSlotFmtRow(int i, const char* label, const char* ssid, char* out, size_t out_sz) {
+  if (!ssid || ssid[0] == '\0')  snprintf(out, out_sz, "%d: (empty)", i + 1);
+  else if (label && label[0])    snprintf(out, out_sz, "%d: %s (%s)", i + 1, label, ssid);
+  else                           snprintf(out, out_sz, "%d: %s", i + 1, ssid);
+}
+
 // Save the current SSID/PWD form contents into a slot. Label defaults to
 // "Slot N" so the row text isn't blank; user can rename via the same flow
 // after editing (no inline rename UI — keeps the page short).
@@ -5075,10 +5059,16 @@ static void wifiSlotSaveCb(lv_event_t* e) {
   char msg[40];
   snprintf(msg, sizeof(msg), "Saved to slot %d", (int)idx + 1);
   if (g_lv.task) g_lv.task->showAlert(msg, 1100);
-  // Re-open the modal so the row text refreshes. Cheap: existing state will
-  // pull the new slot back from NVS via touchPrefsGetWifiSlot.
-  closeSettingsModal();
-  buildWifiSettings();   // re-open (modal here; inline_parent is null in this callback)
+  // Refresh just this slot's row label in place. Do NOT close+rebuild here: on
+  // the inline Network sub-tab s_settings_inline_parent is null in this callback,
+  // so buildWifiSettings() would spawn a rogue modal over the page and strand the
+  // Close button. The slot's label is the saved SSID (label = ssid above).
+  if (idx >= 0 && idx < TOUCH_WIFI_SLOT_COUNT && s_wifi_slot_row_lbl[idx]) {
+    char row_text[80];
+    wifiSlotFmtRow((int)idx, label, ssid, row_text, sizeof(row_text));
+    lv_label_set_text(s_wifi_slot_row_lbl[idx], row_text);
+    lv_obj_set_style_text_color(s_wifi_slot_row_lbl[idx], lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
+  }
 }
 
 static void saveWifiCb(lv_event_t* e) {
@@ -5370,13 +5360,7 @@ static void buildWifiSettings() {
                            pwd_b, sizeof(pwd_b));
     bool empty = (ssid_b[0] == '\0');
     char row_text[80];
-    if (empty) {
-      snprintf(row_text, sizeof(row_text), "%d: (empty)", i + 1);
-    } else if (label[0]) {
-      snprintf(row_text, sizeof(row_text), "%d: %s (%s)", i + 1, label, ssid_b);
-    } else {
-      snprintf(row_text, sizeof(row_text), "%d: %s", i + 1, ssid_b);
-    }
+    wifiSlotFmtRow(i, label, ssid_b, row_text, sizeof(row_text));
 
     const int slot_save_w = 56, slot_gap = 6;
     const int slot_row_w  = cw - slot_save_w - slot_gap;   // load row fills, Save sits at the right
@@ -5387,6 +5371,7 @@ static void buildWifiSettings() {
     lv_obj_set_style_bg_color(row, lv_color_hex(empty ? 0x0C0D0E : 0x1A1B1C), LV_PART_MAIN);
     lv_obj_add_event_cb(row, wifiSlotLoadCb, LV_EVENT_CLICKED, (void*)(intptr_t)i);
     lv_obj_t* lt = lv_label_create(row);
+    s_wifi_slot_row_lbl[i] = lt;   // cache for in-place refresh on slot Save
     lv_label_set_text(lt, row_text);
     lv_label_set_long_mode(lt, LV_LABEL_LONG_DOT);
     lv_obj_set_width(lt, slot_row_w - 16);
@@ -13125,7 +13110,7 @@ static void settingsBuildPage(int idx) {
         lv_obj_set_style_bg_color(s_ota_btn, lv_color_hex(0x3B7039), LV_PART_MAIN | LV_STATE_PRESSED);
         lv_obj_add_event_cb(s_ota_btn, otaInstallLatestCb, LV_EVENT_CLICKED, nullptr);
         s_ota_btn_lbl = lv_label_create(s_ota_btn);
-        lv_label_set_text(s_ota_btn_lbl, LV_SYMBOL_DOWNLOAD "  Install update over Wi-Fi");
+        lv_label_set_text(s_ota_btn_lbl, LV_SYMBOL_DOWNLOAD "  How to update");
         lv_obj_set_style_text_font(s_ota_btn_lbl, &g_font_14, LV_PART_MAIN);
         lv_obj_set_style_text_color(s_ota_btn_lbl, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
         lv_obj_center(s_ota_btn_lbl);
@@ -17626,10 +17611,40 @@ void UITask::flushHistoryIfDue(unsigned long now) {
   else _next_history_flush_ms = now + 2000;
 }
 
+// ---- UI-side data storage (chat history) -------------------------------------
+// Resolve ONCE where the touch UI's own files live: internal SPIFFS when present,
+// else the SD card under /meshcomod (Launcher / SD-storage installs have no SPIFFS
+// partition). Caching the result is what stops the "SPIFFS partition could not be
+// found" spam — saveHistoryToStorage runs every ~2 s, and re-calling SPIFFS.begin()
+// each time both logged the error and, under Launcher, never actually persisted
+// the chat to the SD card.
+static fs::FS* s_ui_data_fs       = nullptr;
+static char    s_ui_data_root[16] = "";
+static bool    s_ui_data_resolved = false;
+static bool uiDataFsReady() {
+  if (s_ui_data_resolved) return s_ui_data_fs != nullptr;
+  s_ui_data_resolved = true;   // resolve once — no per-flush SPIFFS.begin spam
+  if (SPIFFS.begin(false)) { s_ui_data_fs = &SPIFFS; s_ui_data_root[0] = '\0'; return true; }
+#if defined(HAS_TDECK_GT911)
+  if (SD.cardType() != CARD_NONE || fmSdTryMount()) {   // prefer the live mount (no disruptive remount)
+    s_sd_mounted = true;
+    SD.mkdir("/meshcomod");
+    s_ui_data_fs = &SD;
+    strncpy(s_ui_data_root, "/meshcomod", sizeof s_ui_data_root - 1);
+    return true;
+  }
+#endif
+  return false;   // no SPIFFS + no SD — cached, so no per-flush spam
+}
+static File uiDataOpen(const char* name, const char* mode) {
+  if (!uiDataFsReady()) return File();
+  char p[80]; snprintf(p, sizeof p, "%s%s", s_ui_data_root, name);
+  return s_ui_data_fs->open(p, mode);
+}
+
 bool UITask::loadHistoryFromStorage() {
 #if defined(ESP32)
-  if (!SPIFFS.begin(false)) return false;
-  File f = SPIFFS.open(k_ui_history_path, "r");
+  File f = uiDataOpen(k_ui_history_path, "r");
   if (!f) return false;
 
   UiHistoryHeader hdr{};
@@ -17736,9 +17751,8 @@ bool UITask::saveHistoryToStorage() {
   // write synchronous + prompt (called right after each message) so a
   // hardware reset doesn't lose the chat — that's what the released build did
   // and it was reliable.
-  if (!SPIFFS.begin(false)) return false;
   WdtHeavyGuard _wg;   // a fragmenting history write can trigger a multi-second SPIFFS GC
-  File f = SPIFFS.open(k_ui_history_path, "w");
+  File f = uiDataOpen(k_ui_history_path, "w");
   if (!f) return false;
 
   UiHistoryHeader hdr{};
