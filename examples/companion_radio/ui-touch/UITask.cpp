@@ -15039,29 +15039,40 @@ static void backupScan() {
     root.close();
   }
 #if defined(HAS_TDECK_GT911)
-  // SD card root (a real directory on the T-Deck). Actively (re)mount here: the
-  // SD is otherwise only probed while the file manager is open, so without this
-  // the picker would miss the card until the user had opened the file manager
-  // once. fmSdTryMount() no-ops if already mounted, else walks the mount ladder.
+  // SD card: scan the root AND the /meshcomod data folder. SD-storage builds keep
+  // their data under /meshcomod, so users naturally drop a backup next to it —
+  // previously only the root was scanned, so a json in /meshcomod never showed up
+  // ("only gets recognized from the root folder"). Actively (re)mount here: the SD
+  // is otherwise only probed while the file manager is open. fmSdTryMount() no-ops
+  // if already mounted, else walks the mount ladder.
   if (fmSdTryMount()) {
-    File d = SD.open("/");
-    if (d && d.isDirectory()) {
-      File e = d.openNextFile();
-      while (e) {
-        if (!e.isDirectory()) {
-          const char* nm = e.name();
-          const char* base = strrchr(nm, '/'); base = base ? base + 1 : nm;
-          if (backupIsJson(base)) {
-            char stored[160]; snprintf(stored, sizeof stored, "sd:/%s", base);
-            char disp[48];    snprintf(disp,   sizeof disp,   "SD: %s", base);
-            backupAddPath(stored, disp);
+    static const char* kSdDirs[] = { "/", "/meshcomod" };
+    for (const char* dir : kSdDirs) {
+      File d = SD.open(dir);
+      if (d && d.isDirectory()) {
+        File e = d.openNextFile();
+        while (e) {
+          if (!e.isDirectory()) {
+            const char* nm = e.name();
+            const char* base = strrchr(nm, '/'); base = base ? base + 1 : nm;
+            if (backupIsJson(base)) {
+              char stored[160], disp[48];
+              if (dir[1] == '\0') {   // root "/"
+                snprintf(stored, sizeof stored, "sd:/%s", base);
+                snprintf(disp,   sizeof disp,   "SD: %s", base);
+              } else {
+                snprintf(stored, sizeof stored, "sd:%s/%s", dir, base);
+                snprintf(disp,   sizeof disp,   "SD %s/: %s", dir + 1, base);
+              }
+              backupAddPath(stored, disp);
+            }
           }
+          e.close();
+          e = d.openNextFile();
         }
-        e.close();
-        e = d.openNextFile();
       }
+      if (d) d.close();
     }
-    if (d) d.close();
   }
 #endif
 }
@@ -15111,7 +15122,15 @@ static void doBackupImportChosen() {
     return;
   }
   g_lv.task->persistHistoryNow();   // nests under the guard above (ref-counted)
-  delay(1200);
+  // Surface the result BEFORE the reboot. A silent restart that came back reading
+  // "0 contacts" looked to users like the import "did nothing" — now the counts
+  // are visible, and if they read 0 the problem is the file/JSON, not the apply.
+  lv_obj_del(ov);
+  char dmsg[80];
+  snprintf(dmsg, sizeof dmsg, "Imported %d contacts, %d channels.\nRebooting\xe2\x80\xa6", nco, nch);
+  g_lv.task->showAlert(dmsg, 2600);
+  lv_refr_now(nullptr);
+  delay(2600);
   ESP.restart();
 }
 static void backupChosenCb(lv_event_t* e) {
