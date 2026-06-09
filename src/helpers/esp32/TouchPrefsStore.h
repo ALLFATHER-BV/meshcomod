@@ -22,6 +22,24 @@ bool    touchPrefsSetBrightness(uint8_t pct);
 uint8_t touchPrefsGetKbBacklight();
 bool    touchPrefsSetKbBacklight(uint8_t mode);
 
+/** Currently active keyboard layout. 0 = English, 1 = Bulgarian phonetic.
+ *  Persisted so the device boots back into the last-used layout. */
+uint8_t touchPrefsGetKeyboardLayout();
+bool    touchPrefsSetKeyboardLayout(uint8_t layout);
+
+/** Secondary keyboard preference. 0 = None (default), 1 = Bulgarian phonetic.
+ *  When None, double-space does nothing. When set, double-space toggles
+ *  between English and the selected secondary layout. */
+uint8_t touchPrefsGetSecondaryKeyboard();
+bool    touchPrefsSetSecondaryKeyboard(uint8_t secondary);
+
+/** Enabled-layout bitmask for the keyboard space-cycle. Bit (1<<KeyboardLayoutId)
+ *  marks a layout as part of the cycle; English (bit 0) is always implicit.
+ *  Supersedes the single-secondary pref above — when the mask has never been
+ *  written, the getter migrates the legacy secondary value into a one-bit mask. */
+uint16_t touchPrefsGetEnabledLayouts();
+bool     touchPrefsSetEnabledLayouts(uint16_t mask);
+
 /** User-configurable quick-reply macros: up to 6 short strings the user can
  *  drop into the composer with a single tap (e.g. "ok", "on the way",
  *  "stuck — wait"). idx is 0..5; max length 31 chars + null. Returns the
@@ -48,6 +66,12 @@ bool touchPrefsSetUseMiles(bool use_miles);
  *  microSD card (/tiles/<z>/<x>/<y>.jpg). T-Deck only (the V4 TFT has no SD slot). */
 bool touchPrefsGetTilesFromSd();
 bool touchPrefsSetTilesFromSd(bool from_sd);
+
+/** Store all device data (identity/prefs/contacts/channels) on the SD card under
+ *  /meshcomod instead of internal SPIFFS. T-Deck only; read at boot before data
+ *  loads, so changing it requires a reboot. Default false (SPIFFS). */
+bool touchPrefsGetUseSdStorage();
+bool touchPrefsSetUseSdStorage(bool use_sd);
 
 /** Global UI orientation, applied at boot before the screens are built so the
  *  whole layout reflows to the rotated resolution. Stored as the raw LVGL

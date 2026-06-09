@@ -1,6 +1,9 @@
 #include <Arduino.h>
 #include <string.h>
 #include "DataStore.h"
+#if defined(ESP32)
+#include <SD.h>
+#endif
 
 #if defined(EXTRAFS) || defined(QSPIFLASH)
   #define MAX_BLOBRECS 100
@@ -32,14 +35,20 @@ DataStore::DataStore(FILESYSTEM& fs, FILESYSTEM& fsExtra, mesh::RTCClock& clock)
 }
 #endif
 
-static File openWrite(FILESYSTEM* fs, const char* filename) {
+const char* DataStore::_rp(const char* name) {
+  if (!_root[0]) return name;            // default: filesystem root, zero change
+  snprintf(_rpbuf, sizeof(_rpbuf), "%s%s", _root, name);
+  return _rpbuf;
+}
+
+File DataStore::openWrite(FILESYSTEM* fs, const char* filename) {
 #if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
-  fs->remove(filename);
-  return fs->open(filename, FILE_O_WRITE);
+  fs->remove(_rp(filename));
+  return fs->open(_rp(filename), FILE_O_WRITE);
 #elif defined(RP2040_PLATFORM)
-  return fs->open(filename, "w");
+  return fs->open(_rp(filename), "w");
 #else
-  return fs->open(filename, "w", true);
+  return fs->open(_rp(filename), "w", true);
 #endif
 }
 
@@ -138,26 +147,26 @@ uint32_t DataStore::getStorageTotalKb() const {
 
 File DataStore::openRead(const char* filename) {
 #if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
-  return _fs->open(filename, FILE_O_READ);
+  return _fs->open(_rp(filename), FILE_O_READ);
 #elif defined(RP2040_PLATFORM)
-  return _fs->open(filename, "r");
+  return _fs->open(_rp(filename), "r");
 #else
-  return _fs->open(filename, "r", false);
+  return _fs->open(_rp(filename), "r", false);
 #endif
 }
 
 File DataStore::openRead(FILESYSTEM* fs, const char* filename) {
 #if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
-  return fs->open(filename, FILE_O_READ);
+  return fs->open(_rp(filename), FILE_O_READ);
 #elif defined(RP2040_PLATFORM)
-  return fs->open(filename, "r");
+  return fs->open(_rp(filename), "r");
 #else
-  return fs->open(filename, "r", false);
+  return fs->open(_rp(filename), "r", false);
 #endif
 }
 
 bool DataStore::removeFile(const char* filename) {
-  return _fs->remove(filename);
+  return _fs->remove(_rp(filename));
 }
 
 bool DataStore::removeFile(FILESYSTEM* fs, const char* filename) {
@@ -191,12 +200,12 @@ bool DataStore::saveMainIdentity(const mesh::LocalIdentity &identity) {
 }
 
 void DataStore::loadPrefs(NodePrefs& prefs, double& node_lat, double& node_lon) {
-  if (_fs->exists("/new_prefs")) {
+  if (_fs->exists(_rp("/new_prefs"))) {
     loadPrefsInt("/new_prefs", prefs, node_lat, node_lon); // new filename
-  } else if (_fs->exists("/node_prefs")) {
+  } else if (_fs->exists(_rp("/node_prefs"))) {
     loadPrefsInt("/node_prefs", prefs, node_lat, node_lon);
     savePrefs(prefs, node_lat, node_lon);                // save to new filename
-    _fs->remove("/node_prefs"); // remove old
+    _fs->remove(_rp("/node_prefs")); // remove old
   }
 }
 
@@ -319,11 +328,16 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     file.write((uint8_t *)&_prefs.ble_pin, sizeof(_prefs.ble_pin));                         // 80
     file.write((uint8_t *)&_prefs.buzzer_quiet, sizeof(_prefs.buzzer_quiet));               // 84
     file.write((uint8_t *)&_prefs.gps_enabled, sizeof(_prefs.gps_enabled));                 // 85
-    file.write((uint8_t *)&_prefs.autoadd_config, sizeof(_prefs.autoadd_config));           // 87
-    file.write((uint8_t *)&_prefs.autoadd_max_hops, sizeof(_prefs.autoadd_max_hops));       // 88
-    file.write((uint8_t *)&_prefs.rx_boosted_gain, sizeof(_prefs.rx_boosted_gain));         // 89
-    file.write((uint8_t *)_prefs.default_scope_name, sizeof(_prefs.default_scope_name));    // 90
-    file.write((uint8_t *)_prefs.default_scope_key, sizeof(_prefs.default_scope_key));      // 121
+    // gps_interval (4B) — was MISSING here; the loader (load_prefs_tail_*) reads
+    // it at tail[8..11], so omitting it shifted autoadd_config/max_hops/rx_boost
+    // and the scope fields by 4 bytes on every load (auto-add types read garbage
+    // -> appeared to reset on reboot). Writing it realigns save with load.
+    file.write((uint8_t *)&_prefs.gps_interval, sizeof(_prefs.gps_interval));               // 86
+    file.write((uint8_t *)&_prefs.autoadd_config, sizeof(_prefs.autoadd_config));           // 90
+    file.write((uint8_t *)&_prefs.autoadd_max_hops, sizeof(_prefs.autoadd_max_hops));       // 91
+    file.write((uint8_t *)&_prefs.rx_boosted_gain, sizeof(_prefs.rx_boosted_gain));         // 92
+    file.write((uint8_t *)_prefs.default_scope_name, sizeof(_prefs.default_scope_name));    // 93
+    file.write((uint8_t *)_prefs.default_scope_key, sizeof(_prefs.default_scope_key));      // 125
 
     file.close();
   }
@@ -640,7 +654,7 @@ uint8_t DataStore::getBlobByKey(const uint8_t key[], int key_len, uint8_t dest_b
   char path[64];
   makeBlobPath(key, key_len, path, sizeof(path));
 
-  if (_fs->exists(path)) {
+  if (_fs->exists(_rp(path))) {
     File f = openRead(_fs, path);
     if (f) {
       int len = f.read(dest_buf, 255); // currently MAX 255 byte blob len supported!!
@@ -661,7 +675,7 @@ bool DataStore::putBlobByKey(const uint8_t key[], int key_len, const uint8_t src
     f.close();
     if (n == len) return true; // success!
 
-    _fs->remove(path); // blob was only partially written!
+    _fs->remove(_rp(path)); // blob was only partially written!
   }
   return false; // error
 }
@@ -670,8 +684,26 @@ bool DataStore::deleteBlobByKey(const uint8_t key[], int key_len) {
   char path[64];
   makeBlobPath(key, key_len, path, sizeof(path));
 
-  _fs->remove(path);
-  
+  _fs->remove(_rp(path));
+
   return true; // return true even if file did not exist
+}
+#endif
+
+#if defined(ESP32)
+// Redirect all data storage to the SD card under /meshcomod (identity, prefs,
+// contacts, channels, blobs). The SD card must already be mounted by the caller.
+// Creates the folders, repoints _fs + the identity store, and sets the path
+// prefix so every subsequent read/write/exists/remove lands under /meshcomod.
+bool DataStore::useSdStorage() {
+  if (!SD.exists("/meshcomod"))          SD.mkdir("/meshcomod");
+  if (!SD.exists("/meshcomod/bl"))       SD.mkdir("/meshcomod/bl");
+  if (!SD.exists("/meshcomod/identity")) SD.mkdir("/meshcomod/identity");
+  strncpy(_root, "/meshcomod", sizeof(_root) - 1);
+  _root[sizeof(_root) - 1] = '\0';
+  _fs = &SD;
+  _fsExtra = nullptr;
+  identity_store.use(SD, "/meshcomod/identity");
+  return true;
 }
 #endif

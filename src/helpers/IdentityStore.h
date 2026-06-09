@@ -17,6 +17,10 @@ class IdentityStore {
 public:
   IdentityStore(FILESYSTEM& fs, const char* dir): _fs(&fs), _dir(dir) { }
 
+  // Re-point the identity store at another filesystem/dir at runtime (e.g. to
+  // move it to the SD card under /meshcomod). Creates the dir.
+  void use(FILESYSTEM& fs, const char* dir) { _fs = &fs; _dir = dir; begin(); }
+
   void begin() {
      if (_dir && _dir[0] == '/') { _fs->mkdir(_dir); } }
   bool load(const char *name, mesh::LocalIdentity& id);

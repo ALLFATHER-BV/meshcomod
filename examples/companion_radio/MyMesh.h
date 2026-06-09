@@ -318,6 +318,13 @@ public:
     if (r == MSG_SEND_SENT_FLOOD || r == MSG_SEND_SENT_DIRECT) {
       memcpy(&pending_login, recipient.id.pub_key, 4);
     }
+    // Diagnostic (room-server login trace): which contact/type we sent the login
+    // to and the send result. Pair with the "[ROOM] login resp" line in
+    // onContactResponse to see exactly where a room login breaks.
+    Serial.printf("[ROOM] login send '%s' type=%u pwlen=%u sync_since=%lu -> r=%d\n",
+                  recipient.name, (unsigned)recipient.type,
+                  (unsigned)(password ? strlen(password) : 0),
+                  (unsigned long)recipient.sync_since, r);
     return r;
   }
 

@@ -96,3 +96,12 @@
  * cache also means less state to keep coherent across slot reuse. */
 #define LV_IMG_CACHE_DEF_SIZE 8
 
+/* Bi-directional text + Arabic/Persian contextual shaping. Lets Arabic (and
+ * other RTL scripts) render right-to-left with correctly joined letter forms.
+ * No-op for LTR text (Latin/Cyrillic/Greek auto-detect as LTR). The fallback
+ * fonts carry the Arabic presentation forms (0xFE70-0xFEFF) that the shaper
+ * substitutes in. */
+#define LV_USE_BIDI 1
+#define LV_BIDI_BASE_DIR_DEF LV_BASE_DIR_AUTO
+#define LV_USE_ARABIC_PERSIAN_CHARS 1
+

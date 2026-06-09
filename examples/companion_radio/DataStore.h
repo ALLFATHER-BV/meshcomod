@@ -18,6 +18,13 @@ class DataStore {
   FILESYSTEM* _fsExtra;
   mesh::RTCClock* _clock;
   IdentityStore identity_store;
+  // Path prefix for every data file. Empty = filesystem root (flash/SPIFFS, the
+  // default — zero behaviour change). Set to "/meshcomod" by useSdStorage() so
+  // that, when SPIFFS is unavailable (e.g. installed under Launcher) or the user
+  // opts in, all data lives in one tidy folder on the SD card. ESP32 only.
+  char _root[24] = "";
+  char _rpbuf[80];
+  const char* _rp(const char* name);   // returns _root-prefixed path (name as-is when _root empty)
 
   void loadPrefsInt(const char *filename, NodePrefs& prefs, double& node_lat, double& node_lon);
 #if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
@@ -29,6 +36,13 @@ public:
   DataStore(FILESYSTEM& fs, FILESYSTEM& fsExtra, mesh::RTCClock& clock);
   void begin();
   bool formatFileSystem();
+  File openWrite(FILESYSTEM* fs, const char* filename);   // root-aware (was a free static fn)
+#if defined(ESP32)
+  // Redirect all data storage to the SD card under /meshcomod (identity, prefs,
+  // contacts, channels, blobs). Call after the SD card is mounted. Returns false
+  // if the dir can't be created. No-op on non-ESP32.
+  bool useSdStorage();
+#endif
   FILESYSTEM* getPrimaryFS() const { return _fs; }
   FILESYSTEM* getSecondaryFS() const { return _fsExtra; }
   bool loadMainIdentity(mesh::LocalIdentity &identity);

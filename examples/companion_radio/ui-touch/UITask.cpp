@@ -66,6 +66,7 @@
   #if defined(HAS_TDECK_KEYBOARD)
     #include <helpers/input/TDeckKeyboard.h>
   #endif
+  #include "KeyboardLayouts.h"
   #include <helpers/ui/ST7789LCDDisplay.h>
   #include <helpers/AdvertDataHelpers.h>
   #include <helpers/sensors/LPPDataHelpers.h>
@@ -366,6 +367,7 @@ struct GlobalStatusBar {
   lv_obj_t* clock;
   lv_obj_t* batt_pct;
   lv_obj_t* batt_icon;
+  lv_obj_t* layout_label;   // EN / BG indicator, right side
 };
 static GlobalStatusBar g_statusbar = {};
 static void updateGlobalStatusBar();   // fwd decl, called from refresh tick
@@ -1760,7 +1762,6 @@ static void kbMirrorBind(lv_obj_t* real_ta) {
   kbApplyRotation(effectiveKbRotation());
   kbShowRotateArrows(true);
 #endif
-  lv_textarea_set_cursor_pos(s_kb_mirror_ta, LV_TEXTAREA_CURSOR_LAST);
 }
 
 static void hideKb() {
@@ -2958,6 +2959,26 @@ static void saveAutoAddCb(lv_event_t* e) {
   refreshStatusLabels();
 }
 
+// Auto-save on toggle: the auto-add switches persist immediately, so the user
+// doesn't have to press "Save auto-add" for them to stick across reboots.
+// Recomputes the whole mask from the current switch states + the hops field.
+static void autoAddSwitchCb(lv_event_t* e) {
+  if (lv_event_get_code(e) != LV_EVENT_VALUE_CHANGED || !g_lv.task) return;
+  uint8_t mask = 0;
+  if (g_set_modal.auto_overwrite_sw && lv_obj_has_state(g_set_modal.auto_overwrite_sw, LV_STATE_CHECKED)) mask |= AUTO_ADD_OVERWRITE_OLDEST;
+  if (g_set_modal.auto_chat_sw && lv_obj_has_state(g_set_modal.auto_chat_sw, LV_STATE_CHECKED)) mask |= AUTO_ADD_CHAT;
+  if (g_set_modal.auto_rep_sw && lv_obj_has_state(g_set_modal.auto_rep_sw, LV_STATE_CHECKED)) mask |= AUTO_ADD_REPEATER;
+  if (g_set_modal.auto_room_sw && lv_obj_has_state(g_set_modal.auto_room_sw, LV_STATE_CHECKED)) mask |= AUTO_ADD_ROOM_SERVER;
+  if (g_set_modal.auto_sensor_sw && lv_obj_has_state(g_set_modal.auto_sensor_sw, LV_STATE_CHECKED)) mask |= AUTO_ADD_SENSOR;
+  uint8_t manual = (g_set_modal.manual_add_sw && lv_obj_has_state(g_set_modal.manual_add_sw, LV_STATE_CHECKED)) ? 1u : 0u;
+  int max_hops = 3;
+  int mh;
+  if (g_set_modal.max_hops_ta && parseIntField(g_set_modal.max_hops_ta, mh)) max_hops = mh;
+  if (max_hops < 0) max_hops = 0;
+  if (max_hops > 64) max_hops = 64;
+  g_lv.task->setAutoAddConfig(mask, static_cast<uint8_t>(max_hops), manual);
+}
+
 static void savePolicyCb(lv_event_t* e) {
   if (lv_event_get_code(e) != LV_EVENT_CLICKED || !g_lv.task) return;
   uint8_t share = (g_set_modal.share_loc_sw && lv_obj_has_state(g_set_modal.share_loc_sw, LV_STATE_CHECKED)) ? 1u : 0u;
@@ -2998,31 +3019,14 @@ static void rebootCb(lv_event_t* e) {
 }
 
 #if defined(ESP32)
-// True when this device has a factory/recovery slot (the meshcomod_boot recovery lives there on
-// the dual-slot+recovery T-Deck image). Used to show "Reboot to recovery" only where it exists —
-// e.g. the Heltec V4 dual-OTA image has no factory partition, so the button stays hidden there.
-static bool touchHasRecoveryPartition() {
-  return esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_FACTORY, NULL) != NULL;
-}
-// Hand control to the meshcomod_boot recovery: record (for its "Boot firmware") which slot we run
-// from + that this was a DELIBERATE entry (so it shows its menu, not the auto-launch countdown),
-// then restart — the custom bootloader boots factory(recovery) by default (no one-shot raised).
-static void rebootToRecoveryCb(lv_event_t* e) {
-  if (lv_event_get_code(e) != LV_EVENT_CLICKED || !g_lv.task) return;
-  g_lv.task->showAlert("Rebooting to recovery\xE2\x80\xA6", 900);
-  g_lv.task->persistHistoryNow();   // flush chat before the reboot
-  const esp_partition_t* run = esp_ota_get_running_partition();
-  { Preferences p;
-    if (p.begin("mcboot", false)) {
-      p.putString("slot", (run && run->subtype == ESP_PARTITION_SUBTYPE_APP_OTA_1) ? "ota_1" : "ota_0");
-      p.putUInt("torec", 1);
-      p.end();
-    } }
-  // No otadata change needed: the custom bootloader boots factory(recovery) by
-  // default (it boots an ota slot only on its one-shot flag, which we don't raise
-  // here), so a plain restart lands in the recovery; torec makes it show the menu.
-  delay(300);
-  ESP.restart();
+// True when the running image has a spare OTA app slot to write an update into.
+// Standalone meshcomod ships a dual-OTA (A/B) table -> true -> in-firmware +
+// phone-app update works. Installed under Launcher (single app slot) there's no
+// spare partition -> false -> the update affordances hide, so the same app-only
+// bin behaves correctly in both worlds. (Replaces the retired reboot-to-recovery
+// helpers — the recovery firmware is gone.)
+static bool touchHasOtaUpdateSlot() {
+  return esp_ota_get_next_update_partition(NULL) != NULL;
 }
 #endif
 
@@ -3682,6 +3686,7 @@ static void buildAutoAddSettings() {
     lv_obj_set_pos(l, 2, y + 6);
     lv_obj_t* sw = lv_switch_create(body);
     lv_obj_align(sw, LV_ALIGN_TOP_RIGHT, 0, y);   // flush to the card's right edge
+    lv_obj_add_event_cb(sw, autoAddSwitchCb, LV_EVENT_VALUE_CHANGED, nullptr);  // auto-save on toggle
     if (out) *out = sw;
     y += 34;
   };
@@ -4056,6 +4061,21 @@ static bool s_tiles_from_sd = false;
 
 // Distance units toggle (km <-> miles). Applies immediately — saves the
 // pref and forces the contacts list to re-render its distance badges.
+#if defined(HAS_TDECK_GT911)
+// Store all data (identity/prefs/contacts/channels) on SD under /meshcomod vs
+// internal SPIFFS. Read at boot before data loads, so it only takes effect on
+// the next reboot.
+static void useSdStorageToggleCb(lv_event_t* e) {
+  if (lv_event_get_code(e) != LV_EVENT_VALUE_CHANGED) return;
+  const bool on = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED);
+#if defined(ESP32)
+  touchPrefsSetUseSdStorage(on);
+#endif
+  if (g_lv.task) g_lv.task->showAlert(on ? "Data -> SD card on reboot\n(card must be inserted)"
+                                         : "Data -> internal on reboot", 1800);
+}
+#endif
+
 static void useMilesToggleCb(lv_event_t* e) {
   if (lv_event_get_code(e) != LV_EVENT_VALUE_CHANGED) return;
   const bool miles = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED);
@@ -4066,6 +4086,35 @@ static void useMilesToggleCb(lv_event_t* e) {
   // The contacts cache now keys on the units flag, so this rebuilds the
   // badges on the next refresh (and immediately if the list is visible).
   refreshContactsList();
+}
+
+// One handler for every per-language switch in the multi-select list. The
+// layout id is stashed in the switch's user_data. Flipping a switch updates the
+// enabled-mask (persisted + live) and refreshes the on-screen keyboard, which
+// snaps back to English if the layout that was just switched off was active.
+static void kbLayoutSwitchCb(lv_event_t* e) {
+  if (lv_event_get_code(e) != LV_EVENT_VALUE_CHANGED) return;
+  lv_obj_t* sw = lv_event_get_target(e);
+  int id = (int)(intptr_t)lv_obj_get_user_data(sw);
+  if (id <= 0 || id >= KEYBOARD_LAYOUT_COUNT) return;
+  bool on = lv_obj_has_state(sw, LV_STATE_CHECKED);
+#if defined(ESP32)
+  uint16_t mask = touchPrefsGetEnabledLayouts();
+  if (on) mask |= (uint16_t)(1u << id);
+  else    mask &= (uint16_t)~(1u << id);
+  touchPrefsSetEnabledLayouts(mask);
+  keyboardLayoutsSetEnabledMask(mask);
+  // SetEnabledMask snaps the cached layout to EN if it was just disabled;
+  // re-apply it so the keyboard widget reflects the (possibly changed) layout.
+  keyboardLayoutsApply(g_lv.keyboard, keyboardLayoutsGetCurrent());
+  touchPrefsSetKeyboardLayout(static_cast<uint8_t>(keyboardLayoutsGetCurrent()));
+#endif
+  if (g_lv.task) {
+    char buf[40];
+    snprintf(buf, sizeof(buf), "%s: %s",
+             keyboardLayoutName(static_cast<KeyboardLayoutId>(id)), on ? "on" : "off");
+    g_lv.task->showAlert(buf, 800);
+  }
 }
 
 // Screen orientation: the persistent base rotation, applied at boot. Tapping
@@ -4292,6 +4341,70 @@ static void buildDeviceSettings() {
     y += 40;
   }
 
+#if defined(HAS_TDECK_GT911)
+  /* Store all data (identity/prefs/contacts/channels) on the SD card under
+     /meshcomod instead of internal flash — for running under Launcher, or just
+     to keep everything on a card. Read at boot, so it applies after a reboot. */
+  {
+    lv_obj_t* l = lv_label_create(body);
+    lv_label_set_text(l, "Store data on SD (reboot)");
+    lv_obj_set_style_text_color(l, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
+    lv_obj_set_pos(l, 2, y + 6);
+    lv_obj_t* sw = lv_switch_create(body);
+    lv_obj_align(sw, LV_ALIGN_TOP_RIGHT, 0, y);
+#if defined(ESP32)
+    if (touchPrefsGetUseSdStorage()) lv_obj_add_state(sw, LV_STATE_CHECKED);
+#endif
+    lv_obj_add_event_cb(sw, useSdStorageToggleCb, LV_EVENT_VALUE_CHANGED, nullptr);
+    y += 40;
+  }
+#endif
+
+  /* Secondary keyboards (multi-select). Switch on any layouts you want in the
+     rotation; a double-tap of SPACE on the physical keyboard cycles
+     English -> each enabled layout -> back. The active layout is remembered
+     across reboots. */
+  {
+    lv_obj_t* l = lv_label_create(body);
+    lv_label_set_text(l, "Secondary keyboards");
+    lv_obj_set_style_text_color(l, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
+    lv_obj_set_style_text_font(l, &g_font_12, LV_PART_MAIN);
+    lv_obj_set_pos(l, 2, y);
+    y += 16;
+
+    lv_obj_t* hint = lv_label_create(body);
+    lv_label_set_text(hint, "double-tap SPACE cycles through the ones you enable");
+    lv_obj_set_style_text_color(hint, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
+    lv_obj_set_style_text_font(hint, &g_font_12, LV_PART_MAIN);
+    lv_obj_set_pos(hint, 2, y);
+    y += 18;
+
+#if defined(ESP32)
+    uint16_t en_mask = touchPrefsGetEnabledLayouts();
+#else
+    uint16_t en_mask = 0;
+#endif
+    /* One row per non-English layout; index id-1 into the display names.
+       Keep in KeyboardLayoutId order (BG=1 .. AR=6). */
+    static const char* k_kb_disp[] = {
+      "Bulgarian", "Russian", "Ukrainian", "Serbian", "Greek", "Arabic (experimental)"
+    };
+    for (int id = 1; id < KEYBOARD_LAYOUT_COUNT; ++id) {
+      lv_obj_t* rl = lv_label_create(body);
+      lv_label_set_text(rl, k_kb_disp[id - 1]);
+      lv_obj_set_style_text_color(rl, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
+      lv_obj_set_style_text_font(rl, &g_font_12, LV_PART_MAIN);
+      lv_obj_set_pos(rl, 2, y + 4);
+
+      lv_obj_t* sw = lv_switch_create(body);
+      lv_obj_align(sw, LV_ALIGN_TOP_RIGHT, 0, y);
+      if (en_mask & (1u << id)) lv_obj_add_state(sw, LV_STATE_CHECKED);
+      lv_obj_set_user_data(sw, (void*)(intptr_t)id);
+      lv_obj_add_event_cb(sw, kbLayoutSwitchCb, LV_EVENT_VALUE_CHANGED, nullptr);
+      y += 34;
+    }
+  }
+
   /* Screen orientation. Cycles Portrait -> Landscape -> Landscape (flipped);
      applied at boot, so tapping reboots the device. */
   {
@@ -4423,24 +4536,8 @@ static void buildDeviceSettings() {
   lv_obj_center(l_reboot);
   y += 42;
 
-  // Reboot to recovery — only on images that actually carry the recovery (factory slot).
-#if defined(ESP32)
-  if (touchHasRecoveryPartition()) {
-    lv_obj_t* b_rec = lv_btn_create(body);
-    lv_obj_set_size(b_rec, lv_pct(100), 34);
-    lv_obj_set_pos(b_rec, 2, y);
-    styleButton(b_rec);
-    lv_obj_set_style_bg_color(b_rec, lv_color_hex(0x8A5A2B), LV_PART_MAIN);
-    lv_obj_set_style_bg_color(b_rec, lv_color_hex(0x6E481F), LV_PART_MAIN | LV_STATE_PRESSED);
-    lv_obj_set_style_text_color(b_rec, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
-    lv_obj_add_event_cb(b_rec, rebootToRecoveryCb, LV_EVENT_CLICKED, nullptr);
-    lv_obj_t* l_rec = lv_label_create(b_rec);
-    lv_label_set_text(l_rec, LV_SYMBOL_LOOP "  Reboot to recovery");
-    lv_obj_center(l_rec);
-    y += 46;
-  } else
-#endif
-  { y += 4; }
+  // (Reboot-to-recovery button removed — the on-device recovery is retired.)
+  y += 4;
 
   // Calibrate battery: capture the current voltage as 100% (for custom packs /
   // builds whose full voltage isn't 4.2 V). Tap = set 100%; long-press = reset.
@@ -11185,6 +11282,29 @@ static void queueZoomPackForCenter() {
 }
 #endif  // ESP32 && MULTI_TRANSPORT_COMPANION
 
+#if defined(ESP32)
+// Decode a PNG to a PSRAM RGB565 buffer via lodepng DIRECTLY. LVGL's lv_png
+// decoder produces RGB565 noise on this board, so we bypass it: lodepng ->
+// RGBA8888 (its malloc lands in PSRAM thanks to the >4 KB SPIRAM-malloc
+// threshold), then a manual RGBA->RGB565 using lv_color_make() so the display's
+// colour format (incl. byte-swap) is honoured. This is what lets the SD map use
+// standard /maps/osm/{z}/{x}/{y}.png tiles (the Meshtastic/MeshCore convention).
+extern "C" unsigned lodepng_decode32(unsigned char** out, unsigned* w, unsigned* h,
+                                      const unsigned char* in, size_t insize);
+static uint8_t* decodePngToRgb565(const uint8_t* png, size_t png_len, int* out_w, int* out_h) {
+  unsigned char* rgba = nullptr; unsigned w = 0, h = 0;
+  if (lodepng_decode32(&rgba, &w, &h, png, png_len) != 0 || !rgba) { if (rgba) free(rgba); return nullptr; }
+  if (w == 0 || h == 0 || w > 1024 || h > 1024) { free(rgba); return nullptr; }
+  const size_t npx = (size_t)w * h;
+  uint16_t* rgb = (uint16_t*)lvglPsramAlloc(npx * sizeof(uint16_t));
+  if (!rgb) { free(rgba); return nullptr; }
+  for (size_t i = 0; i < npx; i++) rgb[i] = lv_color_make(rgba[i*4+0], rgba[i*4+1], rgba[i*4+2]).full;
+  free(rgba);   // lodepng allocates with the system malloc/free
+  *out_w = (int)w; *out_h = (int)h;
+  return (uint8_t*)rgb;
+}
+#endif
+
 // Read /tiles/<z>/<x>/<y>.{jpg,png} from the tiles LittleFS partition
 // into a freshly-PSRAM-alloced buffer. Returns false when neither file
 // exists or alloc fails. Tries .jpg first (offline packs from tile-pack
@@ -11208,10 +11328,15 @@ static bool loadTileJpeg(uint8_t z, int32_t x, int32_t y,
   if (s_tiles_from_sd) {
     // Tile source = microSD: read straight off the card (fully offline, no server fetch).
     if (!fmSdTryMount()) return false;
-    File fsd = SD.open(path, FILE_READ);
+    // Prefer the Meshtastic/MeshCore standard layout /maps/osm/{z}/{x}/{y}.png
+    // (decoded via lodepng); fall back to the legacy /tiles/{z}/{x}/{y}.jpg.
+    char ppath[56];
+    snprintf(ppath, sizeof(ppath), "/maps/osm/%u/%ld/%ld.png", (unsigned)z, (long)x, (long)y);
+    File fsd = SD.open(ppath, FILE_READ);
+    if (!fsd) fsd = SD.open(path, FILE_READ);
     if (!fsd) return false;
     const size_t szsd = fsd.size();
-    if (szsd == 0 || szsd > 80 * 1024) { fsd.close(); return false; }
+    if (szsd == 0 || szsd > 256 * 1024) { fsd.close(); return false; }   // PNG tiles run larger than JPEG
     uint8_t* bufsd = (uint8_t*)lvglPsramAlloc(szsd);
     if (!bufsd) { fsd.close(); return false; }
     const size_t nsd = fsd.read(bufsd, szsd);
@@ -11372,7 +11497,11 @@ static void renderMapTiles() {
       continue;
     }
     int dw = 0, dh = 0;
-    uint8_t* rgb = decodeJpegToRgb565(jpeg, jlen, &dw, &dh);
+    // Sniff the format: PNG (0x89 'P' 'N' 'G') -> direct-lodepng path (LVGL's
+    // lv_png is broken here); otherwise JPEG/SJPG.
+    uint8_t* rgb = (jlen >= 4 && jpeg[0] == 0x89 && jpeg[1] == 'P' && jpeg[2] == 'N' && jpeg[3] == 'G')
+                     ? decodePngToRgb565(jpeg, jlen, &dw, &dh)
+                     : decodeJpegToRgb565(jpeg, jlen, &dw, &dh);
     lvglPsramFree(jpeg);
     if (!rgb) { ++n_missing; continue; }
     dst->z = s_map_zoom; dst->x = wanted[i].tx; dst->y = wanted[i].ty;
@@ -11445,8 +11574,8 @@ static void renderMapTiles() {
   if (s_tiles_from_sd) {
     lv_label_set_text(s_map_status_lbl,
         "Map tiles: microSD\n\n"
-        "Reading from /tiles\n"
-        "(JPEG: /tiles/z/x/y.jpg)\n\n"
+        "/maps/osm/z/x/y.png\n"
+        "(or /tiles/z/x/y.jpg)\n\n"
         "Map appears when a tile\nfor this area is found.");
   } else
 #endif
@@ -15135,7 +15264,28 @@ static void handleHwKey(int key) {
   }
   if (key == 0x08 || key == 0x7F) {            // backspace / delete
     lv_textarea_del_char(ta);
-  } else if (key == 0x0D || key == 0x0A) {     // enter
+  } else if (key == ' ') {
+    // Double-tap SPACE within 250 ms toggles between English and the
+    // configured secondary keyboard. If no secondary is set, it behaves
+    // as a normal space.
+    static unsigned long s_last_space_ms = 0;
+    unsigned long now = millis();
+    bool toggle = (now - s_last_space_ms) < 250;
+    s_last_space_ms = now;
+    if (toggle && keyboardLayoutsAnySecondary()) {
+      // Remove the just-inserted first space before cycling.
+      lv_textarea_del_char(ta);
+      KeyboardLayoutId next = keyboardLayoutsCycle(g_lv.keyboard);
+#if defined(ESP32)
+      touchPrefsSetKeyboardLayout(static_cast<uint8_t>(next));
+#endif
+      if (g_lv.task) {
+        g_lv.task->showAlert(keyboardLayoutName(next), 800);
+      }
+    } else {
+      lv_textarea_add_char(ta, ' ');
+    }
+  } else if (key == 0x0D) {                   // regular ENTER (CR)
 #if defined(HAS_TDECK_GT911)
     if (s_editor_ta && ta == s_editor_ta) {
       lv_textarea_add_char(ta, '\n');   // multiline editor: Enter inserts a newline
@@ -15164,7 +15314,13 @@ static void handleHwKey(int key) {
       hideKb();   // settings/other field: confirm (syncs into the real field) + unfocus
     }
   } else if (key >= 0x20 && key < 0x7F) {      // printable ASCII
-    lv_textarea_add_char(ta, (uint32_t)key);
+    bool shifted = (key >= 'A' && key <= 'Z');
+    const char* mapped = keyboardLayoutMapHwKey(keyboardLayoutsGetCurrent(), key, shifted);
+    if (mapped) {
+      lv_textarea_add_text(ta, mapped);
+    } else {
+      lv_textarea_add_char(ta, (uint32_t)key);
+    }
   }
   if (g_lv.task) g_lv.task->noteUserInput();
 }
@@ -15985,6 +16141,14 @@ static void buildGlobalStatusBar() {
   lv_obj_set_style_text_color(g_statusbar.conn_icon, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
   lv_obj_set_style_text_font(g_statusbar.conn_icon, &g_font_12, LV_PART_MAIN);
   lv_obj_align(g_statusbar.conn_icon, LV_ALIGN_RIGHT_MID, -104, 0);
+
+  // Keyboard layout indicator — sits between conn_icon and clock.
+  g_statusbar.layout_label = lv_label_create(g_statusbar.root);
+  lv_label_set_text(g_statusbar.layout_label, "");
+  lv_obj_set_style_text_color(g_statusbar.layout_label, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
+  lv_obj_set_style_text_font(g_statusbar.layout_label, &g_font_12, LV_PART_MAIN);
+  lv_obj_align(g_statusbar.layout_label, LV_ALIGN_RIGHT_MID, -130, 0);
+  lv_obj_add_flag(g_statusbar.layout_label, LV_OBJ_FLAG_HIDDEN);
 }
 
 static void updateGlobalStatusBar() {
@@ -16094,6 +16258,17 @@ static void updateGlobalStatusBar() {
     }
   }
 #endif
+
+  // ---- Layout indicator ----
+  if (g_statusbar.layout_label) {
+    if (keyboardLayoutsAnySecondary()) {
+      const char* name = keyboardLayoutName(keyboardLayoutsGetCurrent());
+      lv_label_set_text(g_statusbar.layout_label, name);
+      lv_obj_clear_flag(g_statusbar.layout_label, LV_OBJ_FLAG_HIDDEN);
+    } else {
+      lv_obj_add_flag(g_statusbar.layout_label, LV_OBJ_FLAG_HIDDEN);
+    }
+  }
 }
 
 static void refreshStatusLabels() {
@@ -16934,6 +17109,22 @@ static void buildUiTree() {
       if (saved == LV_DISP_ROT_90 || saved == LV_DISP_ROT_270) s_kb_rotation = saved;
       else s_kb_rotation = LV_DISP_ROT_NONE;
     }
+  }
+#endif
+
+  // Apply saved keyboard preferences at boot.
+#if defined(ESP32)
+  {
+    uint16_t en_mask = touchPrefsGetEnabledLayouts();
+    keyboardLayoutsSetEnabledMask(en_mask);
+    uint8_t saved_layout = touchPrefsGetKeyboardLayout();
+    // If the saved active layout isn't one of the enabled set any more, fall
+    // back to English.
+    if (saved_layout != static_cast<uint8_t>(KeyboardLayoutId::EN) &&
+        !(en_mask & (1u << saved_layout))) {
+      saved_layout = static_cast<uint8_t>(KeyboardLayoutId::EN);
+    }
+    keyboardLayoutsApply(g_lv.keyboard, static_cast<KeyboardLayoutId>(saved_layout));
   }
 #endif
 
@@ -17959,10 +18150,21 @@ void UITask::appendComposerChar(char c) {
   _compose_buf[n + 1] = '\0';
 }
 
+void UITask::appendComposerText(const char* text) {
+  if (!text) return;
+  size_t n = strlen(_compose_buf);
+  size_t tlen = strlen(text);
+  if (n + tlen >= sizeof(_compose_buf)) return;
+  memcpy(_compose_buf + n, text, tlen + 1);
+}
+
 void UITask::backspaceComposerChar() {
   size_t n = strlen(_compose_buf);
   if (n == 0) return;
-  _compose_buf[n - 1] = '\0';
+  size_t i = n;
+  while (i > 0 && ((unsigned char)_compose_buf[i - 1] & 0xC0) == 0x80) --i;
+  if (i > 0) --i;
+  _compose_buf[i] = '\0';
 }
 
 bool UITask::sendComposerToActiveThread() {
@@ -18326,24 +18528,13 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
     memset(_ui_threads[i].mesh_contact_key6, 0, sizeof(_ui_threads[i].mesh_contact_key6));
     _ui_threads[i].mesh_channel_slot = -1;
   }
-  // Touch-build safety: normalize to conservative interop defaults in case stale prefs
-  // from prior experimental builds are causing undecodable adverts/messages.
-  if (_node_prefs) {
-    bool changed = false;
-    if (_node_prefs->manual_add_contacts != 0) {
-      _node_prefs->manual_add_contacts = 0;
-      changed = true;
-    }
-    const uint8_t must_autoadd = static_cast<uint8_t>(AUTO_ADD_CHAT | AUTO_ADD_REPEATER);
-    if ((_node_prefs->autoadd_config & must_autoadd) != must_autoadd) {
-      _node_prefs->autoadd_config = static_cast<uint8_t>(_node_prefs->autoadd_config | must_autoadd);
-      changed = true;
-    }
-    if (changed) {
-      the_mesh.savePrefs();
-      pushDiagLine("interop defaults enforced");
-    }
-  }
+  // NOTE: a dev-era "interop safety" block used to live here that, on EVERY
+  // boot, force-reset manual_add_contacts=0 and OR'd AUTO_ADD_CHAT|REPEATER into
+  // autoadd_config, then savePrefs()'d. That silently clobbered the user's saved
+  // Auto-add settings on every reboot (and didn't actually affect advert/message
+  // decoding — auto-add is purely contact-list behaviour). Removed: the user's
+  // saved Auto-add configuration is now respected as-is across reboots. Fresh
+  // installs still get sensible defaults from the firmware's pref initialisation.
   _history_dirty = false;
   _next_history_flush_ms = 0;
   loadHistoryFromStorage();

@@ -25,7 +25,7 @@ set -e
 
 ARIAL="${ARIAL_UNICODE:-/Library/Fonts/Arial Unicode.ttf}"
 NOTO="${NOTO_EMOJI:-/tmp/emojifont/NotoEmoji-Regular.ttf}"
-OUT="$(cd "$(dirname "$0")/../../examples/companion_radio/ui-new" && pwd)"
+OUT="$(cd "$(dirname "$0")/../../examples/companion_radio/ui-touch" && pwd)"
 
 [ -f "$ARIAL" ] || { echo "missing Arial Unicode: $ARIAL"; exit 1; }
 [ -f "$NOTO" ]  || { echo "missing mono NotoEmoji: $NOTO (see header)"; exit 1; }
@@ -49,7 +49,7 @@ print(''.join(chr(c) for c in cps))
 for sz in 12 14 16; do
   npx --yes lv_font_conv@1.5.3 \
     --size "$sz" --bpp 4 --no-compress --format lvgl \
-    --font "$ARIAL" -r 0x00C0-0x00FF -r 0x0100-0x017F --symbols "$SPECIAL" \
+    --font "$ARIAL" -r 0x00C0-0x00FF -r 0x0100-0x017F -r 0x0370-0x03FF -r 0x0400-0x04FF -r 0x0600-0x06FF -r 0xFE70-0xFEFF --symbols "$SPECIAL" \
     --font "$NOTO" --symbols "$EMOJI" \
     --lv-font-name "extras_$sz" \
     -o "$OUT/extras_font_$sz.c"

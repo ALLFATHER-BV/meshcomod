@@ -40,6 +40,13 @@ static uint32_t _atoi(const char* sp) {
   DataStore store(LittleFS, rtc_clock);
 #elif defined(ESP32)
   #include <SPIFFS.h>
+  #if defined(HAS_TDECK_GT911)
+    #include <SD.h>
+    #include <Preferences.h>
+    #ifndef PIN_SD_CS
+      #define PIN_SD_CS 39      // T-Deck microSD chip-select
+    #endif
+  #endif
   extern "C" void set_boot_phase(int phase);
   namespace { struct MainBootTrace { MainBootTrace() { set_boot_phase(2); } } _main_boot_trace; }
   DataStore store(SPIFFS, rtc_clock);
@@ -279,8 +286,32 @@ void setup() {
   #endif
     the_mesh.startInterface(serial_interface);
 #elif defined(ESP32)
-  SPIFFS.begin(true);
-  Serial.println("[BOOT] SPIFFS ok");
+  // Storage selection. SPIFFS by default; use the SD card under /meshcomod when
+  // SPIFFS is unavailable (e.g. installed under Launcher) OR the user opted in
+  // ("Store data on SD"). The SD shares the LoRa SPI bus, already brought up by
+  // radio_init() above, so SD.begin's spi.begin is a no-op. Graceful: any SD
+  // failure falls back to SPIFFS so the device always boots.
+  bool spiffs_ok = SPIFFS.begin(false);   // try first WITHOUT auto-format
+  bool sd_storage = false;
+#if defined(HAS_TDECK_GT911)
+  {
+    extern SPIClass* tdeckSharedSPI();
+    bool want_sd = !spiffs_ok;            // no SPIFFS partition -> must use SD
+    { Preferences _p; if (_p.begin("touch", true)) { if (_p.getBool("use_sd", false)) want_sd = true; _p.end(); } }
+    SPIClass* _spi = tdeckSharedSPI();
+    if (want_sd && _spi) {
+      for (int a = 0; a < 4 && !sd_storage; ++a) {   // short mount ladder (cold cards)
+        SD.end();
+        delay(a == 0 ? 40 : 220);
+        if (SD.begin(PIN_SD_CS, *_spi, 4000000, "/sd", 3) && SD.cardType() != CARD_NONE) {
+          sd_storage = store.useSdStorage();
+        }
+      }
+    }
+  }
+#endif
+  if (!sd_storage && !spiffs_ok) SPIFFS.begin(true);   // last resort: format SPIFFS
+  Serial.printf("[BOOT] storage: %s\n", sd_storage ? "SD /meshcomod" : "SPIFFS");
   store.begin();
   the_mesh.begin(
     #ifdef DISPLAY_CLASS

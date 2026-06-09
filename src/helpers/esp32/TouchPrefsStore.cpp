@@ -85,6 +85,68 @@ bool touchPrefsSetKbBacklight(uint8_t mode) {
   return ok;
 }
 
+static const char* KEY_KB_LAYOUT = "kblang";
+static const uint8_t DEFAULT_KB_LAYOUT = 0;   // English
+
+uint8_t touchPrefsGetKeyboardLayout() {
+  if (!s_begun) touchPrefsBegin();
+  uint8_t v = s_prefs.getUChar(KEY_KB_LAYOUT, DEFAULT_KB_LAYOUT);
+  return v;
+}
+
+bool touchPrefsSetKeyboardLayout(uint8_t layout) {
+  if (!s_begun) touchPrefsBegin();
+  s_prefs.end();
+  if (!s_prefs.begin(TOUCH_NS, false)) return false;
+  bool ok = s_prefs.putUChar(KEY_KB_LAYOUT, layout) > 0;
+  s_prefs.end();
+  s_begun = s_prefs.begin(TOUCH_NS, true);
+  return ok;
+}
+
+static const char* KEY_KB_SECONDARY = "kbsec";
+static const uint8_t DEFAULT_KB_SECONDARY = 0;   // None
+
+uint8_t touchPrefsGetSecondaryKeyboard() {
+  if (!s_begun) touchPrefsBegin();
+  uint8_t v = s_prefs.getUChar(KEY_KB_SECONDARY, DEFAULT_KB_SECONDARY);
+  return v;
+}
+
+bool touchPrefsSetSecondaryKeyboard(uint8_t secondary) {
+  if (!s_begun) touchPrefsBegin();
+  s_prefs.end();
+  if (!s_prefs.begin(TOUCH_NS, false)) return false;
+  bool ok = s_prefs.putUChar(KEY_KB_SECONDARY, secondary) > 0;
+  s_prefs.end();
+  s_begun = s_prefs.begin(TOUCH_NS, true);
+  return ok;
+}
+
+static const char* KEY_KB_ENABLED = "kbenab";
+
+uint16_t touchPrefsGetEnabledLayouts() {
+  if (!s_begun) touchPrefsBegin();
+  // 0xFFFF is never a valid mask (only 7 low bits are used), so use it as the
+  // "never written" sentinel: migrate the legacy single-secondary into a mask.
+  uint16_t v = s_prefs.getUShort(KEY_KB_ENABLED, 0xFFFF);
+  if (v == 0xFFFF) {
+    uint8_t sec = s_prefs.getUChar(KEY_KB_SECONDARY, 0);
+    return (sec != 0 && sec < 16) ? (uint16_t)(1u << sec) : 0;
+  }
+  return v;
+}
+
+bool touchPrefsSetEnabledLayouts(uint16_t mask) {
+  if (!s_begun) touchPrefsBegin();
+  s_prefs.end();
+  if (!s_prefs.begin(TOUCH_NS, false)) return false;
+  bool ok = s_prefs.putUShort(KEY_KB_ENABLED, mask) > 0;
+  s_prefs.end();
+  s_begun = s_prefs.begin(TOUCH_NS, true);
+  return ok;
+}
+
 static const char* KEY_TILE_SRV = "tile_srv";
 static const char* DEFAULT_TILE_SERVER = "http://tiles.meshcomod.com";
 
@@ -267,6 +329,27 @@ bool touchPrefsSetTilesFromSd(bool from_sd) {
   s_prefs.end();
   if (!s_prefs.begin(TOUCH_NS, false)) return false;
   bool ok = s_prefs.putBool(KEY_TILES_FROM_SD, from_sd);
+  s_prefs.end();
+  s_begun = s_prefs.begin(TOUCH_NS, true);
+  return ok;
+}
+
+// Store ALL device data (identity, prefs, contacts, channels) on the SD card
+// under /meshcomod instead of internal SPIFFS. Read at boot (main.cpp) BEFORE
+// the data loads, so changing it needs a reboot. Key "use_sd" in the "touch"
+// namespace — main.cpp reads the same key directly.
+static const char* KEY_USE_SD_STORAGE = "use_sd";
+
+bool touchPrefsGetUseSdStorage() {
+  if (!s_begun) touchPrefsBegin();
+  return s_prefs.getBool(KEY_USE_SD_STORAGE, false);   // default = SPIFFS
+}
+
+bool touchPrefsSetUseSdStorage(bool use_sd) {
+  if (!s_begun) touchPrefsBegin();
+  s_prefs.end();
+  if (!s_prefs.begin(TOUCH_NS, false)) return false;
+  bool ok = s_prefs.putBool(KEY_USE_SD_STORAGE, use_sd);
   s_prefs.end();
   s_begun = s_prefs.begin(TOUCH_NS, true);
   return ok;
