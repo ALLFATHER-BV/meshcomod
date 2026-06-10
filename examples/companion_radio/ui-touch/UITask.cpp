@@ -395,7 +395,15 @@ constexpr int TAB_LAST               = 4;
 
 // ---- Chat overlay layout ----
 constexpr int CHAT_HDR_H       = 0;    // in-chat header bar removed; thread name shows in the status bar
-constexpr int CHAT_COMP_H      = 34;   // composer row (slimmed 50 → 40 → 34; hugs the 30px textbox)
+constexpr int CHAT_COMP_H      = 34;   // composer row, single line (slimmed 50 → 40 → 34; hugs the 30px textbox)
+constexpr int CHAT_COMP_MAX_LINES = 4; // composer grows up to this many wrapped lines, then scrolls vertically
+// Current composer-row height. The composer wraps long text to multiple lines
+// and grows UPWARD (its bottom stays pinned, the message list above shrinks)
+// instead of horizontally scrolling a single line. The chat layout helpers
+// below derive the message-area height + composer Y from this, so a taller
+// composer automatically reclaims space from the message list. Reset to
+// CHAT_COMP_H on each chat-panel (re)build; updated by chatComposerAutoGrow().
+static lv_coord_t s_comp_h = CHAT_COMP_H;
 constexpr int CHAT_KB_H        = 130;  // on-screen keyboard (portrait)
 // Bottom tab-bar height (matches lv_tabview_create in buildUiTree). A tab
 // page's usable content area is the screen minus the status bar and tab bar —
@@ -417,12 +425,12 @@ static inline bool       chatLandscape() { return lv_disp_get_hor_res(nullptr) >
 static inline lv_coord_t chatScreenW()   { return lv_disp_get_hor_res(nullptr); }
 static inline lv_coord_t chatScreenH()   { return lv_disp_get_ver_res(nullptr) - STATUSBAR_H; }
 static inline lv_coord_t chatKbH()       { return chatLandscape() ? (lv_disp_get_ver_res(nullptr) / 2) : CHAT_KB_H; }
-// without keyboard:
-static inline lv_coord_t chatMsgHOpen()  { return chatScreenH() - CHAT_HDR_H - CHAT_COMP_H; }
-static inline lv_coord_t chatCompYOpen() { return chatScreenH() - CHAT_COMP_H; }
+// without keyboard (s_comp_h tracks the composer's current, possibly grown, height):
+static inline lv_coord_t chatMsgHOpen()  { return chatScreenH() - CHAT_HDR_H - s_comp_h; }
+static inline lv_coord_t chatCompYOpen() { return chatScreenH() - s_comp_h; }
 // with keyboard shown:
-static inline lv_coord_t chatMsgHKb()    { return chatScreenH() - CHAT_HDR_H - CHAT_COMP_H - chatKbH(); }
-static inline lv_coord_t chatCompYKb()   { return chatScreenH() - CHAT_COMP_H - chatKbH(); }
+static inline lv_coord_t chatMsgHKb()    { return chatScreenH() - CHAT_HDR_H - s_comp_h - chatKbH(); }
+static inline lv_coord_t chatCompYKb()   { return chatScreenH() - s_comp_h - chatKbH(); }
 
 // ---- Thread list button context ----
 struct LvThreadButtonCtx { int idx; bool channel; };
@@ -588,6 +596,7 @@ static lv_obj_t* s_kb_rot_left_btn   = nullptr;
 static lv_obj_t* s_kb_rot_right_btn  = nullptr;
 static lv_obj_t* s_kb_lang_btn       = nullptr;   // on-screen language-cycle key (boards w/o a physical keyboard)
 static lv_obj_t* s_kb_lang_lbl       = nullptr;   // its label — the active layout's 2-letter code
+static lv_obj_t* s_kb_alt_btn        = nullptr;   // on-screen "Alt" key: cycles the last letter's accent (issue #22)
 
 // ---- Global UI orientation (persistent) ----
 // The base orientation of the whole UI, loaded from NVS ("uirot") and applied
@@ -781,6 +790,7 @@ struct SettingsModalState {
   lv_obj_t* cr_ta;
   lv_obj_t* tx_ta;
   lv_obj_t* airtime_ta;
+  lv_obj_t* region_ta;
   lv_obj_t* max_hops_ta;
   lv_obj_t* auto_chat_sw;
   lv_obj_t* auto_rep_sw;
@@ -1174,6 +1184,9 @@ static void refreshLiveDiag(unsigned long now);
 static void refreshSettingsSectionSubtitles();
 static void refreshLogModalView();
 static void hideKb();
+static void accentExit();      // long-press accent picker (issue #22, dead on touch)
+static void accentBoxHide();   // tap-to-pick accent box (issue #22)
+static void txtMenuHide();     // cut/copy/paste/select-all edit menu
 static void showKb(LvChatPanel* p);
 static void closeSettingsModal();
 static void contactSelectCb(lv_event_t* e);
@@ -1528,6 +1541,28 @@ static void kbApplyLayoutForRotation(uint8_t rot) {
     lv_obj_set_width(s_kb_mirror_root, scr_w);
     if (s_kb_mirror_ta) lv_obj_set_width(s_kb_mirror_ta, scr_w - 16);
   }
+  // Re-flow the active chat panel for the new orientation. Its children were
+  // sized/positioned for whatever rotation was current when the panel was built
+  // or last shown — so after a rotate the message area + composer keep a stale
+  // (e.g. portrait) width and Y: the composer ends up narrow and parked off the
+  // visible area until something nudges it (the auto-grow on the 2nd line was the
+  // only thing fixing the Y). The display is already rotated here, so the chat*()
+  // helpers return the new geometry.
+  if (s_kb_panel) {
+    // Resize the overlay container FIRST — it's sized to the screen at build time
+    // and otherwise stays portrait-narrow in landscape, clipping everything
+    // inside it (the composer looked "not full width" because its parent wasn't).
+    if (s_kb_panel->overlay)
+      lv_obj_set_size(s_kb_panel->overlay, chatScreenW(), chatScreenH());
+    if (s_kb_panel->msgs)
+      lv_obj_set_size(s_kb_panel->msgs, chatScreenW(), chatMsgHKb());
+    if (s_kb_panel->composer_row) {
+      lv_obj_set_size(s_kb_panel->composer_row, chatScreenW(), s_comp_h);
+      lv_obj_set_y(s_kb_panel->composer_row, chatCompYKb());
+    }
+    if (s_kb_panel->composer_ta)
+      lv_obj_set_width(s_kb_panel->composer_ta, chatScreenW() - 120);
+  }
   // Rotation arrows. Default: just above the keyboard's top edge. In the
   // chat panel that area is occupied by the composer row (QR + textarea +
   // Send), so the arrows would land on top of the buttons. When the chat
@@ -1535,13 +1570,13 @@ static void kbApplyLayoutForRotation(uint8_t rot) {
   // instead of just above the keyboard.
   lv_coord_t arrow_bottom_y_from_screen_top = scr_h - (kb_h + 2);
   if (s_kb_panel && s_kb_panel->composer_row) {
-    // Force a layout pass so the composer's freshly-set y (CHAT_COMP_Y_KB)
-    // is reflected in get_coords before we sample it.
-    lv_obj_update_layout(s_kb_panel->composer_row);
-    lv_area_t comp_coords;
-    lv_obj_get_coords(s_kb_panel->composer_row, &comp_coords);
-    // 2-px gap between arrow bottom and composer top.
-    if (comp_coords.y1 > 0) arrow_bottom_y_from_screen_top = comp_coords.y1 - 2;
+    // Sit just above the chat composer, which itself sits just above the
+    // keyboard (composer bottom == keyboard top). COMPUTE that from this
+    // rotation's keyboard height (kb_h) + composer height (s_comp_h) rather than
+    // sampling the composer's live coords: on a rotate the composer hasn't been
+    // re-laid-out for the new orientation yet, so sampling raced it and dropped
+    // these buttons on top of the landscape keyboard. 2-px gap above the composer.
+    arrow_bottom_y_from_screen_top = scr_h - kb_h - s_comp_h - 2;
   }
   // Convert "absolute y of arrow bottom" → offset usable by LV_ALIGN_BOTTOM_*.
   const lv_coord_t y_off = -(scr_h - arrow_bottom_y_from_screen_top);
@@ -1549,6 +1584,8 @@ static void kbApplyLayoutForRotation(uint8_t rot) {
   if (s_kb_rot_right_btn) lv_obj_align(s_kb_rot_right_btn, LV_ALIGN_BOTTOM_RIGHT, -4, y_off);
   // Language key sits just right of the left rotate arrow.
   if (s_kb_lang_btn)      lv_obj_align(s_kb_lang_btn,      LV_ALIGN_BOTTOM_LEFT,  40, y_off);
+  // Accent ("Alt") key sits just right of the language key.
+  if (s_kb_alt_btn)       lv_obj_align(s_kb_alt_btn,       LV_ALIGN_BOTTOM_LEFT,  76, y_off);
 }
 
 static void kbApplyRotation(uint8_t rot) {
@@ -1585,6 +1622,7 @@ static void kbSetRotateArrowsOpa(lv_opa_t opa) {
   if (s_kb_rot_left_btn)  lv_obj_set_style_opa(s_kb_rot_left_btn,  opa, LV_PART_MAIN);
   if (s_kb_rot_right_btn) lv_obj_set_style_opa(s_kb_rot_right_btn, opa, LV_PART_MAIN);
   if (s_kb_lang_btn)      lv_obj_set_style_opa(s_kb_lang_btn,      opa, LV_PART_MAIN);
+  if (s_kb_alt_btn)       lv_obj_set_style_opa(s_kb_alt_btn,       opa, LV_PART_MAIN);
 }
 
 // ---- On-screen language-cycle key ----------------------------------------
@@ -1619,6 +1657,9 @@ static void kbShowRotateArrows(bool show) {
   const bool lang_show = show && keyboardLayoutsAnySecondary();
   if (s_kb_lang_btn) lang_show ? lv_obj_clear_flag(s_kb_lang_btn, LV_OBJ_FLAG_HIDDEN)
                                : lv_obj_add_flag  (s_kb_lang_btn, LV_OBJ_FLAG_HIDDEN);
+  // Accent ("Alt") key: shown whenever the keyboard is up.
+  if (s_kb_alt_btn) show ? lv_obj_clear_flag(s_kb_alt_btn, LV_OBJ_FLAG_HIDDEN)
+                         : lv_obj_add_flag  (s_kb_alt_btn, LV_OBJ_FLAG_HIDDEN);
   if (show) {
     // Each new show starts at full opacity; the first keystroke fades arrows
     // to ~20% so they're out of the way while typing but still tappable.
@@ -1626,6 +1667,7 @@ static void kbShowRotateArrows(bool show) {
     if (s_kb_rot_left_btn)  lv_obj_move_foreground(s_kb_rot_left_btn);
     if (s_kb_rot_right_btn) lv_obj_move_foreground(s_kb_rot_right_btn);
     if (lang_show) { kbLangBtnRefresh(); lv_obj_move_foreground(s_kb_lang_btn); }
+    if (s_kb_alt_btn) lv_obj_move_foreground(s_kb_alt_btn);
   }
 }
 
@@ -1761,6 +1803,9 @@ static void kbMirrorBind(lv_obj_t* real_ta) {
 }
 
 static void hideKb() {
+  accentExit();   // tear down any open accent picker
+  accentBoxHide();
+  txtMenuHide();   // tear down any open edit menu
   kbMirrorSyncToReal();
   s_kb_bind_ta = nullptr;
   if (s_kb_mirror_root) lv_obj_add_flag(s_kb_mirror_root, LV_OBJ_FLAG_HIDDEN);
@@ -1787,6 +1832,7 @@ static void hideKb() {
     lv_obj_scroll_to(lv_scr_act(), 0, 0, LV_ANIM_OFF);
   }
   if (s_kb_panel) {
+    if (s_kb_panel->composer_ta)  lv_obj_clear_state(s_kb_panel->composer_ta, LV_STATE_FOCUSED);
     if (s_kb_panel->msgs)         lv_obj_set_height(s_kb_panel->msgs,         chatMsgHOpen());
     if (s_kb_panel->composer_row) lv_obj_set_y(s_kb_panel->composer_row,      chatCompYOpen());
     s_kb_panel = nullptr;
@@ -1800,6 +1846,12 @@ static void showKb(LvChatPanel* p) {
   if (s_kb_mirror_root) lv_obj_add_flag(s_kb_mirror_root, LV_OBJ_FLAG_HIDDEN);
   s_kb_panel = p;
   lv_keyboard_set_textarea(g_lv.keyboard, p->composer_ta);
+  // lv_keyboard_set_textarea focuses the *keyboard*, not the field, so the
+  // composer shows no cursor and reads as "not targeted". Focus it explicitly —
+  // on the T-Deck this is the auto-target when a chat opens (typing already
+  // routes here via handleHwKey; this just makes the cursor visible so the user
+  // can see the field is ready).
+  lv_obj_add_state(p->composer_ta, LV_STATE_FOCUSED);
 #if !defined(HAS_TDECK_KEYBOARD)
   // No on-screen keyboard on the T-Deck — the physical keyboard types straight
   // into the composer (already visible), so skip showing the keys + the lift.
@@ -1813,17 +1865,332 @@ static void showKb(LvChatPanel* p) {
 #endif
 }
 
+// The composer wraps long messages to multiple lines and grows UPWARD instead
+// of scrolling a single line sideways. Recompute the row height from how many
+// lines the current text wraps to (capped at CHAT_COMP_MAX_LINES), then re-apply
+// the chat layout so the message list above shrinks to match. Fires on every
+// composer text change (physical-keyboard insert, on-screen mirror sync, the
+// post-send clear, emoji/quick-reply inserts). Past the cap it scrolls vertically.
+static void chatComposerAutoGrow(LvChatPanel* p) {
+  if (!p || !p->composer_ta || !p->composer_row || !p->msgs) return;
+  const lv_coord_t lh = lv_font_get_line_height(&g_font_14);
+  if (lh <= 0) return;
+  const char* txt = lv_textarea_get_text(p->composer_ta);
+  // Wrap width = the textarea's content box, less a few px for the cursor so the
+  // box grows a hair before the field would actually need to scroll sideways.
+  lv_coord_t maxw = lv_obj_get_content_width(p->composer_ta) - 4;
+  if (maxw < 16) maxw = 16;
+  lv_point_t sz;
+  lv_txt_get_size(&sz, (txt && txt[0]) ? txt : " ", &g_font_14, 0, 0, maxw, LV_TEXT_FLAG_NONE);
+  int lines = (int)((sz.y + lh - 1) / lh);   // ceil to whole lines
+  if (lines < 1) lines = 1;
+  if (lines > CHAT_COMP_MAX_LINES) lines = CHAT_COMP_MAX_LINES;
+  const lv_coord_t want = CHAT_COMP_H + (lv_coord_t)(lines - 1) * lh;
+  if (want == s_comp_h) return;   // height unchanged → nothing to relayout
+  s_comp_h = want;
+  // Keyboard shown (V4) lifts the composer above the keys; otherwise (T-Deck, or
+  // V4 with the keyboard down) it sits at the screen bottom.
+  const bool kb = g_lv.keyboard && !lv_obj_has_flag(g_lv.keyboard, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_set_height(p->composer_row, s_comp_h);
+  lv_obj_set_height(p->composer_ta,  s_comp_h - 4);
+  lv_obj_set_y(p->composer_row, kb ? chatCompYKb() : chatCompYOpen());
+  lv_obj_set_height(p->msgs,    kb ? chatMsgHKb()  : chatMsgHOpen());
+}
+
+static void composerAutoGrowCb(lv_event_t* e) {
+  chatComposerAutoGrow(static_cast<LvChatPanel*>(lv_event_get_user_data(e)));
+}
+
 // ============================================================
 // Callbacks
 // ============================================================
+// ===== Long-press accent picker (issue #22) =================================
+// Hold a Latin letter key -> a popup shows its accented variants; each further
+// tap of that key cycles the selection and replaces the just-typed char in
+// place; a short pause (or tapping a different key) commits the highlighted one.
+// On-screen, so it works on both V4 + T-Deck. The accent glyphs already live in
+// the extras_* fallback fonts (Latin-1 + Latin-Extended-A), so they render in
+// the textarea and chat. Keys carry LV_BTNMATRIX_CTRL_NO_REPEAT (KeyboardLayouts
+// .cpp) so a hold doesn't auto-repeat — it cleanly long-presses instead.
+static const char* const kAccA[]   = {"à","á","â","ä","ã","å"};
+static const char* const kAccA_u[] = {"À","Á","Â","Ä","Ã","Å"};
+static const char* const kAccE[]   = {"è","é","ê","ë"};
+static const char* const kAccE_u[] = {"È","É","Ê","Ë"};
+static const char* const kAccI[]   = {"ì","í","î","ï"};
+static const char* const kAccI_u[] = {"Ì","Í","Î","Ï"};
+static const char* const kAccO[]   = {"ò","ó","ô","ö","õ","ø"};
+static const char* const kAccO_u[] = {"Ò","Ó","Ô","Ö","Õ","Ø"};
+static const char* const kAccU[]   = {"ù","ú","û","ü"};
+static const char* const kAccU_u[] = {"Ù","Ú","Û","Ü"};
+static const char* const kAccN[]   = {"ñ"};
+static const char* const kAccN_u[] = {"Ñ"};
+static const char* const kAccC[]   = {"ç"};
+static const char* const kAccC_u[] = {"Ç"};
+static const char* const kAccS[]   = {"ß","ś","š"};
+static const char* const kAccY[]   = {"ý","ÿ"};
+struct AccentSet { char key; const char* const* v; uint8_t n; };
+static const AccentSet kAccentSets[] = {
+  {'a',kAccA,6},{'A',kAccA_u,6},{'e',kAccE,4},{'E',kAccE_u,4},
+  {'i',kAccI,4},{'I',kAccI_u,4},{'o',kAccO,6},{'O',kAccO_u,6},
+  {'u',kAccU,4},{'U',kAccU_u,4},{'n',kAccN,1},{'N',kAccN_u,1},
+  {'c',kAccC,1},{'C',kAccC_u,1},{'s',kAccS,3},{'y',kAccY,2},
+};
+static const AccentSet* accentLookup(const char* key) {
+  if (!key || !key[0] || key[1]) return nullptr;   // single ASCII-char keys only
+  for (const auto& s : kAccentSets) if (s.key == key[0]) return &s;
+  return nullptr;
+}
+
+static constexpr uint32_t kAccentCommitMs = 900;    // pause that commits the choice
+static bool        s_acc_active = false;
+static bool        s_acc_first  = false;            // next VALUE_CHANGED is the base insert
+static char        s_acc_base[6] = {0};
+static const char* s_acc_opts[12];
+static int         s_acc_n   = 0;
+static int         s_acc_idx = 0;
+static char        s_acc_anchor[256] = {0};         // text before the managed accent char
+static lv_obj_t*   s_acc_popup = nullptr;
+static lv_obj_t*   s_acc_cells[12] = {nullptr};
+static lv_timer_t* s_acc_timer = nullptr;
+
+static void accentPopupHighlight() {
+  for (int i = 0; i < s_acc_n; ++i) {
+    if (!s_acc_cells[i]) continue;
+    const bool sel = (i == s_acc_idx);
+    lv_obj_set_style_bg_color(s_acc_cells[i], lv_color_hex(sel ? COLOR_ACCENT : 0x10202E), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(s_acc_cells[i], LV_OPA_COVER, LV_PART_MAIN);
+  }
+}
+static void accentPopupHide() {
+  if (s_acc_popup) { lv_obj_del(s_acc_popup); s_acc_popup = nullptr; }
+  for (int i = 0; i < 12; ++i) s_acc_cells[i] = nullptr;
+}
+static void accentExit() {
+  if (s_acc_timer) { lv_timer_del(s_acc_timer); s_acc_timer = nullptr; }
+  accentPopupHide();
+  s_acc_active = false;
+  s_acc_first  = false;
+}
+static void accentCommitTimerCb(lv_timer_t* t) { (void)t; accentExit(); }
+
+static void accentPopupShow() {
+  accentPopupHide();
+  const int cw = 30, ch = 30, gap = 4, pad = 6;
+  s_acc_popup = lv_obj_create(lv_layer_top());
+  lv_obj_remove_style_all(s_acc_popup);
+  lv_obj_set_style_bg_color(s_acc_popup, lv_color_hex(COLOR_PANEL), LV_PART_MAIN);
+  lv_obj_set_style_bg_opa(s_acc_popup, LV_OPA_COVER, LV_PART_MAIN);
+  lv_obj_set_style_radius(s_acc_popup, 8, LV_PART_MAIN);
+  lv_obj_set_style_border_color(s_acc_popup, lv_color_hex(0x2A3D52), LV_PART_MAIN);
+  lv_obj_set_style_border_width(s_acc_popup, 1, LV_PART_MAIN);
+  lv_obj_set_style_pad_all(s_acc_popup, pad, LV_PART_MAIN);
+  lv_obj_set_style_pad_column(s_acc_popup, gap, LV_PART_MAIN);
+  lv_obj_set_flex_flow(s_acc_popup, LV_FLEX_FLOW_ROW);
+  lv_obj_set_size(s_acc_popup, s_acc_n * cw + (s_acc_n - 1) * gap + pad * 2, ch + pad * 2);
+  lv_obj_clear_flag(s_acc_popup, LV_OBJ_FLAG_SCROLLABLE);
+  for (int i = 0; i < s_acc_n; ++i) {
+    lv_obj_t* c = lv_obj_create(s_acc_popup);
+    lv_obj_remove_style_all(c);
+    lv_obj_set_size(c, cw, ch);
+    lv_obj_set_style_radius(c, 5, LV_PART_MAIN);
+    lv_obj_clear_flag(c, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_t* l = lv_label_create(c);
+    lv_label_set_text(l, s_acc_opts[i]);
+    lv_obj_set_style_text_font(l, &g_font_16, LV_PART_MAIN);
+    lv_obj_set_style_text_color(l, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
+    lv_obj_center(l);
+    s_acc_cells[i] = c;
+  }
+  lv_obj_update_layout(s_acc_popup);
+  const lv_coord_t kb_y = g_lv.keyboard ? lv_obj_get_y(g_lv.keyboard) : 0;
+  lv_obj_align(s_acc_popup, LV_ALIGN_TOP_MID, 0, kb_y - lv_obj_get_height(s_acc_popup) - 6);
+  accentPopupHighlight();
+}
+
+// Re-assert the text as anchor + the selected option AFTER the keyboard's own
+// insert has run for this event, so we don't depend on cb-dispatch ordering and
+// fast taps still converge on the final choice (each call sets the whole tail).
+static void accentApplyAsync(void* unused) {
+  (void)unused;
+  if (!s_acc_active || !s_kb_mirror_ta) return;
+  char buf[300];
+  snprintf(buf, sizeof buf, "%s%s", s_acc_anchor, s_acc_opts[s_acc_idx]);
+  lv_textarea_set_text(s_kb_mirror_ta, buf);   // fires mirror VALUE_CHANGED -> kbMirrorSyncToReal
+}
+
+static const char* kbSelectedKeyText() {
+  if (!g_lv.keyboard) return nullptr;
+  uint32_t id = lv_btnmatrix_get_selected_btn(g_lv.keyboard);
+  if (id == LV_BTNMATRIX_BTN_NONE) return nullptr;
+  return lv_btnmatrix_get_btn_text(g_lv.keyboard, id);
+}
+
+static void accentLongPressCb(lv_event_t* e) {   // (dead on touch: LONG_PRESSED never reaches the keyboard)
+  if (lv_event_get_code(e) != LV_EVENT_LONG_PRESSED || s_acc_active) return;
+  const char* key = kbSelectedKeyText();
+  const AccentSet* set = accentLookup(key);
+  if (!set) return;
+  strncpy(s_acc_base, key, sizeof(s_acc_base) - 1);
+  s_acc_base[sizeof(s_acc_base) - 1] = 0;
+  s_acc_opts[0] = s_acc_base; s_acc_n = 1;
+  for (uint8_t i = 0; i < set->n && s_acc_n < 12; ++i) s_acc_opts[s_acc_n++] = set->v[i];
+  s_acc_idx = 0;
+  s_acc_active = true;
+  s_acc_first  = true;   // the imminent release inserts the base (= option 0)
+  accentPopupShow();
+  s_acc_timer = lv_timer_create(accentCommitTimerCb, kAccentCommitMs, nullptr);
+}
+
+// Called from keyboardCb on VALUE_CHANGED while a picker is open.
+static void accentHandleValueChanged() {
+  if (!s_acc_active) return;
+  const char* key = kbSelectedKeyText();
+  const bool is_base = key && s_acc_base[0] && strcmp(key, s_acc_base) == 0;
+  if (!is_base) { accentExit(); return; }   // a different key commits the choice
+  if (s_acc_first) {
+    // The base char was just inserted (on release); capture the text before it.
+    s_acc_first = false;
+    const char* t = s_kb_mirror_ta ? lv_textarea_get_text(s_kb_mirror_ta) : "";
+    size_t len = strlen(t);
+    if (len > 0) len -= 1;                  // drop the trailing base (ASCII, 1 byte)
+    if (len >= sizeof(s_acc_anchor)) len = sizeof(s_acc_anchor) - 1;
+    memcpy(s_acc_anchor, t, len); s_acc_anchor[len] = 0;
+    s_acc_idx = 0;
+  } else {
+    s_acc_idx = (s_acc_idx + 1) % s_acc_n; // cycle to the next variant
+    lv_async_call(accentApplyAsync, nullptr);
+  }
+  accentPopupHighlight();
+  if (s_acc_timer) lv_timer_reset(s_acc_timer);
+}
+// ===========================================================================
+
+// ---- "Alt" accent key (issue #22) ----------------------------------------
+// The touch keyboard can't do long-press (the cap-touch driver finalizes taps
+// before LVGL's long-press fires), so accents are entered with a dedicated
+// floating "Alt" key: type a letter, then tap Alt to cycle the character before
+// the cursor to its next accent variant in place (à->á->â->...->base). Glyphs
+// already live in the extras_* fallback fonts.
+static const char* lastUtf8Start(const char* s) {
+  size_t n = s ? strlen(s) : 0;
+  if (!n) return nullptr;
+  size_t i = n - 1;
+  while (i > 0 && (static_cast<unsigned char>(s[i]) & 0xC0u) == 0x80u) --i;  // skip UTF-8 continuation bytes
+  return s + i;
+}
+static void accentAltCb(lv_event_t* e) {
+  if (lv_event_get_code(e) != LV_EVENT_CLICKED || !s_kb_mirror_ta) return;
+  const char* last = lastUtf8Start(lv_textarea_get_text(s_kb_mirror_ta));
+  if (!last) return;
+  for (const auto& set : kAccentSets) {
+    char base[2] = { set.key, 0 };
+    int idx = -1;
+    if (strcmp(last, base) == 0) idx = 0;
+    else for (uint8_t i = 0; i < set.n; ++i) if (strcmp(last, set.v[i]) == 0) { idx = i + 1; break; }
+    if (idx < 0) continue;                       // last char not in this cycle
+    const int next = (idx + 1) % (set.n + 1);    // wrap: ...->last accent->base->...
+    const char* repl = (next == 0) ? base : set.v[next - 1];
+    lv_textarea_del_char(s_kb_mirror_ta);        // remove the char before the cursor
+    lv_textarea_add_text(s_kb_mirror_ta, repl);
+    kbMirrorSyncToReal();
+    return;
+  }
+}
+
+// ---- Accent box: tap-to-pick accents (issue #22) -------------------------
+// When a letter with accent variants is typed (on-screen OR physical keyboard),
+// a floating box of its variants pops up; tapping one replaces the just-typed
+// letter. Touch-driven, so it works on both keyboards. Both paths type into
+// lv_keyboard_get_textarea(), so one trigger covers them. Dismissed by the next
+// keystroke / a pick / hiding the keyboard.
+static lv_obj_t* s_accbox    = nullptr;
+static lv_obj_t* s_accbox_ta = nullptr;   // the field the box edits
+static const AccentSet* accentSetFor(char c) {
+  for (const auto& s : kAccentSets) if (s.key == c) return &s;
+  return nullptr;
+}
+static void accentBoxHide() {
+  if (s_accbox) { lv_obj_del(s_accbox); s_accbox = nullptr; }
+  s_accbox_ta = nullptr;
+}
+static void accentBoxCellCb(lv_event_t* e) {
+  if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+  const char* variant = static_cast<const char*>(lv_event_get_user_data(e));
+  lv_obj_t* ta = s_accbox_ta;
+  if (ta && variant) {
+    lv_textarea_del_char(ta);             // remove the just-typed base letter
+    lv_textarea_add_text(ta, variant);    // insert the chosen accent
+    if (ta == s_kb_mirror_ta) kbMirrorSyncToReal();
+  }
+  accentBoxHide();
+}
+static void accentBoxMaybeShow() {
+  accentBoxHide();                          // each new keystroke clears the last box
+  if (!g_lv.keyboard) return;
+  lv_obj_t* ta = lv_keyboard_get_textarea(g_lv.keyboard);
+  if (!ta) return;
+  const char* last = lastUtf8Start(lv_textarea_get_text(ta));
+  if (!last || last[1]) return;             // last char must be a single ASCII byte
+  const AccentSet* set = accentSetFor(last[0]);
+  if (!set) return;
+  s_accbox_ta = ta;
+  const int cw = 34, ch = 40, gap = 4, pad = 6;
+  s_accbox = lv_obj_create(lv_layer_top());
+  lv_obj_remove_style_all(s_accbox);
+  lv_obj_set_style_bg_color(s_accbox, lv_color_hex(COLOR_PANEL), LV_PART_MAIN);
+  lv_obj_set_style_bg_opa(s_accbox, LV_OPA_COVER, LV_PART_MAIN);
+  lv_obj_set_style_radius(s_accbox, 8, LV_PART_MAIN);
+  lv_obj_set_style_border_color(s_accbox, lv_color_hex(0x2A3D52), LV_PART_MAIN);
+  lv_obj_set_style_border_width(s_accbox, 1, LV_PART_MAIN);
+  lv_obj_set_style_pad_all(s_accbox, pad, LV_PART_MAIN);
+  lv_obj_set_style_pad_column(s_accbox, gap, LV_PART_MAIN);
+  lv_obj_set_flex_flow(s_accbox, LV_FLEX_FLOW_ROW);
+  lv_obj_set_size(s_accbox, set->n * cw + (set->n - 1) * gap + pad * 2, ch + pad * 2);
+  lv_obj_clear_flag(s_accbox, LV_OBJ_FLAG_SCROLLABLE);
+  for (uint8_t i = 0; i < set->n; ++i) {
+    lv_obj_t* c = lv_btn_create(s_accbox);
+    lv_obj_set_size(c, cw, ch);
+    lv_obj_set_style_radius(c, 5, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(c, lv_color_hex(0x1B2B3A), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(c, lv_color_hex(COLOR_ACCENT), LV_PART_MAIN | LV_STATE_PRESSED);
+    lv_obj_add_event_cb(c, accentBoxCellCb, LV_EVENT_CLICKED, (void*)set->v[i]);
+    lv_obj_t* l = lv_label_create(c);
+    lv_label_set_text(l, set->v[i]);
+    lv_obj_set_style_text_font(l, &g_font_16, LV_PART_MAIN);
+    lv_obj_set_style_text_color(l, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
+    lv_obj_center(l);
+  }
+  // Place it just above the field being edited (below if there's no room above).
+  lv_obj_update_layout(s_accbox);
+  lv_area_t a; lv_obj_get_coords(ta, &a);
+  const lv_coord_t bw = lv_obj_get_width(s_accbox), bh = lv_obj_get_height(s_accbox);
+  lv_coord_t bx = (lv_disp_get_hor_res(nullptr) - bw) / 2;
+  lv_coord_t by = a.y1 - bh - 4;
+  if (by < STATUSBAR_H + 2) by = a.y2 + 4;
+  // Never let the box land on the on-screen keyboard. The field it anchors to may
+  // be the chat composer (which sits right above the keys), and on a rotate that
+  // field's live coords lag — so clamp the box's bottom above the keyboard top
+  // (computed from the current rotation) and above the composer too in a chat.
+  if (g_lv.keyboard && !lv_obj_has_flag(g_lv.keyboard, LV_OBJ_FLAG_HIDDEN)) {
+    lv_coord_t limit = lv_disp_get_ver_res(nullptr) - chatKbH() - 2;
+    if (s_kb_panel) limit -= s_comp_h;   // chat: also clear the composer above the keys
+    if (by + bh > limit) by = limit - bh;
+    if (by < STATUSBAR_H + 2) by = STATUSBAR_H + 2;
+  }
+  lv_obj_set_pos(s_accbox, bx, by);
+  lv_obj_move_foreground(s_accbox);
+}
+
 static void keyboardCb(lv_event_t* e) {
   lv_event_code_t code = lv_event_get_code(e);
-  if (code == LV_EVENT_READY || code == LV_EVENT_CANCEL) hideKb();
+  if (code == LV_EVENT_READY || code == LV_EVENT_CANCEL) { accentExit(); accentBoxHide(); hideKb(); }
   // VALUE_CHANGED fires for any keypress (incl. backspace). Fade the rotate
   // arrows down to ~20% so they don't compete visually with the text the
   // user is typing. Reset to full opacity on the next showKb / kbMirrorBind.
   else if (code == LV_EVENT_VALUE_CHANGED) {
     kbSetRotateArrowsOpa(LV_OPA_20);
+    accentHandleValueChanged();
+    accentBoxMaybeShow();   // letter with accents -> show the tap-to-pick box
   }
 }
 
@@ -2660,6 +3027,35 @@ static void settingsFieldFocusCb(lv_event_t* e) {
   noteKbActivity();   // focusing/tapping a field lights the auto backlight
 }
 
+#if defined(HAS_TDECK_KEYBOARD)
+// Recursively find the first text field under `obj` (depth-first).
+static lv_obj_t* findFirstTextarea(lv_obj_t* obj) {
+  if (!obj) return nullptr;
+  uint32_t n = lv_obj_get_child_cnt(obj);
+  for (uint32_t i = 0; i < n; ++i) {
+    lv_obj_t* c = lv_obj_get_child(obj, i);
+    if (c && lv_obj_check_type(c, &lv_textarea_class)) return c;
+    lv_obj_t* d = findFirstTextarea(c);
+    if (d) return d;
+  }
+  return nullptr;
+}
+
+// Deferred via lv_async from createSettingsModal so the modal's fields exist by
+// the time it runs: focus the first text field of a freshly-opened popup modal
+// so the physical keyboard types straight into it. Mirrors settingsFieldFocusCb.
+static void tdeckModalAutoFocusAsync(void* root) {
+  lv_obj_t* r = static_cast<lv_obj_t*>(root);
+  if (!r || !lv_obj_is_valid(r)) return;          // modal already closed in the meantime?
+  lv_obj_t* ta = findFirstTextarea(r);
+  if (!ta) return;                                 // no text field -> nothing to focus
+  s_kb_panel = nullptr;                            // a settings field, not the chat composer
+  kbMirrorBind(ta);                                // bind the keyboard to it
+  lv_obj_add_state(ta, LV_STATE_FOCUSED);          // show the cursor
+  noteKbActivity();
+}
+#endif
+
 // ===== Clipboard ============================================================
 // Mirrors MCterm's in-RAM clipboard. Anything the user long-presses to copy
 // lands here; long-press on a textarea pastes the contents at the cursor.
@@ -2725,6 +3121,253 @@ static void attachSettingsTaEvents(lv_obj_t* ta) {
   // never for focus — settingsFieldFocusCb still avoids it for the scroll case.
   lv_obj_add_event_cb(ta, kbActivityPressCb, LV_EVENT_PRESSED, nullptr);
   lv_obj_add_event_cb(ta, pasteTextareaLongPressCb, LV_EVENT_LONG_PRESSED, nullptr);
+}
+
+// ===== Text selection + edit menu ==========================================
+// Mobile-style editing for the chat composer: double-tap a word to highlight it,
+// long-press for a Cut / Copy / Paste / Select-All menu. LVGL's text selection
+// (compiled in via LV_LABEL_TEXT_SELECTION) only supports drag-select through
+// its public API, so for word/all selection we set the range on the textarea's
+// label directly — it sticks until the next tap (the class only rewrites the
+// selection on click/drag).
+
+// codepoint index -> byte offset within a UTF-8 string (and the reverse).
+static uint32_t taCpToByte(const char* txt, uint32_t cp_target) {
+  uint32_t i = 0, cp = 0;
+  while (txt[i] && cp < cp_target) { _lv_txt_encoded_next(txt, &i); cp++; }
+  return i;
+}
+static uint32_t taByteToCp(const char* txt, uint32_t byte_target) {
+  uint32_t i = 0, cp = 0;
+  while (txt[i] && i < byte_target) { _lv_txt_encoded_next(txt, &i); cp++; }
+  return cp;
+}
+
+// Remembered ("sticky") selection. The press that *starts* a long-press makes
+// the textarea reposition its cursor and clear its own highlight before
+// LONG_PRESSED fires — so by the time the edit menu opens the visual selection is
+// gone. We stash the last selected range here and re-apply it when the menu
+// shows, so a double-tapped (or select-all'd) word stays highlighted under the
+// menu. Invalidated on a single tap (cursor moved) or any text change.
+static lv_obj_t* s_sel_ta = nullptr;
+static uint32_t  s_sel_a  = 0, s_sel_b = 0;
+
+// Highlight [start_cp, end_cp) on a textarea.
+static void taSelectRange(lv_obj_t* ta, uint32_t start_cp, uint32_t end_cp) {
+  if (!ta || start_cp == end_cp) return;
+  if (start_cp > end_cp) { uint32_t t = start_cp; start_cp = end_cp; end_cp = t; }
+  lv_textarea_set_text_selection(ta, true);
+  lv_textarea_t* t = reinterpret_cast<lv_textarea_t*>(ta);
+  t->sel_start = start_cp;
+  t->sel_end   = end_cp;
+  if (t->label) {
+    lv_label_set_text_sel_start(t->label, start_cp);
+    lv_label_set_text_sel_end(t->label, end_cp);
+  }
+  lv_obj_invalidate(ta);
+  s_sel_ta = ta; s_sel_a = start_cp; s_sel_b = end_cp;   // remember for re-applying
+}
+
+// Clear both the label highlight AND the textarea's stored range, so a later
+// menu invocation doesn't act on an invisible stale selection.
+static void taClearSelection(lv_obj_t* ta) {
+  lv_textarea_clear_selection(ta);
+  lv_textarea_t* t = reinterpret_cast<lv_textarea_t*>(ta);
+  t->sel_start = t->sel_end = LV_DRAW_LABEL_NO_TXT_SEL;
+  if (s_sel_ta == ta) s_sel_ta = nullptr;
+}
+
+// Re-apply the remembered selection if it's still valid for `ta` (the long-press
+// that opens the menu clears the live highlight). No-op if nothing was selected.
+static void taReapplyStickySel(lv_obj_t* ta) {
+  if (s_sel_ta != ta || s_sel_a == s_sel_b) return;
+  const char* txt = lv_textarea_get_text(ta);
+  uint32_t len = (txt && txt[0]) ? _lv_txt_get_encoded_length(txt) : 0;
+  if (s_sel_b > len) { s_sel_ta = nullptr; return; }   // text changed under us
+  taSelectRange(ta, s_sel_a, s_sel_b);
+}
+
+static bool taHasSelection(lv_obj_t* ta, uint32_t* s_cp, uint32_t* e_cp) {
+  lv_textarea_t* t = reinterpret_cast<lv_textarea_t*>(ta);
+  uint32_t a = t->sel_start, b = t->sel_end;
+  if (a == b || a == LV_DRAW_LABEL_NO_TXT_SEL || b == LV_DRAW_LABEL_NO_TXT_SEL) return false;
+  if (a > b) { uint32_t tmp = a; a = b; b = tmp; }
+  *s_cp = a; *e_cp = b;
+  return true;
+}
+
+// Select the whitespace-delimited word under the cursor (the tap set the cursor).
+static void taSelectWordAtCursor(lv_obj_t* ta) {
+  const char* txt = lv_textarea_get_text(ta);
+  if (!txt || !txt[0]) return;
+  uint32_t len_b = (uint32_t)strlen(txt);
+  uint32_t cur_b = taCpToByte(txt, lv_textarea_get_cursor_pos(ta));
+  if (cur_b > len_b) cur_b = len_b;
+  auto isWord = [](char c) { return !(c == ' ' || c == '\n' || c == '\t' || c == '\r'); };
+  uint32_t s = cur_b, e = cur_b;
+  while (s > 0 && isWord(txt[s - 1])) s--;
+  while (e < len_b && isWord(txt[e])) e++;
+  if (s == e) return;                       // tapped on whitespace
+  taSelectRange(ta, taByteToCp(txt, s), taByteToCp(txt, e));
+}
+
+// Delete codepoints [s_cp, e_cp): park the cursor at the end and backspace
+// (no temp buffer, UTF-8 safe).
+static void taDeleteRange(lv_obj_t* ta, uint32_t s_cp, uint32_t e_cp) {
+  if (s_cp >= e_cp) return;
+  lv_textarea_set_cursor_pos(ta, (int32_t)e_cp);
+  for (uint32_t k = s_cp; k < e_cp; ++k) lv_textarea_del_char(ta);
+}
+
+// ----- The floating Cut / Copy / Paste / Select-All menu -----
+static lv_obj_t* s_txtmenu    = nullptr;
+static lv_obj_t* s_txtmenu_ta = nullptr;
+
+static void txtMenuHide() {
+  if (s_txtmenu) { lv_obj_del(s_txtmenu); s_txtmenu = nullptr; }
+  s_txtmenu_ta = nullptr;
+}
+
+enum { TXT_CUT = 0, TXT_COPY, TXT_PASTE, TXT_SELALL };
+
+static void txtMenuCellCb(lv_event_t* e) {
+  if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+  intptr_t act = reinterpret_cast<intptr_t>(lv_event_get_user_data(e));
+  lv_obj_t* ta = s_txtmenu_ta;
+  if (!ta) { txtMenuHide(); return; }
+  const char* txt = lv_textarea_get_text(ta);
+  uint32_t s_cp = 0, e_cp = 0;
+  bool sel = taHasSelection(ta, &s_cp, &e_cp);
+
+  if (act == TXT_SELALL) {
+    uint32_t len = _lv_txt_get_encoded_length(txt);
+    txtMenuHide();
+    if (len) taSelectRange(ta, 0, len);
+    return;
+  }
+  if (act == TXT_COPY || act == TXT_CUT) {
+    char buf[CLIPBOARD_MAX];
+    if (sel) {
+      uint32_t sb = taCpToByte(txt, s_cp), eb = taCpToByte(txt, e_cp);
+      uint32_t n = eb - sb; if (n >= CLIPBOARD_MAX) n = CLIPBOARD_MAX - 1;
+      memcpy(buf, txt + sb, n); buf[n] = '\0';
+      clipboardSet(buf, act == TXT_CUT ? "cut" : "");
+    } else {
+      clipboardSet(txt, act == TXT_CUT ? "cut" : "");
+    }
+    if (act == TXT_CUT) {
+      if (sel) taDeleteRange(ta, s_cp, e_cp);
+      else     lv_textarea_set_text(ta, "");
+    }
+  } else if (act == TXT_PASTE) {
+    if (s_clipboard[0]) {
+      if (sel) taDeleteRange(ta, s_cp, e_cp);
+      lv_textarea_add_text(ta, s_clipboard);
+    }
+  }
+  taClearSelection(ta);
+  txtMenuHide();
+}
+
+static void txtMenuShow(lv_obj_t* ta) {
+  txtMenuHide();
+  if (!ta) return;
+  s_txtmenu_ta = ta;
+  static const char* const kLabels[] = { "Cut", "Copy", "Paste", "All" };
+  const int n = 4, cw = 52, ch = 34, gap = 4, pad = 6;
+  s_txtmenu = lv_obj_create(lv_layer_top());
+  lv_obj_remove_style_all(s_txtmenu);
+  lv_obj_set_style_bg_color(s_txtmenu, lv_color_hex(COLOR_PANEL), LV_PART_MAIN);
+  lv_obj_set_style_bg_opa(s_txtmenu, LV_OPA_COVER, LV_PART_MAIN);
+  lv_obj_set_style_radius(s_txtmenu, 8, LV_PART_MAIN);
+  lv_obj_set_style_border_color(s_txtmenu, lv_color_hex(0x2A3D52), LV_PART_MAIN);
+  lv_obj_set_style_border_width(s_txtmenu, 1, LV_PART_MAIN);
+  lv_obj_set_style_pad_all(s_txtmenu, pad, LV_PART_MAIN);
+  lv_obj_set_style_pad_column(s_txtmenu, gap, LV_PART_MAIN);
+  lv_obj_set_flex_flow(s_txtmenu, LV_FLEX_FLOW_ROW);
+  lv_obj_set_size(s_txtmenu, n * cw + (n - 1) * gap + pad * 2, ch + pad * 2);
+  lv_obj_clear_flag(s_txtmenu, LV_OBJ_FLAG_SCROLLABLE);
+  for (int i = 0; i < n; ++i) {
+    lv_obj_t* c = lv_btn_create(s_txtmenu);
+    lv_obj_set_size(c, cw, ch);
+    lv_obj_set_style_radius(c, 5, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(c, lv_color_hex(0x1B2B3A), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(c, lv_color_hex(COLOR_ACCENT), LV_PART_MAIN | LV_STATE_PRESSED);
+    lv_obj_add_event_cb(c, txtMenuCellCb, LV_EVENT_CLICKED, reinterpret_cast<void*>((intptr_t)i));
+    lv_obj_t* l = lv_label_create(c);
+    lv_label_set_text(l, kLabels[i]);
+    lv_obj_set_style_text_font(l, &g_font_14, LV_PART_MAIN);
+    lv_obj_set_style_text_color(l, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
+    lv_obj_center(l);
+  }
+  // Above the field (below it if there's no room above the status bar).
+  lv_obj_update_layout(s_txtmenu);
+  lv_area_t a; lv_obj_get_coords(ta, &a);
+  const lv_coord_t bw = lv_obj_get_width(s_txtmenu), bh = lv_obj_get_height(s_txtmenu);
+  lv_coord_t bx = (lv_disp_get_hor_res(nullptr) - bw) / 2;
+  if (bx < 2) bx = 2;
+  lv_coord_t by = a.y1 - bh - 4;
+  if (by < STATUSBAR_H + 2) by = a.y2 + 4;
+  // Same keyboard clamp as the accent box: keep the menu off the on-screen keys.
+  if (g_lv.keyboard && !lv_obj_has_flag(g_lv.keyboard, LV_OBJ_FLAG_HIDDEN)) {
+    lv_coord_t limit = lv_disp_get_ver_res(nullptr) - chatKbH() - 2;
+    if (s_kb_panel) limit -= s_comp_h;
+    if (by + bh > limit) by = limit - bh;
+    if (by < STATUSBAR_H + 2) by = STATUSBAR_H + 2;
+  }
+  lv_obj_set_pos(s_txtmenu, bx, by);
+  lv_obj_move_foreground(s_txtmenu);
+}
+
+// Composer gestures: double-tap (two clicks within 350 ms on the same field)
+// selects the word under the tap; long-press opens the edit menu. A single tap
+// dismisses an open menu.
+static void composerEditClickedCb(lv_event_t* e) {
+  if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+  lv_obj_t* ta = lv_event_get_target(e);
+  txtMenuHide();
+  static uint32_t s_last_ms = 0;
+  static lv_obj_t* s_last_ta = nullptr;
+  uint32_t now = millis();
+  bool dbl = (s_last_ta == ta) && (now - s_last_ms < 350);
+  s_last_ms = now;
+  s_last_ta = ta;
+  if (dbl) {
+    s_last_ms = 0;                 // consume so a 3rd tap doesn't re-trigger
+    taSelectWordAtCursor(ta);
+  } else {
+    s_sel_ta = nullptr;            // a single tap moved the cursor -> drop the sticky selection
+  }
+}
+
+static void composerEditLongPressCb(lv_event_t* e) {
+  if (lv_event_get_code(e) != LV_EVENT_LONG_PRESSED) return;
+  lv_obj_t* ta = lv_event_get_target(e);
+  lv_indev_t* act = lv_indev_get_act();
+  if (act) lv_indev_wait_release(act);   // swallow the trailing CLICKED
+  taReapplyStickySel(ta);   // the press just cleared the highlight — restore it under the menu
+  txtMenuShow(ta);
+}
+
+// On-screen keyboard (V4): backspace with an active selection deletes the whole
+// highlight instead of one character. Registered BEFORE the keyboard's default
+// handler (see buildUiTree) so it can replace the default single-char delete —
+// it stops processing so neither the default delete nor the accent box also run.
+static void kbBackspaceSelCb(lv_event_t* e) {
+  lv_obj_t* kb = lv_event_get_target(e);
+  uint32_t btn = lv_btnmatrix_get_selected_btn(kb);
+  if (btn == LV_BTNMATRIX_BTN_NONE) return;
+  const char* txt = lv_btnmatrix_get_btn_text(kb, btn);
+  if (!txt || strcmp(txt, LV_SYMBOL_BACKSPACE) != 0) return;
+  lv_obj_t* ta = lv_keyboard_get_textarea(kb);
+  if (!ta) return;
+  uint32_t s_cp, e_cp;
+  if (!taHasSelection(ta, &s_cp, &e_cp)) return;   // nothing selected -> default deletes one char
+  taDeleteRange(ta, s_cp, e_cp);
+  taClearSelection(ta);
+  accentBoxHide();
+  txtMenuHide();
+  lv_event_stop_processing(e);
 }
 
 static void closeSettingsModal() {
@@ -2886,6 +3529,12 @@ static lv_obj_t* createSettingsModal(const char* title, SettingsModalKind kind) 
   g_set_modal.root = root;
   g_set_modal.kind = kind;
   s_settings_content_w = (sw - 8) - 12;   // modal body width minus its 6px padding each side
+#if defined(HAS_TDECK_KEYBOARD)
+  // Physical keyboard: once the caller has finished adding this modal's fields
+  // (deferred to the next frame), focus its first text field so the user can
+  // type straight away. Popup modals only — the inline-settings path returns above.
+  lv_async_call(tdeckModalAutoFocusAsync, root);
+#endif
   return content;
 }
 
@@ -2924,9 +3573,25 @@ static void saveRadioParamsCb(lv_event_t* e) {
     g_lv.task->showAlert("Invalid radio values", 1200);
     return;
   }
-  if (g_lv.task->setRadioParams(freq, bw, static_cast<uint8_t>(sf), static_cast<uint8_t>(cr),
-                                static_cast<int8_t>(tx), af)) {
-    g_lv.task->showAlert("Radio applied", 1000);
+  bool ok = g_lv.task->setRadioParams(freq, bw, static_cast<uint8_t>(sf), static_cast<uint8_t>(cr),
+                                      static_cast<int8_t>(tx), af);
+  // Region scope — independent of the freq/SF values above. Derive + persist the
+  // flood-scope key from the typed "#region" (blank clears it back to unscoped),
+  // and remember the display name for next time the form is shown.
+  bool has_region = false;
+  if (g_set_modal.region_ta) {
+    char region[TOUCH_REGION_SCOPE_MAXLEN] = {0};
+    strncpy(region, lv_textarea_get_text(g_set_modal.region_ta), sizeof(region) - 1);
+    char* r = region;                                    // trim so the stored name matches the key
+    while (*r == ' ' || *r == '\t') r++;
+    size_t rl = strlen(r);
+    while (rl && (r[rl-1]==' '||r[rl-1]=='\t'||r[rl-1]=='\n'||r[rl-1]=='\r')) r[--rl] = '\0';
+    the_mesh.setDefaultFloodScope(r);
+    touchPrefsSetRegionScope(r);
+    has_region = (r[0] != '\0');
+  }
+  if (ok) {
+    g_lv.task->showAlert(has_region ? "Radio + region set" : "Radio applied", 1000);
     refreshStatusLabels();
   }
 }
@@ -3669,6 +4334,18 @@ static void buildRadioSettings() {
     lv_obj_add_event_cb(dd, clampDropdownListCb, LV_EVENT_CLICKED, nullptr);
     y += 40;
   }
+
+  // Region scope: tags outgoing floods with a region so repeaters that only
+  // re-flood their own region (region-scoped networks) still propagate them.
+  // Public "#hashtag" region -> key = SHA256("#name"); blank = unscoped (default).
+  mk_label("Region scope (#tag, blank = none)");
+  g_set_modal.region_ta = mk_ta(cw, 0, "#region", TOUCH_REGION_SCOPE_MAXLEN - 1);
+  {
+    char rbuf[TOUCH_REGION_SCOPE_MAXLEN];
+    if (touchPrefsGetRegionScope(rbuf, sizeof(rbuf)) > 0 && rbuf[0])
+      lv_textarea_set_text(g_set_modal.region_ta, rbuf);
+  }
+  y += 38;
 
   lv_obj_t* b = lv_btn_create(body);
   lv_obj_set_size(b, lv_pct(100),34);
@@ -10182,6 +10859,9 @@ static void makeHome(lv_obj_t* tab) {
   g_lv.home_stats = lv_label_create(tab);
   lv_label_set_text(g_lv.home_stats, "");
   lv_obj_set_style_text_color(g_lv.home_stats, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
+  // Use the extras-fallback font so the "·" separator renders (the default font
+  // lacks U+00B7 and drew it as a tofu box).
+  lv_obj_set_style_text_font(g_lv.home_stats, &g_font_14, LV_PART_MAIN);
   // In landscape, keep the status text clear of the top-right button column.
   lv_obj_set_width(g_lv.home_stats, home_land ? (cw - 110) : cw);
   lv_label_set_long_mode(g_lv.home_stats, LV_LABEL_LONG_WRAP);
@@ -11173,6 +11853,13 @@ static void tileFetchTaskFn(void* arg) {
     snprintf(url, sizeof(url), "%s/%u/%ld/%ld.jpg",
              base, (unsigned)req.z, (long)req.x, (long)req.y);
     http.begin(client, url);
+    // Bound the network waits BELOW the 5 s task-watchdog timeout. HTTPClient's
+    // default TCP timeout is 5 s — identical to the WDT — so a single stalled
+    // connect or socket read on a slow Wi-Fi tile fetch blocks this task right up
+    // to the watchdog limit and the device abort()s (a panic while panning the
+    // map). 3 s connect / 2 s per-read keeps every blocking call safely under it.
+    http.setConnectTimeout(3000);
+    http.setTimeout(2000);
     // OSM policy: identifying User-Agent required; vague UAs get blocked.
     http.addHeader("User-Agent", "meshcomod-touch/0.4 (https://github.com/ALLFATHER-BV/meshcomod)");
     Serial.printf("[TILE] GET %s\n", url);
@@ -11194,12 +11881,19 @@ static void tileFetchTaskFn(void* arg) {
           WiFiClient* stream = http.getStreamPtr();
           uint8_t buf[1024];
           int remaining = content_len;
+          uint32_t dl_deadline = millis() + 12000;   // whole-tile cap: a half-dead socket can't hang the task
           while (remaining > 0 && http.connected()) {
             const size_t want = (size_t)(remaining > (int)sizeof(buf) ? sizeof(buf) : remaining);
             const int n = stream->readBytes(buf, want);
             if (n <= 0) break;
             f.write(buf, n);
             remaining -= n;
+            // Yield to the IDLE task each chunk: readBytes' internal yield() only
+            // runs equal-priority tasks, not IDLE — and IDLE is what feeds the
+            // task watchdog. Without this a slow tile download starves the WDT and
+            // panics (the crash this fixes). Bail too if the whole tile drags on.
+            vTaskDelay(1);
+            if ((int32_t)(millis() - dl_deadline) > 0) break;
           }
           f.close();
           if (remaining == 0) wrote = true;
@@ -12907,6 +13601,11 @@ static void makeChatDetail(LvChatPanel& p) {
   // fullscreen views. Gives the conversation the full height.
   p.header_name = nullptr;
 
+  // Fresh panel starts at the single-line composer height; it grows as the user
+  // types (chatComposerAutoGrow). Reset here so a previous chat's grown height
+  // doesn't leak into this one's initial layout math below.
+  s_comp_h = CHAT_COMP_H;
+
   // ---- Message area (scrollable container of speech-bubble children) ----
   // Each message gets its own lv_obj bubble inside p.msgs so we can style
   // outgoing/incoming differently and align left/right WhatsApp-style.
@@ -12946,7 +13645,7 @@ static void makeChatDetail(LvChatPanel& p) {
   // from Settings → Quick replies.
   lv_obj_t* qr_btn = lv_btn_create(p.composer_row);
   lv_obj_set_size(qr_btn, 30, 30);
-  lv_obj_align(qr_btn, LV_ALIGN_LEFT_MID, 0, 0);
+  lv_obj_align(qr_btn, LV_ALIGN_BOTTOM_LEFT, 0, 0);
   styleButton(qr_btn);
   lv_obj_set_style_radius(qr_btn, 15, LV_PART_MAIN);
   lv_obj_set_style_bg_color(qr_btn, lv_color_hex(0x1A1B1C), LV_PART_MAIN);
@@ -12959,7 +13658,7 @@ static void makeChatDetail(LvChatPanel& p) {
   // Emoji / special-character picker button (smiley). Opens the insert grid.
   lv_obj_t* emoji_btn = lv_btn_create(p.composer_row);
   lv_obj_set_size(emoji_btn, 30, 30);
-  lv_obj_align(emoji_btn, LV_ALIGN_LEFT_MID, 36, 0);   // 30 (QR) + 6 gap
+  lv_obj_align(emoji_btn, LV_ALIGN_BOTTOM_LEFT, 36, 0);   // 30 (QR) + 6 gap
   styleButton(emoji_btn);
   lv_obj_set_style_radius(emoji_btn, 15, LV_PART_MAIN);
   lv_obj_set_style_bg_color(emoji_btn, lv_color_hex(0x1A1B1C), LV_PART_MAIN);
@@ -12974,22 +13673,42 @@ static void makeChatDetail(LvChatPanel& p) {
   // screen - 8 (pad), minus QR(30)+gap(6)+Emoji(30)+gap(6) on the left and
   // gap(6)+Send(34) on the right => screen - 120. Widens with the screen.
   lv_obj_set_size(p.composer_ta, chatScreenW() - 120, 30);
-  // 30 (QR) + 6 + 30 (Emoji) + 6 = 72 offset from content-left.
-  lv_obj_align(p.composer_ta, LV_ALIGN_LEFT_MID, 72, 0);
+  // 30 (QR) + 6 + 30 (Emoji) + 6 = 72 offset from content-left. Bottom-aligned so
+  // the box grows UPWARD as the message wraps to more lines (chatComposerAutoGrow).
+  lv_obj_align(p.composer_ta, LV_ALIGN_BOTTOM_LEFT, 72, 0);
   styleCard(p.composer_ta);
   lv_obj_set_style_radius(p.composer_ta, 15, LV_PART_MAIN);   // pill shape
   lv_obj_set_style_pad_ver(p.composer_ta, 3, LV_PART_MAIN);   // tighter so the slim row fits the text
-  lv_textarea_set_one_line(p.composer_ta, true);
+  // Multi-line: wrap long text onto extra lines (the row grows to fit, then
+  // scrolls down) instead of scrolling a single line sideways. Enter still sends
+  // — the physical-keyboard CR and the on-screen OK are handled before any
+  // newline can be inserted, so the composer never actually holds a '\n'.
+  lv_textarea_set_one_line(p.composer_ta, false);
+  lv_obj_set_scrollbar_mode(p.composer_ta, LV_SCROLLBAR_MODE_OFF);
   lv_textarea_set_placeholder_text(p.composer_ta, "Type a message...");
   lv_obj_set_style_text_color(p.composer_ta, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
   lv_obj_set_style_text_font(p.composer_ta, &g_font_14, LV_PART_MAIN);
+  // Readable selection highlight: the label draws selected text using its OWN
+  // LV_PART_SELECTED text+bg colour, and the theme sets neither — so without
+  // this the default pair makes a highlighted word unreadable. Inverse video
+  // (near-black text on off-white) reads cleanly in the dark UI.
+  if (lv_obj_t* comp_lbl = lv_textarea_get_label(p.composer_ta)) {
+    lv_obj_set_style_bg_color(comp_lbl, lv_color_hex(COLOR_TEXT), LV_PART_SELECTED);
+    lv_obj_set_style_bg_opa(comp_lbl, LV_OPA_COVER, LV_PART_SELECTED);
+    lv_obj_set_style_text_color(comp_lbl, lv_color_hex(COLOR_PANEL), LV_PART_SELECTED);
+  }
   // Tap on composer → show keyboard
   lv_obj_add_event_cb(p.composer_ta, composerFocusCb, LV_EVENT_FOCUSED, &p);
   lv_obj_add_event_cb(p.composer_ta, kbActivityPressCb, LV_EVENT_PRESSED, nullptr);
+  // Grow / shrink the composer row as the message wraps (every text change).
+  lv_obj_add_event_cb(p.composer_ta, composerAutoGrowCb, LV_EVENT_VALUE_CHANGED, &p);
+  // Double-tap a word to select it; long-press for Cut/Copy/Paste/Select-All.
+  lv_obj_add_event_cb(p.composer_ta, composerEditClickedCb, LV_EVENT_CLICKED, nullptr);
+  lv_obj_add_event_cb(p.composer_ta, composerEditLongPressCb, LV_EVENT_LONG_PRESSED, nullptr);
 
   lv_obj_t* send = lv_btn_create(p.composer_row);
   lv_obj_set_size(send, 34, 30);
-  lv_obj_align(send, LV_ALIGN_RIGHT_MID, 0, 0);
+  lv_obj_align(send, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
   styleButton(send);
   lv_obj_set_style_radius(send, 15, LV_PART_MAIN);
   lv_obj_add_event_cb(send, sendFromPanelCb, LV_EVENT_CLICKED, &p);
@@ -15348,8 +16067,16 @@ static void handleHwKey(int key) {
     }
     return;
   }
+  txtMenuHide();   // any keypress while editing dismisses an open edit menu
   if (key == 0x08 || key == 0x7F) {            // backspace / delete
-    lv_textarea_del_char(ta);
+    uint32_t bs_s, bs_e;
+    if (taHasSelection(ta, &bs_s, &bs_e)) {    // highlighted text -> delete the whole selection
+      taDeleteRange(ta, bs_s, bs_e);
+      taClearSelection(ta);
+    } else {
+      lv_textarea_del_char(ta);
+    }
+    accentBoxHide();
   } else if (key == ' ') {
     // Double-tap SPACE within 250 ms toggles between English and the
     // configured secondary keyboard. If no secondary is set, it behaves
@@ -15407,6 +16134,7 @@ static void handleHwKey(int key) {
     } else {
       lv_textarea_add_char(ta, (uint32_t)key);
     }
+    accentBoxMaybeShow();   // letter with accents -> show the tap-to-pick box
   }
   if (g_lv.task) g_lv.task->noteUserInput();
 }
@@ -16043,13 +16771,22 @@ static void openControlCenter() {
   lv_label_set_text(bi, batt_s);
   lv_obj_set_style_text_font(bi, &g_font_12, LV_PART_MAIN);
   lv_obj_set_style_text_color(bi, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
-  int gps_y = 42;
+  int row_y = 42;   // first content row under the date / battery
   if (portrait) {
-    lv_obj_align(bi, LV_ALIGN_TOP_LEFT, 0, 40);   // under the date
-    gps_y = 58;
+    lv_obj_align(bi, LV_ALIGN_TOP_LEFT, 0, 40);   // battery under the date
+    row_y = 58;
   } else {
     lv_obj_align(bi, LV_ALIGN_TOP_RIGHT, -30, 2);
   }
+  // Brightness slider takes the first row (just under the date / battery) and the
+  // GPS line follows it, so the slider sits ABOVE the GPS line. Boards without a
+  // backlight PWM have no slider, so GPS reclaims that first row.
+#if defined(HAS_BACKLIGHT_PWM)
+  const int bl_y  = row_y;
+  const int gps_y = row_y + 20;
+#else
+  const int gps_y = row_y;
+#endif
 
   // ---- GPS fix status (live; refreshed while the panel is open) ----
   s_cc_gps_label = lv_label_create(card);
@@ -16062,9 +16799,8 @@ static void openControlCenter() {
 
 #if defined(HAS_BACKLIGHT_PWM)
   // ---- Brightness slider (thin; a sun/gear glyph anchors it on the left so it
-  //      doesn't cost a separate label row). On the T-Deck it sits just under
-  //      the header; in portrait (V4) it sits below the GPS line.
-  const int bl_y = portrait ? (gps_y + 18) : 64;
+  //      doesn't cost a separate label row). bl_y is computed above so it sits
+  //      directly under the date/battery, just above the GPS line.
   lv_obj_t* bl_ic = lv_label_create(card);
   lv_label_set_text(bl_ic, LV_SYMBOL_SETTINGS);   // small left anchor for the slider
   lv_obj_set_style_text_font(bl_ic, &g_font_12, LV_PART_MAIN);
@@ -16443,36 +17179,24 @@ static void refreshStatusLabels() {
   }
   if (g_lv.home_stats && home_active) {
 #if defined(ESP32)
-    bool show_dc = touchPrefsGetDutyMeterShown();
+    // Second line mirrors the control-center sysinfo: internal RAM + PSRAM, both
+    // shown as % used. (Replaces the old duty-cycle meter line.)
+    const size_t dram_free = heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    const size_t dram_tot  = heap_caps_get_total_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    const size_t ps_free   = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+    const size_t ps_tot    = heap_caps_get_total_size(MALLOC_CAP_SPIRAM);
+    const unsigned dram_pct = dram_tot ? (unsigned)(100 - (dram_free * 100 / dram_tot)) : 0;
+    const unsigned ps_pct   = ps_tot   ? (unsigned)(100 - (ps_free   * 100 / ps_tot))   : 0;
+    lv_label_set_text_fmt(g_lv.home_stats,
+                          "Unread %d  |  Bat %umV\nRAM %u%%  \xC2\xB7  PSRAM %u%%",
+                          g_lv.task->getUnreadTotal(),
+                          static_cast<unsigned>(g_lv.task->getBattMilliVolts()),
+                          dram_pct, ps_pct);
 #else
-    bool show_dc = false;
+    lv_label_set_text_fmt(g_lv.home_stats, "Unread %d  |  Bat %umV",
+                          g_lv.task->getUnreadTotal(),
+                          static_cast<unsigned>(g_lv.task->getBattMilliVolts()));
 #endif
-    if (show_dc) {
-      // Compute used % from the remaining tx budget. max_budget =
-      // window_ms * (1 / (1 + factor)). With airtime_factor=1 → 50% cap;
-      // factor=9 → 10% cap (typical EU868). Show both "used%" and "cap%"
-      // so the user can tell whether they're near the regulatory ceiling.
-      NodePrefs* prefs = the_mesh.getNodePrefs();
-      float factor = prefs ? prefs->airtime_factor : 1.0f;
-      float duty   = 1.0f / (1.0f + factor);
-      unsigned long window_ms = 3600000UL;   // matches Dispatcher default
-      unsigned long max_budget = (unsigned long)((float)window_ms * duty);
-      unsigned long remaining  = the_mesh.getRemainingTxBudget();
-      if (remaining > max_budget) remaining = max_budget;
-      unsigned used_pct = max_budget > 0
-          ? (unsigned)((100UL * (max_budget - remaining)) / max_budget)
-          : 0u;
-      unsigned cap_pct  = (unsigned)(duty * 100.0f + 0.5f);
-      lv_label_set_text_fmt(g_lv.home_stats,
-                            "Unread %d  |  Bat %umV\nDC %u%% used / %u%% cap",
-                            g_lv.task->getUnreadTotal(),
-                            static_cast<unsigned>(g_lv.task->getBattMilliVolts()),
-                            used_pct, cap_pct);
-    } else {
-      lv_label_set_text_fmt(g_lv.home_stats, "Unread %d  |  Bat %umV",
-                            g_lv.task->getUnreadTotal(),
-                            static_cast<unsigned>(g_lv.task->getBattMilliVolts()));
-    }
   }
   if (g_lv.settings_status && settings_active) {
 #if defined(ESP32)
@@ -17139,9 +17863,19 @@ static void buildUiTree() {
   lv_obj_set_size(g_lv.keyboard, lv_disp_get_hor_res(nullptr), CHAT_KB_H);
   lv_obj_align(g_lv.keyboard, LV_ALIGN_BOTTOM_MID, 0, 0);
   lv_obj_add_flag(g_lv.keyboard, LV_OBJ_FLAG_HIDDEN);
+  // Insert our backspace-deletes-selection interceptor AHEAD of the keyboard's
+  // own default handler: remove the auto-registered default, add the interceptor
+  // first, then re-add the default after it. The interceptor runs first and can
+  // stop_processing to replace the default single-char delete when text is selected.
+  lv_obj_remove_event_cb(g_lv.keyboard, lv_keyboard_def_event_cb);
+  lv_obj_add_event_cb(g_lv.keyboard, kbBackspaceSelCb,         LV_EVENT_VALUE_CHANGED, nullptr);
+  lv_obj_add_event_cb(g_lv.keyboard, lv_keyboard_def_event_cb, LV_EVENT_VALUE_CHANGED, nullptr);
   lv_obj_add_event_cb(g_lv.keyboard, keyboardCb, LV_EVENT_READY,         nullptr);
   lv_obj_add_event_cb(g_lv.keyboard, keyboardCb, LV_EVENT_CANCEL,        nullptr);
   lv_obj_add_event_cb(g_lv.keyboard, keyboardCb, LV_EVENT_VALUE_CHANGED, nullptr);
+  // Hold a letter -> accent picker (issue #22). LONG_PRESSED fires on the held
+  // key; the keys are NO_REPEAT so the hold doesn't auto-type.
+  lv_obj_add_event_cb(g_lv.keyboard, accentLongPressCb, LV_EVENT_LONG_PRESSED, nullptr);
   // Dark-theme keyboard styling
   lv_obj_set_style_bg_color(g_lv.keyboard, lv_color_hex(COLOR_PANEL), LV_PART_MAIN);
   lv_obj_set_style_bg_color(g_lv.keyboard, lv_color_hex(0x1B2B3A),    LV_PART_ITEMS);
@@ -17194,6 +17928,9 @@ static void buildUiTree() {
   // a secondary layout is enabled.
   s_kb_lang_btn = makeRotBtn(kbLayoutCode(keyboardLayoutsGetCurrent()), kbLangCycleCb);
   s_kb_lang_lbl = lv_obj_get_child(s_kb_lang_btn, 0);
+  // (The on-screen "á" accent key was removed — the tap-to-pick accent box that
+  // pops up automatically when you type an accentable letter replaces it. The
+  // s_kb_alt_btn pointer stays null so every guarded reference below no-ops.)
 
   // Restore saved keyboard rotation preference (portrait by default).
 #if defined(ESP32)
@@ -18451,12 +19188,17 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   // chosen for power on a headless companion build; on a touch device
   // the user is actively interacting and 80 MHz is visibly sluggish on
   // popups + tab switches.
-  // Stair-step: 160 MHz was known-good (single change). 200 MHz +
-  // double-buffer bootlooped after the top bar painted — unclear if it
-  // was the clock or the BLE-DRAM pressure. Trying 180 MHz with single
-  // buffer is the next conservative step. 240 MHz had RGB565 noise on
-  // the map's SJPG decode, so the ceiling is somewhere south of that.
-  setCpuFrequencyMhz(180);
+  // IMPORTANT: the ESP32-S3 only clocks at 80 / 160 / 240 MHz off the PLL.
+  // The previous setCpuFrequencyMhz(180) was an INVALID frequency, so the call
+  // failed silently (rtc_clk_cpu_freq_mhz_to_config() returns false) and left
+  // the V4 pinned at its 80 MHz base (ESP32_CPU_FREQ=80) — that was the
+  // sluggishness. 160 MHz is the known-good 2x bump; 240 MHz showed RGB565
+  // noise on the map's SJPG decode, so 160 is the ceiling. The T-Deck sets no
+  // ESP32_CPU_FREQ so it already boots at the 240 MHz default — bumping only
+  // the V4 here avoids dragging the T-Deck *down* to 160.
+#if !defined(HAS_TDECK_GT911)
+  setCpuFrequencyMhz(240);   // S3 max; watch the map tiles for SJPG decode noise (drop to 160 if it shows)
+#endif
 
   // Local-time zone = CET/CEST base + the user's manual hour offset (Settings ->
   // Device -> Time offset), so every clock reads correctly even offline. The

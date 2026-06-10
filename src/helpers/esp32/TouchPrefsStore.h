@@ -142,6 +142,14 @@ constexpr int TOUCH_TILE_SERVER_MAXLEN = 80;
 int  touchPrefsGetTileServer(char* out, int out_cap);
 bool touchPrefsSetTileServer(const char* url);
 
+/** Region scope (display name only). The actual flood-scope key lives in the
+ *  mesh NodePrefs (default_scope_key, derived via MyMesh::setDefaultFloodScope);
+ *  this just remembers the human-readable "#region" the user typed so the radio
+ *  settings field can show it back. Empty = unscoped. */
+constexpr int TOUCH_REGION_SCOPE_MAXLEN = 40;
+int  touchPrefsGetRegionScope(char* out, int out_cap);
+bool touchPrefsSetRegionScope(const char* name);
+
 /** Remembered repeater admin passwords. Keyed by the first 6 bytes of the
  *  repeater's pubkey, value is the null-terminated password (max 15 chars
  *  to match what sendLogin truncates to). Stored as a single NVS blob of

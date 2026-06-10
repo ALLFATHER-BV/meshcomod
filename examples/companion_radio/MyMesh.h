@@ -506,6 +506,12 @@ private:
 public:
   void savePrefs() { _store->savePrefs(_prefs, sensors.node_lat, sensors.node_lon); }
 
+  // Set the default flood scope (region) used to tag outgoing flood packets, so
+  // repeaters on region-scoped networks ("flood only for their region") will
+  // re-broadcast them. A public "#hashtag" region's scope key is SHA256("#name");
+  // a blank/NULL name clears it (unscoped, the default). Persists immediately.
+  void setDefaultFloodScope(const char* region_name);
+
   // Re-apply the persisted radio settings (freq/bw/sf/cr, TX power, RX-boost) to
   // the live radio — the same calls begin() makes at boot. Lets the UI change
   // region / radio params and have them take effect immediately, no reboot.

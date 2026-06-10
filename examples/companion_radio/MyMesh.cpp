@@ -4,6 +4,7 @@
 #include <Mesh.h>
 #include <ArduinoJson.h>   // settings backup import (uiImportBackup)
 #include <string.h>
+#include <SHA256.h>   // derive a region's flood-scope key from its #hashtag name
 #include <time.h>     // gmtime_r for the "clock" CLI command
 #ifdef ESP32
 #include <esp_system.h>          // esp_restart for the "bootloader" CLI command
@@ -2328,6 +2329,32 @@ void MyMesh::applyRadioFromPrefs() {
   MESH_DEBUG_PRINTLN("RX Boosted Gain Mode: %s",
                      radio_driver.getRxBoostedGainMode() ? "Enabled" : "Disabled");
 #endif
+}
+
+void MyMesh::setDefaultFloodScope(const char* region_name) {
+  // Trim leading/trailing whitespace — a stray space changes the hash and would
+  // derive the wrong scope key (the node would never match the region).
+  char tag[40] = {0};
+  if (region_name) {
+    while (*region_name == ' ' || *region_name == '\t') region_name++;
+    size_t n = strlen(region_name);
+    while (n && (region_name[n-1] == ' '  || region_name[n-1] == '\t' ||
+                 region_name[n-1] == '\n' || region_name[n-1] == '\r')) n--;
+    // Normalise to a leading '#': a public hashtag region's key is SHA256("#name").
+    size_t o = 0;
+    if (n && region_name[0] != '#' && o < sizeof(tag)-1) tag[o++] = '#';
+    for (size_t i = 0; i < n && o < sizeof(tag)-1; ++i) tag[o++] = region_name[i];
+    tag[o] = '\0';
+  }
+  if (tag[0] == '\0' || (tag[0] == '#' && tag[1] == '\0')) {
+    memset(_prefs.default_scope_key, 0, sizeof(_prefs.default_scope_key));   // unscoped
+  } else {
+    SHA256 sha;
+    sha.update(tag, strlen(tag));
+    sha.finalize(_prefs.default_scope_key, sizeof(_prefs.default_scope_key));
+    send_unscoped = false;   // make sure the scope is actually applied on send
+  }
+  savePrefs();
 }
 
 void MyMesh::begin(bool has_display) {

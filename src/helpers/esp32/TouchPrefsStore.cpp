@@ -174,6 +174,32 @@ bool touchPrefsSetTileServer(const char* url) {
   return ok;
 }
 
+static const char* KEY_RGN_SCOPE = "rgn_scope";
+
+int touchPrefsGetRegionScope(char* out, int out_cap) {
+  if (!out || out_cap <= 0) return 0;
+  out[0] = '\0';
+  if (!s_begun) touchPrefsBegin();
+  String v = s_prefs.getString(KEY_RGN_SCOPE, String(""));
+  int n = (int)v.length();
+  if (n > out_cap - 1) n = out_cap - 1;
+  if (n > TOUCH_REGION_SCOPE_MAXLEN - 1) n = TOUCH_REGION_SCOPE_MAXLEN - 1;
+  memcpy(out, v.c_str(), (size_t)n);
+  out[n] = '\0';
+  return n;
+}
+
+bool touchPrefsSetRegionScope(const char* name) {
+  if (!name) return false;
+  if (!s_begun) touchPrefsBegin();
+  s_prefs.end();
+  if (!s_prefs.begin(TOUCH_NS, false)) return false;
+  bool ok = s_prefs.putString(KEY_RGN_SCOPE, name) > 0;
+  s_prefs.end();
+  s_begun = s_prefs.begin(TOUCH_NS, true);
+  return ok;
+}
+
 static const char* KEY_LOCK_WALL = "lk_wall";
 static const char* DEFAULT_LOCK_WALL = "/lock/placeholder.jpg";
 
