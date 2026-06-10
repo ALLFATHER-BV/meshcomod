@@ -27,6 +27,15 @@ void touchPrefsBegin() {
   }
 }
 
+// Arduino's Preferences::getString()/getBytes() emit an [E] nvs_get_* "NOT_FOUND"
+// log every time a key is absent — which floods the (USB-CDC) console on a fresh
+// device and on every empty Wi-Fi-slot read. isKey() (getType → raw nvs probes)
+// does NOT log, so probe with it before reading an optional string key.
+static String prefsGetStr(const char* key, const String& def) {
+  if (!s_begun) touchPrefsBegin();
+  return s_prefs.isKey(key) ? s_prefs.getString(key, def) : def;
+}
+
 uint16_t touchPrefsGetScreenTimeoutSecs() {
   if (!s_begun) touchPrefsBegin();
   return s_prefs.getUShort(KEY_SCR_TO, DEFAULT_SCREEN_TIMEOUT_S);
@@ -154,7 +163,7 @@ int touchPrefsGetTileServer(char* out, int out_cap) {
   if (!out || out_cap <= 0) return 0;
   out[0] = '\0';
   if (!s_begun) touchPrefsBegin();
-  String v = s_prefs.getString(KEY_TILE_SRV, String(DEFAULT_TILE_SERVER));
+  String v = prefsGetStr(KEY_TILE_SRV, String(DEFAULT_TILE_SERVER));
   int n = (int)v.length();
   if (n > out_cap - 1) n = out_cap - 1;
   if (n > TOUCH_TILE_SERVER_MAXLEN - 1) n = TOUCH_TILE_SERVER_MAXLEN - 1;
@@ -180,7 +189,7 @@ int touchPrefsGetRegionScope(char* out, int out_cap) {
   if (!out || out_cap <= 0) return 0;
   out[0] = '\0';
   if (!s_begun) touchPrefsBegin();
-  String v = s_prefs.getString(KEY_RGN_SCOPE, String(""));
+  String v = prefsGetStr(KEY_RGN_SCOPE, String(""));
   int n = (int)v.length();
   if (n > out_cap - 1) n = out_cap - 1;
   if (n > TOUCH_REGION_SCOPE_MAXLEN - 1) n = TOUCH_REGION_SCOPE_MAXLEN - 1;
@@ -207,7 +216,7 @@ int touchPrefsGetLockWallpaper(char* out, int out_cap) {
   if (!out || out_cap <= 0) return 0;
   out[0] = '\0';
   if (!s_begun) touchPrefsBegin();
-  String v = s_prefs.getString(KEY_LOCK_WALL, String(DEFAULT_LOCK_WALL));
+  String v = prefsGetStr(KEY_LOCK_WALL, String(DEFAULT_LOCK_WALL));
   int n = (int)v.length();
   if (n > out_cap - 1) n = out_cap - 1;
   if (n > TOUCH_LOCK_WALLPAPER_MAXLEN - 1) n = TOUCH_LOCK_WALLPAPER_MAXLEN - 1;
@@ -303,7 +312,7 @@ int touchPrefsGetQuickReply(int idx, char* out, int out_cap) {
   if (!s_begun) touchPrefsBegin();
   char key[8];
   qrKeyFor(idx, key);
-  String v = s_prefs.getString(key, String(k_qr_defaults[idx]));
+  String v = prefsGetStr(key, String(k_qr_defaults[idx]));
   int n = (int)v.length();
   if (n > out_cap - 1) n = out_cap - 1;
   if (n > TOUCH_QUICK_REPLY_MAXLEN - 1) n = TOUCH_QUICK_REPLY_MAXLEN - 1;
@@ -442,7 +451,7 @@ bool touchPrefsGetWifiSlot(int idx, char* label, int label_cap,
   char k[12];
   if (label && label_cap > 0) {
     wifiSlotKey(idx, 'l', k);
-    String v = s_prefs.getString(k, "");
+    String v = prefsGetStr(k, "");
     int n = (int)v.length();
     if (n > label_cap - 1) n = label_cap - 1;
     if (n > 0) memcpy(label, v.c_str(), (size_t)n);
@@ -450,7 +459,7 @@ bool touchPrefsGetWifiSlot(int idx, char* label, int label_cap,
   }
   if (ssid && ssid_cap > 0) {
     wifiSlotKey(idx, 's', k);
-    String v = s_prefs.getString(k, "");
+    String v = prefsGetStr(k, "");
     int n = (int)v.length();
     if (n > ssid_cap - 1) n = ssid_cap - 1;
     if (n > 0) memcpy(ssid, v.c_str(), (size_t)n);
@@ -458,7 +467,7 @@ bool touchPrefsGetWifiSlot(int idx, char* label, int label_cap,
   }
   if (pwd && pwd_cap > 0) {
     wifiSlotKey(idx, 'p', k);
-    String v = s_prefs.getString(k, "");
+    String v = prefsGetStr(k, "");
     int n = (int)v.length();
     if (n > pwd_cap - 1) n = pwd_cap - 1;
     if (n > 0) memcpy(pwd, v.c_str(), (size_t)n);
@@ -487,6 +496,7 @@ static const char* KEY_FAV = "fav";
 
 static int favReadAll(uint8_t out[TOUCH_FAVORITES_MAX * TOUCH_FAVORITE_KEY_BYTES]) {
   if (!s_begun) touchPrefsBegin();
+  if (!s_prefs.isKey(KEY_FAV)) return 0;   // absent on a fresh device — skip the [E] NOT_FOUND log
   size_t n = s_prefs.getBytes(KEY_FAV, out, TOUCH_FAVORITES_MAX * TOUCH_FAVORITE_KEY_BYTES);
   if (n == 0 || n > (size_t)(TOUCH_FAVORITES_MAX * TOUCH_FAVORITE_KEY_BYTES)) return 0;
   // Round down to a whole number of entries — guards against NVS returning
@@ -576,6 +586,7 @@ constexpr int RPW_REC_BYTES = TOUCH_REPEATER_PW_KEY_LEN + TOUCH_REPEATER_PW_LEN;
 
 static int rpwReadAll(uint8_t out[TOUCH_REPEATER_PW_MAX * RPW_REC_BYTES]) {
   if (!s_begun) touchPrefsBegin();
+  if (!s_prefs.isKey(KEY_RPW)) return 0;   // absent on a fresh device — skip the [E] NOT_FOUND log
   size_t n = s_prefs.getBytes(KEY_RPW, out, TOUCH_REPEATER_PW_MAX * RPW_REC_BYTES);
   if (n == 0 || n > (size_t)(TOUCH_REPEATER_PW_MAX * RPW_REC_BYTES)) return 0;
   return (int)(n / RPW_REC_BYTES);
