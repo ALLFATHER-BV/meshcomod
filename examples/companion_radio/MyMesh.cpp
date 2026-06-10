@@ -2357,6 +2357,38 @@ void MyMesh::setDefaultFloodScope(const char* region_name) {
   savePrefs();
 }
 
+bool MyMesh::pushChannelScope(const char* region_name) {
+  // Mirror setDefaultFloodScope's trim + "#name" normalisation, but derive into
+  // the transient send_scope so it applies only to the next channel send.
+  char tag[40] = {0};
+  if (region_name) {
+    while (*region_name == ' ' || *region_name == '\t') region_name++;
+    size_t n = strlen(region_name);
+    while (n && (region_name[n-1] == ' '  || region_name[n-1] == '\t' ||
+                 region_name[n-1] == '\n' || region_name[n-1] == '\r')) n--;
+    size_t o = 0;
+    if (n && region_name[0] != '#' && o < sizeof(tag)-1) tag[o++] = '#';
+    for (size_t i = 0; i < n && o < sizeof(tag)-1; ++i) tag[o++] = region_name[i];
+    tag[o] = '\0';
+  }
+  if (tag[0] == '\0' || (tag[0] == '#' && tag[1] == '\0')) return false;   // no override
+  memcpy(&_chan_scope_saved, &send_scope, sizeof(send_scope));
+  _chan_scope_saved_unscoped = send_unscoped;
+  _chan_scope_pushed = true;
+  SHA256 sha;
+  sha.update(tag, strlen(tag));
+  sha.finalize(send_scope.key, sizeof(send_scope.key));
+  send_unscoped = false;
+  return true;
+}
+
+void MyMesh::popChannelScope() {
+  if (!_chan_scope_pushed) return;
+  memcpy(&send_scope, &_chan_scope_saved, sizeof(send_scope));
+  send_unscoped = _chan_scope_saved_unscoped;
+  _chan_scope_pushed = false;
+}
+
 void MyMesh::begin(bool has_display) {
   BaseChatMesh::begin();
 

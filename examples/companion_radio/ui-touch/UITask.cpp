@@ -201,8 +201,28 @@ constexpr uint32_t COLOR_PANEL        = 0x040506;  // essentially black panel
 // at low opacity that tinted every chip and settings row blue. Switched
 // to a true neutral medium gray (very slight warm) so chip fills read as
 // "darker gray" rather than "blue".
-constexpr uint32_t COLOR_ACCENT       = 0x57585A;  // neutral gray
-constexpr uint32_t COLOR_ACCENT_PRESS = 0x3A3B3D;  // darker neutral gray
+// Runtime-themeable accent (Settings -> Theme colour). NOT constexpr: the picker
+// rewrites these live and they're reloaded from the saved pref at boot. Every
+// accent site reads them through lv_color_hex(), so one write re-themes the UI.
+uint32_t COLOR_ACCENT       = 0x57585A;  // neutral gray (default)
+uint32_t COLOR_ACCENT_PRESS = 0x3A3B3D;  // darker neutral gray (default)
+
+// Perceived luminance 0..255 (keep the accent dark enough for off-white text).
+static inline uint32_t accentLuma(uint32_t rgb) {
+  return (299u*((rgb>>16)&0xFF) + 587u*((rgb>>8)&0xFF) + 114u*(rgb&0xFF)) / 1000u;
+}
+// Scale brightness to `pct` percent, preserving hue.
+static inline uint32_t accentDarken(uint32_t rgb, int pct) {
+  uint32_t r=((rgb>>16)&0xFF)*pct/100, g=((rgb>>8)&0xFF)*pct/100, b=(rgb&0xFF)*pct/100;
+  return (r<<16)|(g<<8)|b;
+}
+// Clamp a picked accent dark enough that off-white button text stays readable.
+static inline uint32_t accentClampReadable(uint32_t rgb) {
+  const uint32_t kMaxLuma = 140;
+  uint32_t L = accentLuma(rgb);
+  if (L > kMaxLuma) return accentDarken(rgb, (int)(kMaxLuma * 100 / L));
+  return rgb & 0xFFFFFFu;
+}
 constexpr uint32_t COLOR_TEXT         = 0xE0E3E6;  // clean off-white
 constexpr uint32_t COLOR_SUB          = 0x828891;  // medium neutral gray
 // Chat-bubble palette: kept near-monochrome (military comms terminals
@@ -368,6 +388,7 @@ struct GlobalStatusBar {
   lv_obj_t* batt_pct;
   lv_obj_t* batt_icon;
   lv_obj_t* layout_label;   // EN / BG indicator, right side
+  lv_obj_t* chan_gear;      // channel-settings gear, left of the thread name (channels only)
 };
 static GlobalStatusBar g_statusbar = {};
 static void updateGlobalStatusBar();   // fwd decl, called from refresh tick
@@ -1177,6 +1198,12 @@ static void lvglTouchRead(lv_indev_drv_t* indev, lv_indev_data_t* data) {
 // ============================================================
 static void refreshChatDetail(LvChatPanel& p);
 static void refreshChatList(LvChatPanel& p);
+static void applyAccent(uint32_t rgb);            // theme accent (Settings -> Theme colour)
+static void openAccentPicker();
+static void openAccentPickerCb(lv_event_t* e);
+static void openChannelScopeModal(int slot, const char* name);  // per-channel region scope
+static void channelGearCb(lv_event_t* e);
+static bool overlayBlocksTabSwipe();   // theme/channel-scope pickers swallow tab swipes
 static void refreshContactsList();
 static void refreshThreadLists();
 static void refreshStatusLabels();
@@ -1450,6 +1477,7 @@ static void applySwipeGesture(int8_t swipe_x, int8_t swipe_y) {
   // Block tab swipes while a chat detail is open; back button is the exit.
   if (hasChatDetailOpen()) return;
   if (s_wifi_scan_popup) return;   // scan popup is modal; don't switch tabs underneath
+  if (overlayBlocksTabSwipe()) return;   // theme / channel-scope pickers: don't swipe the menu beneath
   // The control center drops down from the top bar, so an up-swipe dismisses
   // it (natural "push it back up" gesture). Any other swipe is swallowed so
   // that e.g. dragging its brightness slider can't also switch the tab
@@ -4773,6 +4801,18 @@ static void useMilesToggleCb(lv_event_t* e) {
   refreshContactsList();
 }
 
+// Colourful chat bubbles toggle. On enable: the "taste the rainbow" easter egg.
+// Bubbles recolour the next time a chat opens (this control lives on Settings).
+static void colorfulBubblesToggleCb(lv_event_t* e) {
+  if (lv_event_get_code(e) != LV_EVENT_VALUE_CHANGED) return;
+  const bool on = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED);
+#if defined(ESP32)
+  touchPrefsSetColorfulBubbles(on);
+#endif
+  if (g_lv.task) g_lv.task->showAlert(on ? "Taste the rainbow!" : "Chat bubbles: plain",
+                                      on ? 1500 : 900);
+}
+
 // One handler for every per-language switch in the multi-select list. The
 // layout id is stashed in the switch's user_data. Flipping a switch updates the
 // enabled-mask (persisted + live) and refreshes the on-screen keyboard, which
@@ -5023,6 +5063,49 @@ static void buildDeviceSettings() {
     if (touchPrefsGetUseMiles()) lv_obj_add_state(sw, LV_STATE_CHECKED);
 #endif
     lv_obj_add_event_cb(sw, useMilesToggleCb, LV_EVENT_VALUE_CHANGED, nullptr);
+    y += 40;
+  }
+
+  /* Colourful chat bubbles: colour every bubble + sender name by a hash of the
+     sender's name (same name -> same colour). "Taste the rainbow" on enable. */
+  {
+    lv_obj_t* l = lv_label_create(body);
+    lv_label_set_text(l, "Colourful chat bubbles");
+    lv_obj_set_style_text_color(l, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
+    lv_obj_set_pos(l, 2, y + 6);
+    lv_obj_t* sw = lv_switch_create(body);
+    lv_obj_align(sw, LV_ALIGN_TOP_RIGHT, 0, y);
+#if defined(ESP32)
+    if (touchPrefsGetColorfulBubbles()) lv_obj_add_state(sw, LV_STATE_CHECKED);
+#endif
+    lv_obj_add_event_cb(sw, colorfulBubblesToggleCb, LV_EVENT_VALUE_CHANGED, nullptr);
+    y += 40;
+  }
+
+  /* Theme colour (UI accent): opens a colour-wheel + hex picker. The chosen
+     colour is clamped dark enough that off-white button text stays readable. */
+  {
+    lv_obj_t* l = lv_label_create(body);
+    lv_label_set_text(l, "Theme colour");
+    lv_obj_set_style_text_color(l, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
+    lv_obj_set_style_text_font(l, &g_font_12, LV_PART_MAIN);
+    lv_obj_set_pos(l, 2, y);
+    y += 18;
+    lv_obj_t* b = lv_btn_create(body);
+    lv_obj_set_size(b, 150, 32);
+    lv_obj_set_pos(b, 2, y);
+    styleButton(b);
+    lv_obj_add_event_cb(b, openAccentPickerCb, LV_EVENT_CLICKED, nullptr);
+    lv_obj_t* bl = lv_label_create(b);
+    lv_label_set_text(bl, "Pick colour");
+    lv_obj_center(bl);
+    lv_obj_t* swatch = lv_obj_create(body);
+    lv_obj_remove_style_all(swatch);
+    lv_obj_set_size(swatch, 30, 30);
+    lv_obj_set_pos(swatch, 162, y + 1);
+    lv_obj_set_style_radius(swatch, 6, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(swatch, lv_color_hex(COLOR_ACCENT), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(swatch, LV_OPA_COVER, LV_PART_MAIN);
     y += 40;
   }
 
@@ -12123,21 +12206,52 @@ static void freeMapTiles() {
   for (auto& t : s_map_tiles) freeMapTileSlot(t);
 }
 
+#if defined(ESP32)
+// Is *some* tile source available to probe at all? (SD pack or LittleFS /tiles.)
+static bool mapTileSourceReady() {
+#if defined(HAS_TDECK_GT911)
+  if (s_tiles_from_sd) return true;
+#endif
+  return s_tiles_fs_ready;
+}
+// Does a tile exist at z/x/y in whatever source the loader will actually read?
+// MUST mirror loadTileJpeg's source selection, or the zoom guard blocks levels the
+// loader could load. The old guards only probed the LittleFS /tiles partition (the
+// online cache), so an SD /maps/osm offline pack was invisible to zoom — the loader
+// drew its tiles but the buttons reported "Max/Min zoom for this pack" offline.
+static bool tileExistsAt(uint8_t z, long x, long y) {
+#if defined(HAS_TDECK_GT911)
+  if (s_tiles_from_sd) {
+    if (!fmSdTryMount()) return false;
+    char p[56];
+    snprintf(p, sizeof p, "/maps/osm/%u/%ld/%ld.png", (unsigned)z, x, y);
+    if (SD.exists(p)) return true;
+    snprintf(p, sizeof p, "/tiles/%u/%ld/%ld.jpg", (unsigned)z, x, y);
+    return SD.exists(p);
+  }
+#endif
+  if (!s_tiles_fs_ready) return false;
+  char p[48];
+  snprintf(p, sizeof p, "/tiles/%u/%ld/%ld.jpg", (unsigned)z, x, y);
+  if (tileCacheExists(p)) return true;
+  snprintf(p, sizeof p, "/tiles/%u/%ld/%ld.png", (unsigned)z, x, y);
+  return tileCacheExists(p);
+}
+#endif  // ESP32
+
 // Probe the pack for the highest zoom level that has a tile near `lat,lon`.
 // Used as an auto-fallback so a missing top zoom (e.g. the operator packed
 // z12+z13 but s_map_zoom defaults to z14) doesn't make the whole tab look
 // empty. Returns 0 when no tile is found at any zoom in the supported range.
 static uint8_t bestAvailableZoom(double lat, double lon) {
 #if defined(ESP32)
-  if (!s_tiles_fs_ready) return 0;
+  if (!mapTileSourceReady()) return 0;
   for (int z = (int)k_map_zoom_max; z >= (int)k_map_zoom_min; --z) {
     double wx, wy;
     latLonToWorldPx(lat, lon, (uint8_t)z, &wx, &wy);
     const int32_t tx = (int32_t)floor(wx / 256.0);
     const int32_t ty = (int32_t)floor(wy / 256.0);
-    char path[48];
-    snprintf(path, sizeof(path), "/tiles/%d/%ld/%ld.jpg", z, (long)tx, (long)ty);
-    if (tileCacheExists(path)) return (uint8_t)z;
+    if (tileExistsAt((uint8_t)z, (long)tx, (long)ty)) return (uint8_t)z;
   }
   return 0;
 #else
@@ -13269,16 +13383,12 @@ static void mapCanvasEventCb(lv_event_t* e) {
 // z14 lands on the cached z12 overview instead of refusing at the empty z13.
 #if defined(ESP32)
 static bool mapZoomReachable(uint8_t z) {
-  if (!s_tiles_fs_ready) return true;     // can't probe — don't block the user
+  if (!mapTileSourceReady()) return true;   // can't probe — don't block the user
   double wx, wy;
   latLonToWorldPx(s_map_center_lat, s_map_center_lon, z, &wx, &wy);
   const long tx = (long)floor(wx / 256.0);
   const long ty = (long)floor(wy / 256.0);
-  char path[48];
-  snprintf(path, sizeof(path), "/tiles/%u/%ld/%ld.jpg", (unsigned)z, tx, ty);
-  if (tileCacheExists(path)) return true;
-  snprintf(path, sizeof(path), "/tiles/%u/%ld/%ld.png", (unsigned)z, tx, ty);
-  if (tileCacheExists(path)) return true;
+  if (tileExistsAt(z, tx, ty)) return true;   // SD /maps/osm pack OR LittleFS /tiles
 #if defined(MULTI_TRANSPORT_COMPANION)
   if (WiFi.status() == WL_CONNECTED) return true;   // renderMapTiles will fetch it
 #endif
@@ -14422,6 +14532,19 @@ static void chatDetailShowPlaceholder(LvChatPanel& p, const char* msg) {
   lv_obj_center(lbl);
 }
 
+// Deterministic per-username bubble colours for the "colourful chat bubbles"
+// option. The same display name always maps to the same hue (FNV-1a hash), so
+// each participant in a group keeps a stable colour. Readability is by
+// construction: the bubble background is a DARK tint (off-white text stays
+// legible) and the sender-name line is a VIVID version of the same hue.
+static void usernameBubbleColors(const char* name, lv_color_t* bubble_bg, lv_color_t* name_col) {
+  uint32_t h = 2166136261u;                        // FNV-1a offset basis
+  for (const char* p = name; p && *p; ++p) { h ^= (uint8_t)(*p); h *= 16777619u; }
+  const uint16_t hue = (uint16_t)(h % 360u);
+  if (bubble_bg) *bubble_bg = lv_color_hsv_to_rgb(hue, 55, 26);  // dark, off-white text readable
+  if (name_col)  *name_col  = lv_color_hsv_to_rgb(hue, 85, 95);  // vivid sender-name line
+}
+
 static void refreshChatDetail(LvChatPanel& p) {
   if (!g_lv.task || !p.msgs) return;
   lv_obj_clean(p.msgs);
@@ -14461,6 +14584,8 @@ static void refreshChatDetail(LvChatPanel& p) {
   constexpr lv_coord_t kSideGutter = 2;
   constexpr lv_coord_t kRowGap     = 4;
 
+  const bool colorful_bubbles = touchPrefsGetColorfulBubbles();
+
   lv_coord_t y_pos = 0;
   for (int i = render_start; i < n; ++i) {
     UITask::UIMessage m;
@@ -14496,9 +14621,16 @@ static void refreshChatDetail(LvChatPanel& p) {
     lv_obj_clear_flag(bubble, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_radius(bubble, 10, LV_PART_MAIN);
     const bool mentions_me = p.channel_mode && !m.outgoing && textMentionsMe(show_text);
-    lv_obj_set_style_bg_color(bubble,
-        lv_color_hex(mentions_me ? COLOR_MENTION_BG
-                                 : (m.outgoing ? COLOR_SENT_BG : COLOR_RECV_BG)), LV_PART_MAIN);
+    // Colourful-bubbles option: tint the bubble + sender name by a hash of the
+    // name (outgoing bubbles colour by our own node name). The @mention
+    // highlight still wins for the background — keeps the "you were tagged" cue.
+    const char* color_name = m.outgoing ? the_mesh.getNodePrefs()->node_name : show_sender;
+    lv_color_t bubble_bg  = lv_color_hex(m.outgoing ? COLOR_SENT_BG : COLOR_RECV_BG);
+    lv_color_t sender_col = lv_color_hex(COLOR_ACCENT);
+    if (colorful_bubbles && color_name && color_name[0])
+      usernameBubbleColors(color_name, &bubble_bg, &sender_col);
+    if (mentions_me) bubble_bg = lv_color_hex(COLOR_MENTION_BG);
+    lv_obj_set_style_bg_color(bubble, bubble_bg, LV_PART_MAIN);
     lv_obj_set_style_bg_opa(bubble, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_style_pad_hor(bubble, kBubblePadH, LV_PART_MAIN);
     lv_obj_set_style_pad_ver(bubble, kBubblePadV, LV_PART_MAIN);
@@ -14515,7 +14647,7 @@ static void refreshChatDetail(LvChatPanel& p) {
       lv_obj_t* slbl = lv_label_create(bubble);
       lv_label_set_text(slbl, san_sender);
       lv_obj_set_style_text_font(slbl, &g_font_12, LV_PART_MAIN);
-      lv_obj_set_style_text_color(slbl, lv_color_hex(COLOR_ACCENT), LV_PART_MAIN);
+      lv_obj_set_style_text_color(slbl, sender_col, LV_PART_MAIN);
       lv_obj_set_pos(slbl, 0, inner_y);
       inner_y += 14;
     }
@@ -16481,6 +16613,12 @@ static void ccGpsCb(lv_event_t* e) {
   g_lv.task->showAlert(g_lv.task->getGPSState() ? "GPS on" : "GPS off", 800);
   openControlCenter();   // rebuild so the toggle reflects the new state
 }
+// Theme-colour chip (both boards): close the control center, open the accent picker.
+static void ccThemeCb(lv_event_t* e) {
+  if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+  closeControlCenter();
+  openAccentPicker();
+}
 
 #if defined(HAS_TDECK_KEYBOARD)
 static void ccKbBacklightCb(lv_event_t* e) {
@@ -16701,7 +16839,7 @@ static void openControlCenter() {
 #else
   // Portrait has headroom on the 320-tall screen; make the card taller so the
   // brightness slider + toggles + sysinfo all get their own rows.
-  lv_obj_set_size(card, card_w, portrait ? 236 : 150);
+  lv_obj_set_size(card, card_w, portrait ? 236 : 212);
 #endif
   lv_obj_align(card, LV_ALIGN_TOP_MID, 0, 4);
   lv_obj_set_style_bg_color(card, lv_color_hex(COLOR_PANEL), LV_PART_MAIN);
@@ -16783,7 +16921,7 @@ static void openControlCenter() {
   // backlight PWM have no slider, so GPS reclaims that first row.
 #if defined(HAS_BACKLIGHT_PWM)
   const int bl_y  = row_y;
-  const int gps_y = row_y + 20;
+  const int gps_y = row_y + 12;
 #else
   const int gps_y = row_y;
 #endif
@@ -16863,7 +17001,7 @@ static void openControlCenter() {
 #if defined(HAS_TDECK_GT911)
   // 2-row grid: 4 chips per row, so chip 5 (Lock) wraps onto a 2nd row. Sits
   // ABOVE the bottom system-info line (-16 offset leaves room for it).
-  lv_obj_set_size(row, card_w - 20, 88);
+  lv_obj_set_size(row, card_w - 20, 80);
   lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW_WRAP);
   lv_obj_set_style_pad_row(row, 4, LV_PART_MAIN);
 #else
@@ -16881,15 +17019,16 @@ static void openControlCenter() {
   // width with even gaps (portrait 240 px → ~68 px each fits 3 across).
   int tw = 66, th = 54;
 #if defined(HAS_TDECK_GT911)
-  tw = 58; th = 40;
+  tw = 58; th = 36;
 #else
-  tw = (card_w - 20 - 2 * 6) / 3;   // 3 chips + 2 gaps across the content width
+  tw = (card_w - 20 - 3 * 6) / 4;   // 4 chips (incl. Theme) + 3 gaps across the content width
   if (tw > 76) tw = 76;
 #endif
   ccToggle(row, LV_SYMBOL_WIFI, "Wi-Fi", wifi_on, ccWifiCb, tw, th);
   if (!g_lv.task || g_lv.task->hasBleCapability())
     ccToggle(row, LV_SYMBOL_BLUETOOTH, "BT", ble_on, ccBleCb, tw, th);
   ccToggle(row, LV_SYMBOL_GPS, "GPS", gps_on, ccGpsCb, tw, th);
+  ccToggle(row, LV_SYMBOL_TINT, "Theme", false, ccThemeCb, tw, th);
 #if defined(HAS_TDECK_KEYBOARD)
   ccToggle(row, LV_SYMBOL_KEYBOARD,
            s_kb_bl_mode == 0 ? "off" : (s_kb_bl_mode == 1 ? "on" : "auto"),
@@ -16938,6 +17077,20 @@ static void buildGlobalStatusBar() {
   lv_obj_set_style_text_font(g_statusbar.left_label, &g_font_14, LV_PART_MAIN);
   lv_obj_align(g_statusbar.left_label, LV_ALIGN_LEFT_MID, 6, 0);
 
+  // Channel-settings gear — left of the thread name, shown only inside a channel
+  // chat (updateGlobalStatusBar toggles it + shifts the name). Opens the
+  // per-channel region-scope modal. Clickable child intercepts the tap, so it
+  // doesn't trigger the bar's control-center tap.
+  g_statusbar.chan_gear = lv_label_create(g_statusbar.root);
+  lv_label_set_text(g_statusbar.chan_gear, LV_SYMBOL_SETTINGS);
+  lv_obj_set_style_text_color(g_statusbar.chan_gear, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
+  lv_obj_set_style_text_font(g_statusbar.chan_gear, &g_font_14, LV_PART_MAIN);
+  lv_obj_align(g_statusbar.chan_gear, LV_ALIGN_LEFT_MID, 4, 0);
+  lv_obj_add_flag(g_statusbar.chan_gear, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_set_ext_click_area(g_statusbar.chan_gear, 10);
+  lv_obj_add_flag(g_statusbar.chan_gear, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_add_event_cb(g_statusbar.chan_gear, channelGearCb, LV_EVENT_CLICKED, nullptr);
+
   // Right zone, anchored to the right edge (from rightmost to leftmost):
   // battery icon, battery %, clock, conn icon. Compact spacings.
   g_statusbar.batt_icon = lv_label_create(g_statusbar.root);
@@ -16975,6 +17128,14 @@ static void buildGlobalStatusBar() {
 
 static void updateGlobalStatusBar() {
   if (!g_statusbar.root || !g_lv.task) return;
+
+  // Channel-settings gear sits just left of the thread name, only in a channel chat.
+  const bool in_chan_chat = s_chat_title[0] && g_lv.task->activeThreadIsChannel();
+  if (g_statusbar.chan_gear) {
+    if (in_chan_chat) lv_obj_clear_flag(g_statusbar.chan_gear, LV_OBJ_FLAG_HIDDEN);
+    else              lv_obj_add_flag(g_statusbar.chan_gear, LV_OBJ_FLAG_HIDDEN);
+  }
+  lv_obj_align(g_statusbar.left_label, LV_ALIGN_LEFT_MID, in_chan_chat ? 24 : 6, 0);
 
   // ---- Left zone ----
   if (s_chat_title[0]) {
@@ -17743,11 +17904,294 @@ static void setupRerunCb(lv_event_t* e) {
 }
 
 // ============================================================
+// Theme accent colour: live apply + (wheel + hex) picker
+// ============================================================
+static void applyAccent(uint32_t rgb) {
+  COLOR_ACCENT       = accentClampReadable(rgb);
+  COLOR_ACCENT_PRESS = accentDarken(COLOR_ACCENT, 65);
+  // Applied UI-wide on the next build: the Theme picker saves then restarts, so
+  // every widget adopts the colour at once. (A live re-style only ever caught
+  // the always-on tab bar, which is what looked half-applied before.)
+}
+
+// Curated accent palette for the swatch grid: stock grey + a colour spread.
+static const uint32_t kThemeColors[] = {
+  0x57585A, 0x3B82F6, 0x2DA8A0, 0x3FA34D, 0x8B5CF6, 0xD2569E,
+  0xD0524A, 0xE0823C, 0xC8A030, 0x5B6BD0, 0x4AB0C8, 0xA85AB0,
+};
+
+static lv_obj_t* s_accent_picker  = nullptr;
+static lv_obj_t* s_accent_hex_ta  = nullptr;
+static lv_obj_t* s_accent_preview = nullptr;
+static uint32_t  s_accent_sel     = 0x57585Au;   // currently-selected colour
+static bool      s_accent_syncing = false;
+
+static void accentPreviewShow(uint32_t rgb) {
+  if (s_accent_preview)
+    lv_obj_set_style_bg_color(s_accent_preview, lv_color_hex(accentClampReadable(rgb)), LV_PART_MAIN);
+}
+// "RRGGBB" -> rgb, or 0xFFFFFFFF if not exactly 6 hex digits.
+static uint32_t accentParseHex(const char* t) {
+  uint32_t rgb = 0; int n = 0;
+  for (const char* p = t; *p; ++p) {
+    int v; char ch = *p;
+    if      (ch>='0'&&ch<='9') v = ch-'0';
+    else if (ch>='a'&&ch<='f') v = ch-'a'+10;
+    else if (ch>='A'&&ch<='F') v = ch-'A'+10;
+    else return 0xFFFFFFFFu;
+    rgb = (rgb<<4)|v; n++;
+  }
+  return (n == 6) ? (rgb & 0xFFFFFFu) : 0xFFFFFFFFu;
+}
+static void accentSetSelection(uint32_t rgb, bool update_hex) {
+  s_accent_sel = rgb & 0xFFFFFFu;
+  accentPreviewShow(s_accent_sel);
+  if (update_hex && s_accent_hex_ta) {
+    s_accent_syncing = true;
+    char hx[8]; snprintf(hx, sizeof hx, "%06X", (unsigned)s_accent_sel);
+    lv_textarea_set_text(s_accent_hex_ta, hx);
+    s_accent_syncing = false;
+  }
+}
+static void accentSwatchCb(lv_event_t* e) {
+  if (lv_event_get_code(e) == LV_EVENT_CLICKED)
+    accentSetSelection((uint32_t)(uintptr_t)lv_event_get_user_data(e), true);
+}
+static void accentHexCb(lv_event_t* e) {
+  if (s_accent_syncing || !s_accent_hex_ta) return;
+  uint32_t rgb = accentParseHex(lv_textarea_get_text(s_accent_hex_ta));
+  if (rgb != 0xFFFFFFFFu) accentSetSelection(rgb, false);  // don't fight the typist
+}
+static void accentPickerClose() {
+  if (s_accent_picker) { lv_obj_del(s_accent_picker); s_accent_picker = nullptr; }
+  s_accent_hex_ta = s_accent_preview = nullptr;
+}
+static void accentPickerCloseCb(lv_event_t* e) {
+  if (lv_event_get_code(e) == LV_EVENT_CLICKED) accentPickerClose();
+}
+static void accentSaveCb(lv_event_t* e) {
+  if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+  applyAccent(s_accent_sel);
+#if defined(ESP32)
+  touchPrefsSetAccentColor(s_accent_sel);
+#endif
+  accentPickerClose();
+  // The accent is read by every widget as it's built, so restart to recolour the
+  // whole UI in one go (the button says "Save & restart").
+  if (g_lv.task) g_lv.task->rebootDevice();   // saves chat history first
+}
+static void accentResetCb(lv_event_t* e) {
+  if (lv_event_get_code(e) == LV_EVENT_CLICKED) accentSetSelection(0x57585Au, true);
+}
+static void openAccentPicker() {
+  accentPickerClose();
+  const lv_coord_t sw = lv_disp_get_hor_res(nullptr);
+  const lv_coord_t sh = lv_disp_get_ver_res(nullptr);
+  s_accent_picker = lv_obj_create(lv_layer_top());
+  lv_obj_remove_style_all(s_accent_picker);
+  lv_obj_set_size(s_accent_picker, sw, sh - STATUSBAR_H);
+  lv_obj_set_pos(s_accent_picker, 0, STATUSBAR_H);
+  lv_obj_set_style_bg_color(s_accent_picker, lv_color_hex(COLOR_BG), LV_PART_MAIN);
+  lv_obj_set_style_bg_opa(s_accent_picker, LV_OPA_COVER, LV_PART_MAIN);
+  lv_obj_set_flex_flow(s_accent_picker, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_flex_align(s_accent_picker, LV_FLEX_ALIGN_START,
+                        LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_pad_row(s_accent_picker, 4, LV_PART_MAIN);
+  lv_obj_set_style_pad_top(s_accent_picker, 3, LV_PART_MAIN);
+  lv_obj_set_scroll_dir(s_accent_picker, LV_DIR_VER);
+
+  lv_obj_t* title = lv_label_create(s_accent_picker);
+  lv_label_set_text(title, "Theme colour");
+  lv_obj_set_style_text_font(title, &g_font_16, LV_PART_MAIN);
+  lv_obj_set_style_text_color(title, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
+
+  lv_obj_t* close = lv_btn_create(s_accent_picker);
+  lv_obj_add_flag(close, LV_OBJ_FLAG_IGNORE_LAYOUT);
+  lv_obj_set_size(close, 30, 26);
+  lv_obj_align(close, LV_ALIGN_TOP_RIGHT, -6, 2);
+  styleButton(close);
+  lv_obj_add_event_cb(close, accentPickerCloseCb, LV_EVENT_CLICKED, nullptr);
+  lv_obj_t* cl = lv_label_create(close); lv_label_set_text(cl, LV_SYMBOL_CLOSE);
+  lv_obj_set_style_text_font(cl, &g_font_12, LV_PART_MAIN); lv_obj_center(cl);
+
+  // Swatch grid: tap a colour (far friendlier on a touchscreen than a wheel).
+  lv_obj_t* grid = lv_obj_create(s_accent_picker);
+  lv_obj_remove_style_all(grid);
+  lv_obj_set_size(grid, sw - 24, LV_SIZE_CONTENT);
+  lv_obj_set_flex_flow(grid, LV_FLEX_FLOW_ROW_WRAP);
+  lv_obj_set_flex_align(grid, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_pad_row(grid, 8, LV_PART_MAIN);
+  lv_obj_set_style_pad_column(grid, 8, LV_PART_MAIN);
+  lv_obj_clear_flag(grid, LV_OBJ_FLAG_SCROLLABLE);
+  for (int i = 0; i < (int)(sizeof(kThemeColors)/sizeof(kThemeColors[0])); ++i) {
+    lv_obj_t* sb = lv_btn_create(grid);
+    lv_obj_set_size(sb, 28, 28);
+    lv_obj_set_style_radius(sb, 7, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(sb, lv_color_hex(kThemeColors[i]), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(sb, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_width(sb, 1, LV_PART_MAIN);
+    lv_obj_set_style_border_color(sb, lv_color_hex(0x202224), LV_PART_MAIN);
+    lv_obj_add_event_cb(sb, accentSwatchCb, LV_EVENT_CLICKED, (void*)(uintptr_t)kThemeColors[i]);
+  }
+
+  lv_obj_t* hexrow = lv_obj_create(s_accent_picker);
+  lv_obj_remove_style_all(hexrow);
+  lv_obj_set_size(hexrow, 150, 30);
+  lv_obj_t* hash = lv_label_create(hexrow);
+  lv_label_set_text(hash, "#");
+  lv_obj_set_style_text_color(hash, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
+  lv_obj_align(hash, LV_ALIGN_LEFT_MID, 2, 0);
+  s_accent_hex_ta = lv_textarea_create(hexrow);
+  lv_textarea_set_one_line(s_accent_hex_ta, true);
+  lv_textarea_set_max_length(s_accent_hex_ta, 6);
+  lv_textarea_set_accepted_chars(s_accent_hex_ta, "0123456789abcdefABCDEF");
+  lv_obj_set_size(s_accent_hex_ta, 120, 28);
+  lv_obj_align(s_accent_hex_ta, LV_ALIGN_LEFT_MID, 16, 0);
+  lv_obj_add_event_cb(s_accent_hex_ta, accentHexCb, LV_EVENT_VALUE_CHANGED, nullptr);
+  attachSettingsTaEvents(s_accent_hex_ta);
+
+  s_accent_preview = lv_obj_create(s_accent_picker);
+  lv_obj_remove_style_all(s_accent_preview);
+  lv_obj_set_size(s_accent_preview, 150, 28);
+  lv_obj_set_style_radius(s_accent_preview, 6, LV_PART_MAIN);
+  lv_obj_set_style_bg_opa(s_accent_preview, LV_OPA_COVER, LV_PART_MAIN);
+  lv_obj_t* pv = lv_label_create(s_accent_preview);
+  lv_label_set_text(pv, "Sample text");
+  lv_obj_set_style_text_color(pv, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
+  lv_obj_center(pv);
+
+  lv_obj_t* btnrow = lv_obj_create(s_accent_picker);
+  lv_obj_remove_style_all(btnrow);
+  lv_obj_set_size(btnrow, 220, 32);
+  lv_obj_t* save = lv_btn_create(btnrow);
+  lv_obj_set_size(save, 124, 30); lv_obj_align(save, LV_ALIGN_LEFT_MID, 0, 0);
+  styleButton(save);
+  lv_obj_add_event_cb(save, accentSaveCb, LV_EVENT_CLICKED, nullptr);
+  lv_obj_t* sl = lv_label_create(save); lv_label_set_text(sl, "Save & restart");
+  lv_obj_set_style_text_font(sl, &g_font_12, LV_PART_MAIN); lv_obj_center(sl);
+  lv_obj_t* rst = lv_btn_create(btnrow);
+  lv_obj_set_size(rst, 84, 30); lv_obj_align(rst, LV_ALIGN_RIGHT_MID, 0, 0);
+  styleButton(rst);
+  lv_obj_add_event_cb(rst, accentResetCb, LV_EVENT_CLICKED, nullptr);
+  lv_obj_t* rl = lv_label_create(rst); lv_label_set_text(rl, "Reset"); lv_obj_center(rl);
+
+  accentSetSelection(touchPrefsGetAccentColor(), true);
+}
+static void openAccentPickerCb(lv_event_t* e) {
+  if (lv_event_get_code(e) == LV_EVENT_CLICKED) openAccentPicker();
+}
+
+// ============================================================
+// Per-channel region scope (status-bar gear -> this modal)
+// ============================================================
+static lv_obj_t* s_chanscope_modal = nullptr;
+static lv_obj_t* s_chanscope_ta    = nullptr;
+static int       s_chanscope_slot  = -1;
+
+static void chanScopeClose() {
+  if (s_chanscope_modal) { lv_obj_del(s_chanscope_modal); s_chanscope_modal = nullptr; }
+  s_chanscope_ta = nullptr;
+}
+static void chanScopeCloseCb(lv_event_t* e) {
+  if (lv_event_get_code(e) == LV_EVENT_CLICKED) chanScopeClose();
+}
+static void chanScopeSaveCb(lv_event_t* e) {
+  if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+  if (s_chanscope_slot >= 0 && s_chanscope_ta) {
+    const char* t = lv_textarea_get_text(s_chanscope_ta);
+#if defined(ESP32)
+    touchPrefsSetChannelScope(s_chanscope_slot, t ? t : "");
+#endif
+  }
+  chanScopeClose();
+  if (g_lv.task) g_lv.task->showAlert("Channel scope saved", 1200);
+}
+static void openChannelScopeModal(int slot, const char* name) {
+  chanScopeClose();
+  s_chanscope_slot = slot;
+  const lv_coord_t sw = lv_disp_get_hor_res(nullptr);
+  const lv_coord_t sh = lv_disp_get_ver_res(nullptr);
+  s_chanscope_modal = lv_obj_create(lv_layer_top());
+  lv_obj_remove_style_all(s_chanscope_modal);
+  lv_obj_set_size(s_chanscope_modal, sw, sh - STATUSBAR_H);
+  lv_obj_set_pos(s_chanscope_modal, 0, STATUSBAR_H);
+  lv_obj_set_style_bg_color(s_chanscope_modal, lv_color_hex(COLOR_BG), LV_PART_MAIN);
+  lv_obj_set_style_bg_opa(s_chanscope_modal, LV_OPA_COVER, LV_PART_MAIN);
+  lv_obj_clear_flag(s_chanscope_modal, LV_OBJ_FLAG_SCROLLABLE);
+
+  lv_obj_t* title = lv_label_create(s_chanscope_modal);
+  lv_label_set_text(title, "Channel settings");
+  lv_obj_set_style_text_font(title, &g_font_16, LV_PART_MAIN);
+  lv_obj_set_style_text_color(title, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
+  lv_obj_set_pos(title, 8, 8);
+
+  lv_obj_t* close = lv_btn_create(s_chanscope_modal);
+  lv_obj_set_size(close, 30, 26);
+  lv_obj_align(close, LV_ALIGN_TOP_RIGHT, -6, 4);
+  styleButton(close);
+  lv_obj_add_event_cb(close, chanScopeCloseCb, LV_EVENT_CLICKED, nullptr);
+  lv_obj_t* cl = lv_label_create(close); lv_label_set_text(cl, LV_SYMBOL_CLOSE);
+  lv_obj_set_style_text_font(cl, &g_font_12, LV_PART_MAIN); lv_obj_center(cl);
+
+  lv_obj_t* nm = lv_label_create(s_chanscope_modal);
+  lv_label_set_text(nm, (name && name[0]) ? name : "Channel");
+  lv_label_set_long_mode(nm, LV_LABEL_LONG_DOT);
+  lv_obj_set_width(nm, sw - 16);
+  lv_obj_set_style_text_color(nm, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
+  lv_obj_set_style_text_font(nm, &g_font_12, LV_PART_MAIN);
+  lv_obj_set_pos(nm, 8, 36);
+
+  lv_obj_t* hint = lv_label_create(s_chanscope_modal);
+  lv_label_set_text(hint, "Region scope (#tag) for this channel.\nBlank = use the default scope.");
+  lv_obj_set_style_text_color(hint, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
+  lv_obj_set_style_text_font(hint, &g_font_12, LV_PART_MAIN);
+  lv_obj_set_pos(hint, 8, 56);
+
+  s_chanscope_ta = lv_textarea_create(s_chanscope_modal);
+  lv_textarea_set_one_line(s_chanscope_ta, true);
+  lv_textarea_set_max_length(s_chanscope_ta, TOUCH_REGION_SCOPE_MAXLEN - 1);
+  lv_textarea_set_placeholder_text(s_chanscope_ta, "#region");
+  lv_obj_set_size(s_chanscope_ta, sw - 16, 36);
+  lv_obj_set_pos(s_chanscope_ta, 8, 92);
+#if defined(ESP32)
+  { char cur[TOUCH_REGION_SCOPE_MAXLEN] = {0};
+    touchPrefsGetChannelScope(slot, cur, sizeof cur);
+    if (cur[0]) lv_textarea_set_text(s_chanscope_ta, cur); }
+#endif
+  attachSettingsTaEvents(s_chanscope_ta);
+
+  lv_obj_t* save = lv_btn_create(s_chanscope_modal);
+  lv_obj_set_size(save, 120, 34);
+  lv_obj_set_pos(save, 8, 136);
+  styleButton(save);
+  lv_obj_add_event_cb(save, chanScopeSaveCb, LV_EVENT_CLICKED, nullptr);
+  lv_obj_t* sl = lv_label_create(save); lv_label_set_text(sl, "Save"); lv_obj_center(sl);
+}
+static void channelGearCb(lv_event_t* e) {
+  if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+  if (!g_lv.task) return;
+  int slot = g_lv.task->activeChannelSlot();
+  if (slot < 0) return;
+  openChannelScopeModal(slot, s_chat_title);
+}
+
+// Full-screen pickers sit on lv_layer_top, but the swipe/gesture handler is global
+// and would otherwise switch tabs in the menu beneath them. Block that.
+static bool overlayBlocksTabSwipe() {
+  return s_accent_picker != nullptr || s_chanscope_modal != nullptr;
+}
+
+// ============================================================
 // Build full UI tree
 // ============================================================
 static void buildUiTree() {
   // Always boot to the Home tab (the last-used tab is no longer restored).
   uint8_t saved_tab = 0;
+
+  // Load the saved theme accent before any widget is built so the whole tree
+  // adopts it. g_lv.tabview/keyboard are still null here, so applyAccent only
+  // sets the colour globals (no live re-style needed at boot).
+  applyAccent(touchPrefsGetAccentColor());
 
   lv_obj_t* root = lv_scr_act();
   styleSurface(root, COLOR_BG, 0);
@@ -19061,7 +19505,15 @@ bool UITask::sendComposerToActiveThread() {
                static_cast<unsigned long>(ts), static_cast<unsigned>(strlen(truncated)));
       pushDiagLine(tx_line);
     }
-    if (!the_mesh.sendGroupMessage(ts, cd.channel, sender, truncated, static_cast<int>(strlen(truncated)))) {
+    // Per-channel region-scope override: if this channel has one set, tag the
+    // flood with it instead of the default scope (popped right after the send).
+    char chan_rgn[TOUCH_REGION_SCOPE_MAXLEN] = {0};
+    touchPrefsGetChannelScope(slot, chan_rgn, sizeof(chan_rgn));
+    const bool scope_pushed = the_mesh.pushChannelScope(chan_rgn);
+    const bool grp_sent = the_mesh.sendGroupMessage(ts, cd.channel, sender,
+                              truncated, static_cast<int>(strlen(truncated)));
+    if (scope_pushed) the_mesh.popChannelScope();
+    if (!grp_sent) {
       showAlert("Send failed", 1200);
       return false;
     }

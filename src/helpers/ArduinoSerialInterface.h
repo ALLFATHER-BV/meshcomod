@@ -10,9 +10,12 @@ class ArduinoSerialInterface : public BaseSerialInterface {
   uint16_t rx_len;
   Stream* _serial;
   uint8_t rx_buf[MAX_FRAME_SIZE];
+  bool _clientSeen;   // a companion client has sent >=1 frame on this serial. Until then we
+                      // emit nothing, so a passive (USB-CDC) debug console isn't filled with
+                      // binary protocol push-frames when no app is actually connected.
 
 public:
-  ArduinoSerialInterface() { _isEnabled = false; _state = 0; }
+  ArduinoSerialInterface() { _isEnabled = false; _state = 0; _clientSeen = false; }
 
   void begin(Stream& serial) { 
     _serial = &serial; 

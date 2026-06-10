@@ -287,6 +287,12 @@ public:
   void enterThread(bool channel_mode, int idx);
   bool hasActiveThread() const { return _active_thread_idx >= 0; }
   bool activeThreadIsChannel() const { return _active_thread_is_channel; }
+  // Active channel's mesh slot (-1 when the open thread isn't a channel). For the
+  // status-bar channel-settings gear (per-channel region scope).
+  int16_t activeChannelSlot() const {
+    if (!_active_thread_is_channel || _active_thread_idx < 0 || _active_thread_idx >= MAX_UI_THREADS) return -1;
+    return _ui_threads[_active_thread_idx].mesh_channel_slot;
+  }
   int  activeThreadIdx() const { return _active_thread_idx; }
   int  threadScroll() const { return _thread_scroll; }
   void setThreadScroll(int v) { _thread_scroll = v; }

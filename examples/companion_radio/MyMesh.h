@@ -512,6 +512,13 @@ public:
   // a blank/NULL name clears it (unscoped, the default). Persists immediately.
   void setDefaultFloodScope(const char* region_name);
 
+  // Per-channel flood-scope override. pushChannelScope() derives a transient scope
+  // from "#region" (SHA256) for the NEXT channel send and returns true (the caller
+  // must popChannelScope() right after that send to restore); a blank/NULL name is
+  // a no-op returning false. Lets a channel override the default flood scope.
+  bool pushChannelScope(const char* region_name);
+  void popChannelScope();
+
   // Re-apply the persisted radio settings (freq/bw/sf/cr, TX power, RX-boost) to
   // the live radio — the same calls begin() makes at boot. Lets the UI change
   // region / radio params and have them take effect immediately, no reboot.
@@ -698,6 +705,9 @@ private:
   unsigned long dirty_contacts_expiry;
 
   TransportKey send_scope;
+  TransportKey _chan_scope_saved;             // push/popChannelScope stash
+  bool         _chan_scope_pushed = false;
+  bool         _chan_scope_saved_unscoped = false;
 
   uint8_t cmd_frame[MAX_FRAME_SIZE + 1];
   uint8_t out_frame[MAX_FRAME_SIZE + 1];

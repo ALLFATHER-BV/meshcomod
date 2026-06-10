@@ -209,6 +209,38 @@ bool touchPrefsSetRegionScope(const char* name) {
   return ok;
 }
 
+// Per-channel region-scope override, keyed by channel slot (0..63). Overrides the
+// default flood scope for that channel's outgoing messages. Blank = inherit the
+// default. Stored as "csc<slot>" -> region name.
+static void chanScopeKey(int slot, char out[8]) {
+  snprintf(out, 8, "csc%d", slot & 0x3F);
+}
+int touchPrefsGetChannelScope(int slot, char* out, int out_cap) {
+  if (!out || out_cap <= 0) return 0;
+  out[0] = '\0';
+  if (slot < 0) return 0;
+  if (!s_begun) touchPrefsBegin();
+  char k[8]; chanScopeKey(slot, k);
+  String v = prefsGetStr(k, String(""));
+  int n = (int)v.length();
+  if (n > out_cap - 1) n = out_cap - 1;
+  if (n > TOUCH_REGION_SCOPE_MAXLEN - 1) n = TOUCH_REGION_SCOPE_MAXLEN - 1;
+  if (n > 0) memcpy(out, v.c_str(), (size_t)n);
+  out[n] = '\0';
+  return n;
+}
+bool touchPrefsSetChannelScope(int slot, const char* name) {
+  if (slot < 0) return false;
+  if (!s_begun) touchPrefsBegin();
+  char k[8]; chanScopeKey(slot, k);
+  s_prefs.end();
+  if (!s_prefs.begin(TOUCH_NS, false)) return false;
+  bool ok = s_prefs.putString(k, name ? name : "") > 0;
+  s_prefs.end();
+  s_begun = s_prefs.begin(TOUCH_NS, true);
+  return ok;
+}
+
 static const char* KEY_LOCK_WALL = "lk_wall";
 static const char* DEFAULT_LOCK_WALL = "/lock/placeholder.jpg";
 
@@ -278,6 +310,43 @@ bool touchPrefsSetLockTextColor(uint32_t rgb) {
   s_prefs.end();
   if (!s_prefs.begin(TOUCH_NS, false)) return false;
   bool ok = s_prefs.putUInt(KEY_LOCK_COLOR, rgb & 0xFFFFFFu) > 0;
+  s_prefs.end();
+  s_begun = s_prefs.begin(TOUCH_NS, true);
+  return ok;
+}
+
+// Colourful chat bubbles: colour each bubble + sender name by a hash of the
+// sender's display name (same name -> same colour). Default ON. (getBool is
+// log_v on a miss, so no NOT_FOUND console spam.)
+static const char* KEY_CLR_BUBBLES = "clr_bub";
+bool touchPrefsGetColorfulBubbles() {
+  if (!s_begun) touchPrefsBegin();
+  return s_prefs.getBool(KEY_CLR_BUBBLES, true);
+}
+bool touchPrefsSetColorfulBubbles(bool on) {
+  if (!s_begun) touchPrefsBegin();
+  s_prefs.end();
+  if (!s_prefs.begin(TOUCH_NS, false)) return false;
+  bool ok = s_prefs.putBool(KEY_CLR_BUBBLES, on) > 0;
+  s_prefs.end();
+  s_begun = s_prefs.begin(TOUCH_NS, true);
+  return ok;
+}
+
+// UI accent colour (buttons, active tab, keyboard, highlights) as 0xRRGGBB.
+// Default = the stock neutral gray. The picker clamps it dark enough that the
+// off-white button text stays readable on any hue.
+static const char* KEY_ACCENT = "accent";
+static const uint32_t DEFAULT_ACCENT = 0x57585Au;
+uint32_t touchPrefsGetAccentColor() {
+  if (!s_begun) touchPrefsBegin();
+  return s_prefs.getUInt(KEY_ACCENT, DEFAULT_ACCENT) & 0xFFFFFFu;
+}
+bool touchPrefsSetAccentColor(uint32_t rgb) {
+  if (!s_begun) touchPrefsBegin();
+  s_prefs.end();
+  if (!s_prefs.begin(TOUCH_NS, false)) return false;
+  bool ok = s_prefs.putUInt(KEY_ACCENT, rgb & 0xFFFFFFu) > 0;
   s_prefs.end();
   s_begun = s_prefs.begin(TOUCH_NS, true);
   return ok;

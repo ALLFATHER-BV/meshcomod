@@ -13,8 +13,10 @@ void ArduinoSerialInterface::disable() {
   _isEnabled = false;
 }
 
-bool ArduinoSerialInterface::isConnected() const { 
-  return true;   // no way of knowing, so assume yes
+bool ArduinoSerialInterface::isConnected() const {
+  // Only "connected" once a companion client has actually spoken to us. Otherwise the
+  // stack's unsolicited push frames spew binary onto a passive (USB-CDC) debug console.
+  return _clientSeen;
 }
 
 bool ArduinoSerialInterface::isWriteBusy() const {
@@ -22,6 +24,7 @@ bool ArduinoSerialInterface::isWriteBusy() const {
 }
 
 size_t ArduinoSerialInterface::writeFrame(const uint8_t src[], size_t len) {
+  if (!_clientSeen) return 0;   // no client has spoken yet — stay off the shared console
   if (len > MAX_FRAME_SIZE) {
     // frame is too big!
     return 0;
@@ -65,6 +68,7 @@ size_t ArduinoSerialInterface::checkRecvFrame(uint8_t dest[]) {
           if (_frame_len > MAX_FRAME_SIZE) _frame_len = MAX_FRAME_SIZE;    // truncate
           memcpy(dest, rx_buf, _frame_len);
           _state = RECV_STATE_IDLE;  // reset state, for next frame
+          _clientSeen = true;        // a real client is talking; reply/push frames may now flow
           return _frame_len;
         }
     }

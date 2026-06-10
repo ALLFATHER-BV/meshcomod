@@ -150,6 +150,11 @@ constexpr int TOUCH_REGION_SCOPE_MAXLEN = 40;
 int  touchPrefsGetRegionScope(char* out, int out_cap);
 bool touchPrefsSetRegionScope(const char* name);
 
+/** Per-channel region-scope override (overrides the default flood scope for that
+ *  channel's outgoing messages). Keyed by channel slot; blank = inherit default. */
+int  touchPrefsGetChannelScope(int slot, char* out, int out_cap);
+bool touchPrefsSetChannelScope(int slot, const char* name);
+
 /** Remembered repeater admin passwords. Keyed by the first 6 bytes of the
  *  repeater's pubkey, value is the null-terminated password (max 15 chars
  *  to match what sendLogin truncates to). Stored as a single NVS blob of
@@ -173,6 +178,18 @@ bool touchPrefsSetLockWallpaper(const char* path);
 /** Lock-screen text colour (clock + labels) as 0xRRGGBB. Default soft white. */
 uint32_t touchPrefsGetLockTextColor();
 bool     touchPrefsSetLockTextColor(uint32_t rgb);
+
+/** Colourful chat bubbles: colour every bubble + sender name by a hash of the
+ *  sender's display name, so the same name always gets the same colour. Off by
+ *  default. */
+bool touchPrefsGetColorfulBubbles();
+bool touchPrefsSetColorfulBubbles(bool on);
+
+/** UI accent colour (buttons, active tab, keyboard, highlights) as 0xRRGGBB.
+ *  Default = the stock neutral gray; the picker keeps it dark enough that the
+ *  off-white text stays readable. */
+uint32_t touchPrefsGetAccentColor();
+bool     touchPrefsSetAccentColor(uint32_t rgb);
 
 /** Manual clock correction in whole hours, applied on top of the automatic
  *  (NTP / companion / mesh) time when rendering local time. Range -23..+23,
