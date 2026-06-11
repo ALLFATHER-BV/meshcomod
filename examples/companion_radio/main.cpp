@@ -367,16 +367,35 @@ void setup() {
    * pick Wi-Fi with no creds yet (to scan/configure on-device) — wantsWifi()
    * returns true for that case so the radio comes up scannable. */
   bool want_wifi = wifiConfigWantsWifi();
-#if defined(BLE_PIN_CODE)
-  if (!want_wifi) {
-    serial_interface.beginBle(BLE_NAME_PREFIX, the_mesh.getNodePrefs()->node_name, the_mesh.getBLEPin());
-  }
-#endif
+  /* Wi-Fi + BLE now COEXIST (NimBLE host is light enough — the old Bluedroid
+   * heap clash is gone). Bring Wi-Fi up FIRST: esp_wifi_init grabs a big
+   * contiguous DMA block, so let it claim memory before BLE. (Association
+   * happens later in loop(); this just inits the stack.) */
   if (want_wifi) {
     WiFi.mode(WIFI_STA);
     WiFi.setAutoReconnect(false);
     WiFi.persistent(false);
   }
+#if defined(BLE_PIN_CODE)
+  /* Always stash the BLE params so the toggle can bring BLE up live later, even
+   * if we defer it now. Then co-init BLE if the user has it enabled AND there's
+   * comfortable internal heap left after Wi-Fi — otherwise defer to Wi-Fi-only
+   * this boot rather than risk an OOM at NimBLE init (recoverable via the live
+   * toggle once memory frees). */
+  serial_interface.prepareBle(BLE_NAME_PREFIX, the_mesh.getNodePrefs()->node_name, the_mesh.getBLEPin());
+  if (wifiConfigGetBleEnabled()) {
+    const size_t BLE_COEXIST_MIN_FREE  = 50 * 1024;   // free heap after Wi-Fi to also start BLE
+    const size_t BLE_COEXIST_MIN_BLOCK = 20 * 1024;   // largest contiguous block (NimBLE controller/host)
+    const size_t freeh  = ESP.getFreeHeap();
+    const size_t maxblk = ESP.getMaxAllocHeap();
+    if (!want_wifi || (freeh >= BLE_COEXIST_MIN_FREE && maxblk >= BLE_COEXIST_MIN_BLOCK)) {
+      serial_interface.beginBle(BLE_NAME_PREFIX, the_mesh.getNodePrefs()->node_name, the_mesh.getBLEPin());
+      Serial.printf("[boot] BLE co-init OK (wifi=%d free=%u maxblk=%u)\n", (int)want_wifi, (unsigned)freeh, (unsigned)maxblk);
+    } else {
+      Serial.printf("[boot] BLE deferred: low heap (free=%u maxblk=%u) — Wi-Fi only\n", (unsigned)freeh, (unsigned)maxblk);
+    }
+  }
+#endif
 #elif defined(WIFI_SSID)
   board.setInhibitSleep(true);   // prevent sleep when WiFi is active
   WiFi.setAutoReconnect(true);

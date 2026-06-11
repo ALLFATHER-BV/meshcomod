@@ -33,7 +33,7 @@ public:
   static const int MAX_UI_THREADS = 48;
   static const int MAX_THREAD_NAME = 32;
   static const int MAX_SENDER_NAME = 24;
-  static const int MAX_MSG_TEXT = 96;
+  static const int MAX_MSG_TEXT = 160;   // full LoRa text length (was 96 -> cut long msgs ~3 lines)
   static const int MAX_UI_PATH = 32;  // inbound-route bytes/message for the Info popup (covers deep + multi-byte-hash routes)
 
   // Outgoing-DM delivery state. None for incoming + channel messages.
@@ -285,6 +285,10 @@ public:
   void appendDiag(const char* message) override;
   TouchUiScreen touchScreen() const { return _touch_screen; }
   void enterThread(bool channel_mode, int idx);
+  /** Block the sender of the active thread's tapped message: resolve to a pubkey
+   *  (DM = the thread's contact; channel = sender-name → contact lookup) and add
+   *  it to the persisted ignore list. False if no pubkey could be resolved. */
+  bool ignoreSenderInActiveThread(const char* sender_name);
   bool hasActiveThread() const { return _active_thread_idx >= 0; }
   bool activeThreadIsChannel() const { return _active_thread_is_channel; }
   // Active channel's mesh slot (-1 when the open thread isn't a channel). For the

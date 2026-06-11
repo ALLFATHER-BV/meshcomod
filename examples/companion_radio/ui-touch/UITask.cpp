@@ -96,11 +96,11 @@ constexpr uint32_t k_ui_history_magic = 0x55494348; // "UICH"
 // APPEND fields to the END of UiHistoryThread/UiHistoryMsg and OLD blobs still
 // load — the appended tail reads back zero instead of the whole history being
 // discarded. v4 added meta_flags/path_len/snr_q4/rssi per message.
-constexpr uint16_t k_ui_history_version = 5;
+constexpr uint16_t k_ui_history_version = 6;   // v6: MAX_MSG_TEXT 96 -> 160 (record size changed)
 // Oldest on-disk version we still load. v4's record layout matches the current
 // build, so it reads fine via the sizeof() fallback below; anything older
 // predates that layout and is discarded.
-constexpr uint16_t k_ui_history_min_version = 4;
+constexpr uint16_t k_ui_history_min_version = 6;   // v4/v5 used 96-char records; reject (don't mis-read)
 
 struct __attribute__((packed)) UiHistoryHeader {
   uint32_t magic;
@@ -368,6 +368,48 @@ static void tdeckPlayNotify() {
 }
 #endif  // HAS_TDECK_GT911
 
+// ---- Unified UI notification sound (T-Deck I2S speaker OR Heltec V4 piezo) ----
+#if defined(HAS_TDECK_GT911) || defined(HELTEC_V4_BUZZER_PIN)
+  #define HAS_UI_SOUND 1
+#endif
+
+#if defined(HELTEC_V4_BUZZER_PIN)
+// Heltec V4 expansion-kit piezo buzzer on GPIO6 (PWM). Plays a short two-note
+// chime via LEDC on a throwaway task so the ~210 ms doesn't stall the UI thread.
+// LEDC ch 5 (the TFT backlight uses ch 0); the pin is detached + parked high-Z
+// afterwards so the piezo is silent at idle.
+static volatile bool s_v4_beep_playing = false;
+static void v4BeepTaskFn(void* arg) {
+  (void)arg;
+  // Drive the GPIO6 piezo with Arduino tone() — the exact mechanism Meshtastic's
+  // RTTTL buzzer uses on this board (heltec-v4-tft). Raw LEDC (ledcWriteTone on a
+  // hand-picked channel) produced no sound, likely colliding with the TFT
+  // backlight's LEDC channel; tone() auto-manages its own channel. ~520 ms chime.
+  tone(HELTEC_V4_BUZZER_PIN, 1000);  vTaskDelay(pdMS_TO_TICKS(160));
+  tone(HELTEC_V4_BUZZER_PIN, 1500);  vTaskDelay(pdMS_TO_TICKS(160));
+  tone(HELTEC_V4_BUZZER_PIN, 2000);  vTaskDelay(pdMS_TO_TICKS(200));
+  noTone(HELTEC_V4_BUZZER_PIN);
+  pinMode(HELTEC_V4_BUZZER_PIN, INPUT);   // high-Z → no idle current / no buzz
+  s_v4_beep_playing = false;
+  vTaskDelete(nullptr);
+}
+static void v4BuzzerBeep() {
+  if (s_v4_beep_playing) return;
+  s_v4_beep_playing = true;
+  if (xTaskCreate(v4BeepTaskFn, "v4beep", 2048, nullptr, 3, nullptr) != pdPASS)
+    s_v4_beep_playing = false;
+}
+#endif
+
+// Play the platform's notification chime. Caller checks the buzzer/sound pref.
+static inline void uiPlayNotify() {
+#if defined(HAS_TDECK_GT911)
+  tdeckPlayNotify();
+#elif defined(HELTEC_V4_BUZZER_PIN)
+  v4BuzzerBeep();
+#endif
+}
+
 // ---- misc UI constants ----
 constexpr int SWIPE_SCROLL_STEP  = 90;
 
@@ -462,6 +504,7 @@ struct LvChatPanel {
   lv_obj_t* overlay;       // full-screen overlay on lv_scr_act (chat detail)
   lv_obj_t* header_name;   // label: thread name in the overlay header
   lv_obj_t* msgs;          // read-only textarea: message history
+  lv_obj_t* jump_btn;      // floating "jump to latest" button (Discord-style)
   lv_obj_t* composer_row;  // container: input + send button
   lv_obj_t* composer_ta;   // textarea: user types here
   LvThreadButtonCtx ctx_store[UITask::MAX_UI_THREADS];
@@ -974,6 +1017,8 @@ static const char* gpsStatusStr() {
 // (which is defined above the control-center code) can update the live GPS line.
 static lv_obj_t* s_cc_root      = nullptr;
 static lv_obj_t* s_cc_gps_label = nullptr;
+static lv_obj_t* s_cc_sys_label = nullptr;   // CPU/RAM/PSRAM/IP line; refreshed live while CC open
+static void ccBuildSysInfo(char* buf, size_t n);   // fwd-decl; defined with the CC helpers below
 static void closeControlCenter();   // defined in the control-center section below
 static lv_obj_t* s_power_menu   = nullptr;   // power off / reboot menu (control center)
 static void closePowerMenu();               // defined in the control-center section below
@@ -1203,6 +1248,7 @@ static void openAccentPicker();
 static void openAccentPickerCb(lv_event_t* e);
 static void openChannelScopeModal(int slot, const char* name);  // per-channel region scope
 static void channelGearCb(lv_event_t* e);
+static void openBlockedUsersModal();                            // ignore-list manager (unblock)
 static bool overlayBlocksTabSwipe();   // theme/channel-scope pickers swallow tab swipes
 static void refreshContactsList();
 static void refreshThreadLists();
@@ -1263,9 +1309,17 @@ static bool parseFloatField(lv_obj_t* ta, float& out) {
   if (!ta) return false;
   const char* txt = lv_textarea_get_text(ta);
   if (!txt || !txt[0]) return false;
+  // Tolerate a European decimal comma ("50,8466") and any trailing whitespace —
+  // strict strtof stops at the comma and rejected such coordinates as invalid.
+  char buf[40]; size_t j = 0;
+  for (const char* p = txt; *p && j < sizeof(buf) - 1; ++p)
+    buf[j++] = (*p == ',') ? '.' : *p;
+  buf[j] = '\0';
   char* endptr = nullptr;
-  float v = strtof(txt, &endptr);
-  if (!endptr || endptr == txt || *endptr != '\0') return false;
+  float v = strtof(buf, &endptr);
+  if (!endptr || endptr == buf) return false;
+  while (*endptr == ' ' || *endptr == '\t' || *endptr == '\r' || *endptr == '\n') ++endptr;
+  if (*endptr != '\0') return false;
   out = v;
   return true;
 }
@@ -2228,6 +2282,14 @@ static void composerFocusCb(lv_event_t* e) {
   if (p && p->detail_open) { showKb(p); noteKbActivity(); }
 }
 
+// Discord-style unread divider state. s_unread_at_open is the thread's unread
+// count captured the instant the chat was opened (in setActiveThread, before it
+// clears unread). refreshChatDetail draws a "New messages" divider above the
+// first unread message and, on the first refresh after opening, scrolls to it
+// instead of the bottom. Both cleared on leave (backBtnCb).
+static uint16_t s_unread_at_open   = 0;
+static bool     s_chat_just_opened = false;
+
 static void backBtnCb(lv_event_t* e) {
   // Fire on PRESSED rather than CLICKED so the back action triggers on
   // touch-down instead of touch-up. CLICKED was sometimes dropped because
@@ -2241,6 +2303,9 @@ static void backBtnCb(lv_event_t* e) {
   hideKb();
   if (p->overlay) lv_obj_add_flag(p->overlay, LV_OBJ_FLAG_HIDDEN);
   p->detail_open = false;
+  s_unread_at_open = 0;          // clear the unread divider when leaving the chat
+  s_chat_just_opened = false;
+  if (p->jump_btn) lv_obj_add_flag(p->jump_btn, LV_OBJ_FLAG_HIDDEN);
   setChatStatusTitle(nullptr);   // drop the thread name from the status bar
 }
 
@@ -3023,8 +3088,8 @@ static void toggleBuzzerCb(lv_event_t* e) {
     if (lbl) lv_label_set_text_fmt(lbl, "Sound: %s", quiet ? "off" : "on");
   }
   g_lv.task->showAlert(quiet ? "Sound off" : "Sound on", 900);
-#if defined(HAS_TDECK_GT911)
-  if (!quiet) tdeckPlayNotify();   // confirmation chime when enabling
+#if defined(HAS_UI_SOUND)
+  if (!quiet) uiPlayNotify();   // confirmation chime when enabling
 #endif
   refreshStatusLabels();
 }
@@ -3641,7 +3706,7 @@ static void saveAutoAddCb(lv_event_t* e) {
   if (g_set_modal.auto_rep_sw && lv_obj_has_state(g_set_modal.auto_rep_sw, LV_STATE_CHECKED)) mask |= AUTO_ADD_REPEATER;
   if (g_set_modal.auto_room_sw && lv_obj_has_state(g_set_modal.auto_room_sw, LV_STATE_CHECKED)) mask |= AUTO_ADD_ROOM_SERVER;
   if (g_set_modal.auto_sensor_sw && lv_obj_has_state(g_set_modal.auto_sensor_sw, LV_STATE_CHECKED)) mask |= AUTO_ADD_SENSOR;
-  uint8_t manual = (g_set_modal.manual_add_sw && lv_obj_has_state(g_set_modal.manual_add_sw, LV_STATE_CHECKED)) ? 1u : 0u;
+  uint8_t manual = 1u;   // touch UI is always selective: the per-type Auto switches are authoritative (off = really off)
 
   g_lv.task->setAutoAddConfig(mask, static_cast<uint8_t>(max_hops), manual);
   g_lv.task->showAlert("Auto-add saved", 1000);
@@ -3659,7 +3724,7 @@ static void autoAddSwitchCb(lv_event_t* e) {
   if (g_set_modal.auto_rep_sw && lv_obj_has_state(g_set_modal.auto_rep_sw, LV_STATE_CHECKED)) mask |= AUTO_ADD_REPEATER;
   if (g_set_modal.auto_room_sw && lv_obj_has_state(g_set_modal.auto_room_sw, LV_STATE_CHECKED)) mask |= AUTO_ADD_ROOM_SERVER;
   if (g_set_modal.auto_sensor_sw && lv_obj_has_state(g_set_modal.auto_sensor_sw, LV_STATE_CHECKED)) mask |= AUTO_ADD_SENSOR;
-  uint8_t manual = (g_set_modal.manual_add_sw && lv_obj_has_state(g_set_modal.manual_add_sw, LV_STATE_CHECKED)) ? 1u : 0u;
+  uint8_t manual = 1u;   // touch UI is always selective: the per-type Auto switches are authoritative (off = really off)
   int max_hops = 3;
   int mh;
   if (g_set_modal.max_hops_ta && parseIntField(g_set_modal.max_hops_ta, mh)) max_hops = mh;
@@ -4405,7 +4470,7 @@ static void buildAutoAddSettings() {
   mk_switch("Auto room", &g_set_modal.auto_room_sw);
   mk_switch("Auto sensor", &g_set_modal.auto_sensor_sw);
   mk_switch("Overwrite oldest", &g_set_modal.auto_overwrite_sw);
-  mk_switch("Manual add", &g_set_modal.manual_add_sw);
+  g_set_modal.manual_add_sw = nullptr;   // master "manual add" removed — per-type switches are authoritative now
 
   lv_obj_t* hops_l = lv_label_create(body);
   lv_label_set_text(hops_l, "Max hops (0..64)");
@@ -4420,12 +4485,15 @@ static void buildAutoAddSettings() {
   y += 38;
 
   if (prefs) {
-    if (prefs->autoadd_config & AUTO_ADD_CHAT) lv_obj_add_state(g_set_modal.auto_chat_sw, LV_STATE_CHECKED);
-    if (prefs->autoadd_config & AUTO_ADD_REPEATER) lv_obj_add_state(g_set_modal.auto_rep_sw, LV_STATE_CHECKED);
-    if (prefs->autoadd_config & AUTO_ADD_ROOM_SERVER) lv_obj_add_state(g_set_modal.auto_room_sw, LV_STATE_CHECKED);
-    if (prefs->autoadd_config & AUTO_ADD_SENSOR) lv_obj_add_state(g_set_modal.auto_sensor_sw, LV_STATE_CHECKED);
+    // Old "add everything" mode (manual_add_contacts == 0) ignored the per-type
+    // bits, so reflect it by showing every Auto switch ON — they're authoritative
+    // now, so the user can genuinely turn a type off.
+    const bool add_all = (prefs->manual_add_contacts & 1) == 0;
+    if (add_all || (prefs->autoadd_config & AUTO_ADD_CHAT)) lv_obj_add_state(g_set_modal.auto_chat_sw, LV_STATE_CHECKED);
+    if (add_all || (prefs->autoadd_config & AUTO_ADD_REPEATER)) lv_obj_add_state(g_set_modal.auto_rep_sw, LV_STATE_CHECKED);
+    if (add_all || (prefs->autoadd_config & AUTO_ADD_ROOM_SERVER)) lv_obj_add_state(g_set_modal.auto_room_sw, LV_STATE_CHECKED);
+    if (add_all || (prefs->autoadd_config & AUTO_ADD_SENSOR)) lv_obj_add_state(g_set_modal.auto_sensor_sw, LV_STATE_CHECKED);
     if (prefs->autoadd_config & AUTO_ADD_OVERWRITE_OLDEST) lv_obj_add_state(g_set_modal.auto_overwrite_sw, LV_STATE_CHECKED);
-    if (prefs->manual_add_contacts) lv_obj_add_state(g_set_modal.manual_add_sw, LV_STATE_CHECKED);
     char hops_buf[8];
     snprintf(hops_buf, sizeof(hops_buf), "%u", static_cast<unsigned>(prefs->autoadd_max_hops));
     lv_textarea_set_text(g_set_modal.max_hops_ta, hops_buf);
@@ -4988,8 +5056,8 @@ static void buildDeviceSettings() {
     y += 40;
   }
 
-  // Sound toggle — T-Deck only (it has an I2S speaker; the V4 has no audio HW).
-#if defined(HAS_TDECK_GT911)
+  // Sound toggle — T-Deck I2S speaker or Heltec V4 expansion-kit piezo buzzer.
+#if defined(HAS_UI_SOUND)
   lv_obj_t* b_bz = lv_btn_create(body);
   lv_obj_set_size(b_bz, lv_pct(100),34);
   lv_obj_set_pos(b_bz, 2, y);
@@ -5584,61 +5652,23 @@ static void showConfirm(const char* msg, const char* ok_label, SimpleCb on_confi
 }
 
 // ----- Bluetooth settings page -----
-// BLE and Wi-Fi are mutually exclusive on this board (the ESP32-S3 internal
-// heap can't fit Bluedroid + LVGL + WiFi DMA at the same time). The page
-// shows current mode + BLE pin and offers a single toggle:
-//   - In Wi-Fi mode: enabling BLE clears wifiConfigRadioEnabled and reboots,
-//     so setup() picks BLE on the next boot.
-//   - In BLE mode + Wi-Fi configured: disabling BLE re-enables Wi-Fi radio
-//     and reboots; setup() picks Wi-Fi.
-//   - In BLE mode + no Wi-Fi creds: disabling BLE would leave no companion
-//     transport, so we refuse and prompt the user to configure Wi-Fi first.
+// Wi-Fi + BLE coexist now (NimBLE's host is light enough to share the ESP32-S3
+// internal heap with esp_wifi + LVGL), so this is a plain LIVE toggle of the BLE
+// radio — no reboot, and Wi-Fi is left untouched. State is persisted (ble_en).
 #if defined(ESP32) && defined(MULTI_TRANSPORT_COMPANION)
-// Captured at saveBluetoothCb time, consumed inside the confirm callback so
-// the actual reboot happens after the user clicks "Reboot" in the popup.
-static bool s_pending_ble_enable = false;
-
-static void doApplyBluetooth() {
-  if (s_pending_ble_enable) {
-    // Switching to BLE mode: clear the Wi-Fi radio pref so setup() picks BLE
-    // on the next boot. SSID/password stay in NVS for later re-enable.
-    wifiConfigSetRadioEnabled(false);
-    if (g_lv.task) g_lv.task->showAlert("Enabling BLE — rebooting", 1400);
-  } else {
-    // Switching to Wi-Fi mode (BLE off). Caller already verified creds exist.
-    wifiConfigSetRadioEnabled(true);
-    if (g_lv.task) g_lv.task->showAlert("Switching to Wi-Fi — rebooting", 1400);
-  }
-  wifiConfigRequestApply();
-  if (g_lv.task) g_lv.task->persistHistoryNow();   // persist chat before reboot
-  delay(1500);
-  ESP.restart();
-}
-
 static void saveBluetoothCb(lv_event_t* e) {
   if (lv_event_get_code(e) != LV_EVENT_CLICKED || !g_lv.task) return;
   if (!g_set_modal.wifi_sw) return;
+  if (!g_lv.task->hasBleCapability()) { g_lv.task->showAlert("No Bluetooth on this device", 1400); return; }
   const bool want_ble = lv_obj_has_state(g_set_modal.wifi_sw, LV_STATE_CHECKED);
-  const bool ble_active_now = g_lv.task->hasBleCapability() && g_lv.task->isBleEnabled();
-
-  if (want_ble && ble_active_now) {
-    g_lv.task->showAlert("Bluetooth already active", 1200);
+  const bool ble_active_now = g_lv.task->isBleEnabled();
+  if (want_ble == ble_active_now) {
+    g_lv.task->showAlert(want_ble ? "Bluetooth already on" : "Bluetooth already off", 1200);
     return;
   }
-  if (!want_ble && !ble_active_now) {
-    g_lv.task->showAlert("Bluetooth already off", 1200);
-    return;
-  }
-  s_pending_ble_enable = want_ble;
-  // Switching to Wi-Fi with no creds yet is allowed: the radio comes up
-  // scannable (wifiConfigWantsWifi via the "Wi-Fi chosen" flag set in
-  // doApplyBluetooth), so the user can pick a network on-device — no need to
-  // type an SSID first. The confirm just tells them that's what'll happen.
-  const char* to_wifi = wifiConfigHasRuntime()
-      ? "Switch to Wi-Fi and reboot? Bluetooth will be turned off."
-      : "Switch to Wi-Fi and reboot? Bluetooth turns off; you can then scan and pick a network.";
-  showConfirm(want_ble ? "Enable Bluetooth and reboot? Wi-Fi will be turned off." : to_wifi,
-              "Reboot", doApplyBluetooth);
+  // enableBle() lazily brings NimBLE up if it wasn't started at boot.
+  if (want_ble) g_lv.task->enableBle(); else g_lv.task->disableBle();
+  g_lv.task->showAlert(want_ble ? "Bluetooth on" : "Bluetooth off", 1000);
 }
 #endif
 
@@ -5646,20 +5676,21 @@ static void buildBluetoothSettings() {
   lv_obj_t* body = createSettingsModal("Bluetooth", SettingsModalKind::Bluetooth);
   int y = 0;
 
-  // ---- Mode line ----
+  // ---- Mode line ---- (Wi-Fi + BLE coexist now; show both radios' state)
   const bool ble_active = g_lv.task && g_lv.task->hasBleCapability() && g_lv.task->isBleEnabled();
   lv_obj_t* mode = lv_label_create(body);
-  if (ble_active) {
-    lv_label_set_text(mode, "Mode: BLE active");
-  } else {
 #if defined(ESP32) && defined(MULTI_TRANSPORT_COMPANION)
-    lv_label_set_text(mode, wifiConfigGetRadioEnabled()
-                              ? "Mode: Wi-Fi active (BLE off)"
-                              : "Mode: BLE off (Wi-Fi off too)");
+  const bool wifi_on_m = wifiConfigGetRadioEnabled();
+  const bool ble_cap_m = g_lv.task && g_lv.task->hasBleCapability();
+  if (ble_active)
+    lv_label_set_text(mode, wifi_on_m ? "Mode: BLE on (+ Wi-Fi)" : "Mode: BLE on");
+  else if (ble_cap_m && wifiConfigGetBleEnabled())
+    lv_label_set_text(mode, "Mode: BLE starting / low memory");
+  else
+    lv_label_set_text(mode, wifi_on_m ? "Mode: BLE off (Wi-Fi on)" : "Mode: BLE off");
 #else
-    lv_label_set_text(mode, "Mode: BLE off");
+  lv_label_set_text(mode, ble_active ? "Mode: BLE on" : "Mode: BLE off");
 #endif
-  }
   lv_obj_set_style_text_color(mode, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
   lv_obj_set_style_text_font(mode, &g_font_12, LV_PART_MAIN);
   lv_obj_set_pos(mode, 2, y);
@@ -6415,7 +6446,7 @@ static void actionSheetDeleteCb(lv_event_t* e) {
   bool ok = the_mesh.getContactByIdx(s_action_sheet_mesh_idx, c);
   closeActionSheet();
   if (!ok) { g_lv.task->showAlert("Contact gone", 1200); return; }
-  if (the_mesh.removeContact(c)) {
+  if (the_mesh.uiRemoveContact(c)) {   // persists the removal (/contacts3) so it doesn't reappear on reboot
     g_lv.task->showAlert("Contact deleted", 1000);
     refreshContactsList();
   } else {
@@ -11068,6 +11099,7 @@ static void makeChatList(lv_obj_t* tab, LvChatPanel& p, bool channel_mode, bool 
   p.overlay          = nullptr;
   p.header_name      = nullptr;
   p.msgs             = nullptr;
+  p.jump_btn         = nullptr;
   p.composer_row     = nullptr;
   p.composer_ta      = nullptr;
 
@@ -13692,6 +13724,26 @@ static void refreshMapInfoLabel() {
   if (s_map_count_lbl) lv_label_set_text(s_map_count_lbl, tail);
 }
 
+// ---- Discord-style unread divider + jump-to-latest (state declared earlier;
+//      see s_unread_at_open / s_chat_just_opened above backBtnCb) ----
+static void jumpToLatestCb(lv_event_t* e) {
+  if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+  auto* p = static_cast<LvChatPanel*>(lv_event_get_user_data(e));
+  if (!p || !p->msgs) return;
+  lv_obj_scroll_to_y(p->msgs, LV_COORD_MAX, LV_ANIM_ON);
+  if (p->jump_btn) lv_obj_add_flag(p->jump_btn, LV_OBJ_FLAG_HIDDEN);
+}
+// Show the jump-to-latest button whenever the list is scrolled up away from the
+// newest message; hide it when at (or near) the bottom.
+static void msgsScrollCb(lv_event_t* e) {
+  auto* p = static_cast<LvChatPanel*>(lv_event_get_user_data(e));
+  if (!p || !p->msgs || !p->jump_btn) return;
+  if (lv_obj_get_scroll_bottom(p->msgs) > 30)
+    lv_obj_clear_flag(p->jump_btn, LV_OBJ_FLAG_HIDDEN);
+  else
+    lv_obj_add_flag(p->jump_btn, LV_OBJ_FLAG_HIDDEN);
+}
+
 // ----- Chat detail (full-screen overlay on lv_scr_act) -------
 static void makeChatDetail(LvChatPanel& p) {
   p.overlay = lv_obj_create(lv_scr_act());
@@ -13731,6 +13783,24 @@ static void makeChatDetail(LvChatPanel& p) {
   lv_obj_set_scrollbar_mode(p.msgs, LV_SCROLLBAR_MODE_AUTO);
   lv_obj_set_scroll_dir(p.msgs, LV_DIR_VER);
   lv_obj_add_event_cb(p.msgs, scrollClampOnEndCb, LV_EVENT_SCROLL_END, nullptr);
+  lv_obj_add_event_cb(p.msgs, msgsScrollCb, LV_EVENT_SCROLL, &p);   // toggle jump-to-latest button
+
+  // ---- Jump-to-latest button (Discord-style): floating circle, bottom-right,
+  //      just above the composer. Hidden unless scrolled up from the newest msg.
+  p.jump_btn = lv_btn_create(p.overlay);
+  lv_obj_set_size(p.jump_btn, 40, 40);
+  lv_obj_set_style_radius(p.jump_btn, 20, LV_PART_MAIN);
+  lv_obj_set_style_bg_color(p.jump_btn, lv_color_hex(COLOR_ACCENT), LV_PART_MAIN);
+  lv_obj_set_style_bg_opa(p.jump_btn, LV_OPA_90, LV_PART_MAIN);
+  lv_obj_set_style_shadow_width(p.jump_btn, 6, LV_PART_MAIN);
+  lv_obj_set_style_shadow_opa(p.jump_btn, LV_OPA_40, LV_PART_MAIN);
+  lv_obj_set_pos(p.jump_btn, chatScreenW() - 50, chatCompYOpen() - 50);
+  lv_obj_t* jlbl = lv_label_create(p.jump_btn);
+  lv_label_set_text(jlbl, LV_SYMBOL_DOWN);
+  lv_obj_set_style_text_color(jlbl, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
+  lv_obj_center(jlbl);
+  lv_obj_add_event_cb(p.jump_btn, jumpToLatestCb, LV_EVENT_CLICKED, &p);
+  lv_obj_add_flag(p.jump_btn, LV_OBJ_FLAG_HIDDEN);
 
   // ---- Composer row ----
   p.composer_row = lv_obj_create(p.overlay);
@@ -14256,6 +14326,13 @@ static void msgInfoBackdropCb(lv_event_t* e) {
   closeMsgInfoPopup();
 }
 
+static void msgMenuBlockCb(lv_event_t* e) {
+  if (lv_event_get_code(e) != LV_EVENT_CLICKED || !g_lv.task) return;
+  const bool ok = g_lv.task->ignoreSenderInActiveThread(s_msg_menu_sender);
+  closeMsgActionMenu();
+  g_lv.task->showAlert(ok ? "Sender blocked" : "Can't block \xe2\x80\x94 not a contact", 1500);
+}
+
 static void openMessageActionMenu(int msg_idx) {
   if (!g_lv.task) return;
   UITask::UIMessage m;
@@ -14270,6 +14347,7 @@ static void openMessageActionMenu(int msg_idx) {
   s_msg_menu_sender[sizeof(s_msg_menu_sender) - 1] = '\0';
   // Offer "Mention" only for an incoming channel message (mention its sender).
   const bool can_mention = m.channel && !m.outgoing && m.sender[0];
+  const bool can_block   = !m.outgoing;   // block the sender — never for our own messages
 
   lv_coord_t sw = lv_disp_get_hor_res(nullptr);
   lv_coord_t sh = lv_disp_get_ver_res(nullptr);
@@ -14291,7 +14369,7 @@ static void openMessageActionMenu(int msg_idx) {
   // 28-px header row at the top reserves space for the close-X badge so it
   // doesn't sit on top of the Copy / Info buttons.
   const int hdr_h  = 28;
-  const int nbtn   = can_mention ? 3 : 2;
+  const int nbtn   = (can_mention ? 1 : 0) + 2 /*Copy+Info*/ + (can_block ? 1 : 0);
   const int card_h = hdr_h + nbtn * btn_h + (nbtn - 1) * gap + 2 * pad;
 
   lv_obj_t* card = lv_obj_create(s_msg_menu_root);
@@ -14328,6 +14406,7 @@ static void openMessageActionMenu(int msg_idx) {
   }
   mk_btn(LV_SYMBOL_COPY "  Copy", msgMenuCopyCb, by);  by += btn_h + gap;
   mk_btn(LV_SYMBOL_LIST "  Info", msgMenuInfoCb, by);
+  if (can_block) { by += btn_h + gap; mk_btn(LV_SYMBOL_CLOSE "  Block", msgMenuBlockCb, by); }
 }
 
 // "Trace route" from the message Info popup: run a full multi-hop trace to the
@@ -14586,8 +14665,44 @@ static void refreshChatDetail(LvChatPanel& p) {
 
   const bool colorful_bubbles = touchPrefsGetColorfulBubbles();
 
+  // Discord-style "new messages" divider: drawn just above the first unread
+  // message (the last s_unread_at_open entries). If there are more unread than
+  // we render, pin it to the top of the rendered window.
+  int divider_i = -1;
+  if (s_unread_at_open > 0) {
+    divider_i = n - (int)s_unread_at_open;
+    if (divider_i < render_start) divider_i = render_start;
+    if (divider_i >= n) divider_i = -1;
+  }
+  bool divider_done = false;
+  lv_coord_t divider_y = -1;
+
   lv_coord_t y_pos = 0;
   for (int i = render_start; i < n; ++i) {
+    if (divider_i >= 0 && !divider_done && i == divider_i) {
+      lv_obj_t* div = lv_obj_create(p.msgs);
+      lv_obj_remove_style_all(div);
+      lv_obj_clear_flag(div, LV_OBJ_FLAG_SCROLLABLE);
+      lv_obj_set_size(div, kContentW, 16);
+      lv_obj_set_pos(div, 0, y_pos);
+      lv_obj_t* dline = lv_obj_create(div);
+      lv_obj_remove_style_all(dline);
+      lv_obj_set_size(dline, kContentW, 1);
+      lv_obj_set_pos(dline, 0, 8);
+      lv_obj_set_style_bg_color(dline, lv_color_hex(0xE0533D), LV_PART_MAIN);   // Discord-ish red
+      lv_obj_set_style_bg_opa(dline, LV_OPA_COVER, LV_PART_MAIN);
+      lv_obj_t* dlbl = lv_label_create(div);
+      lv_label_set_text(dlbl, "New");
+      lv_obj_set_style_text_font(dlbl, &g_font_12, LV_PART_MAIN);
+      lv_obj_set_style_text_color(dlbl, lv_color_hex(0xE0533D), LV_PART_MAIN);
+      lv_obj_set_style_bg_color(dlbl, lv_color_hex(COLOR_BG), LV_PART_MAIN);
+      lv_obj_set_style_bg_opa(dlbl, LV_OPA_COVER, LV_PART_MAIN);
+      lv_obj_set_style_pad_hor(dlbl, 4, LV_PART_MAIN);
+      lv_obj_align(dlbl, LV_ALIGN_TOP_LEFT, 0, 0);
+      divider_y = y_pos;
+      divider_done = true;
+      y_pos += 16 + kRowGap;
+    }
     UITask::UIMessage m;
     if (!g_lv.task->getMessageByIndex(msg_idx[i], m)) continue;
 
@@ -14747,9 +14862,21 @@ static void refreshChatDetail(LvChatPanel& p) {
     y_pos += bh + kRowGap;
   }
 
-  // Scroll to the bottom so the newest message is in view.
+  // On open with unread, land on the "new messages" divider (Discord-style)
+  // instead of the bottom; otherwise show the newest message. Subsequent
+  // refreshes (a message arrived while open) keep scrolling to the bottom.
   lv_obj_update_layout(p.msgs);
-  lv_obj_scroll_to_y(p.msgs, LV_COORD_MAX, LV_ANIM_OFF);
+  if (s_chat_just_opened && divider_y >= 0) {
+    lv_coord_t target = (divider_y > 8) ? (divider_y - 8) : 0;
+    lv_obj_scroll_to_y(p.msgs, target, LV_ANIM_OFF);
+  } else {
+    lv_obj_scroll_to_y(p.msgs, LV_COORD_MAX, LV_ANIM_OFF);
+  }
+  s_chat_just_opened = false;
+  if (p.jump_btn) {
+    if (lv_obj_get_scroll_bottom(p.msgs) > 30) lv_obj_clear_flag(p.jump_btn, LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_add_flag(p.jump_btn, LV_OBJ_FLAG_HIDDEN);
+  }
 }
 
 // Rebuild the thread list inside a tab.
@@ -16427,14 +16554,14 @@ static void refreshSettingsSectionSubtitles() {
   }
 
   if (g_set_sec_sub[SEC_BLUETOOTH]) {
-    // BLE is active only when the radio was initialised at boot (mutex with
-    // Wi-Fi). Otherwise the device is in Wi-Fi mode and BLE is inactive.
+    // BLE coexists with Wi-Fi now, so it's simply Active when enabled.
     if (g_lv.task->hasBleCapability() && g_lv.task->isBleEnabled()) {
       lv_label_set_text(g_set_sec_sub[SEC_BLUETOOTH], "Active");
     } else {
 #if defined(ESP32) && defined(MULTI_TRANSPORT_COMPANION)
       lv_label_set_text(g_set_sec_sub[SEC_BLUETOOTH],
-                        wifiConfigGetRadioEnabled() ? "Inactive (Wi-Fi mode)" : "Inactive");
+                        (g_lv.task->hasBleCapability() && wifiConfigGetBleEnabled())
+                          ? "Starting…" : "Off");
 #else
       lv_label_set_text(g_set_sec_sub[SEC_BLUETOOTH], "Inactive");
 #endif
@@ -16505,14 +16632,12 @@ static void refreshSettingsSectionSubtitles() {
                           g_lv.task->isBuzzerQuiet() ? "quiet" : "on");
   }
 
-  // Live GPS fix status: refresh the Device-settings line and the control-center
-  // line while either is open, so a fix appearing/dropping shows without reopening.
+  // Live GPS fix status on the Device-settings line while it's open. (The
+  // control-center drop-down's GPS + system line are refreshed from the periodic
+  // refreshStatusLabels tick instead — this function only runs while Settings is.)
   if (g_set_modal.root && g_set_modal.gps_status &&
       g_set_modal.kind == SettingsModalKind::Device) {
     lv_label_set_text(g_set_modal.gps_status, gpsStatusStr());
-  }
-  if (s_cc_root && s_cc_gps_label) {
-    lv_label_set_text(s_cc_gps_label, gpsStatusStr());
   }
 
   if (g_set_sec_sub[SEC_EXPERIMENTAL] && prefs) {
@@ -16534,57 +16659,53 @@ static void refreshSettingsSectionSubtitles() {
 // ============================================================
 // Status-bar control center (tap the top bar)
 // A small drop-down panel with date/time + battery/Wi-Fi info and quick
-// Wi-Fi / Bluetooth toggles, iPhone-control-center style. Bluetooth toggles
-// instantly; Wi-Fi is reboot-based on this radio (mutually exclusive with BLE)
-// so it confirms first.
+// Wi-Fi / Bluetooth toggles, iPhone-control-center style. Both toggle live now
+// (NimBLE coexists with esp_wifi) — no reboot to switch.
 // ============================================================
-// Which transport was initialized at boot. Only the boot transport can be
-// toggled live; bringing up the OTHER one at runtime would OOM (Bluedroid and
-// esp_wifi can't both hold the internal heap), so that path must reboot.
-// Captured once in UITask::begin. true = Wi-Fi was the boot transport.
-static bool      s_boot_wifi_transport = false;
 
 static void closeControlCenter() {
   if (s_cc_root) { lv_obj_del_async(s_cc_root); s_cc_root = nullptr; }
   s_cc_gps_label = nullptr;
+  s_cc_sys_label = nullptr;
+}
+// Build the control-center system-info line (CPU · RAM% · PSRAM% · IP/no-IP).
+// Shared by openControlCenter (initial paint) and the live refresh tick so the
+// IP and memory figures update while the panel stays open.
+static void ccBuildSysInfo(char* buf, size_t n) {
+#if defined(ESP32)
+  const unsigned cpu = (unsigned)ESP.getCpuFreqMHz();
+  const size_t dram_free = heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+  const size_t dram_tot  = heap_caps_get_total_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+  const size_t ps_free   = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+  const size_t ps_tot    = heap_caps_get_total_size(MALLOC_CAP_SPIRAM);
+  const unsigned dram_pct = dram_tot ? (unsigned)(100 - (dram_free * 100 / dram_tot)) : 0;
+  const unsigned ps_pct   = ps_tot   ? (unsigned)(100 - (ps_free   * 100 / ps_tot))   : 0;
+  char ipbuf[20] = "no IP";
+  if (WiFi.status() == WL_CONNECTED)
+    snprintf(ipbuf, sizeof ipbuf, "%s", WiFi.localIP().toString().c_str());
+  snprintf(buf, n, "%uMHz \xC2\xB7 RAM %u%% \xC2\xB7 PSRAM %u%% \xC2\xB7 %s",
+           cpu, dram_pct, ps_pct, ipbuf);
+#else
+  snprintf(buf, n, "system info n/a");
+#endif
 }
 static void ccBackdropCb(lv_event_t* e) {
   if (lv_event_get_code(e) == LV_EVENT_CLICKED) closeControlCenter();
 }
 static void openControlCenter();   // fwd — toggle cbs rebuild the panel
 
-// Wi-Fi and Bluetooth are mutually exclusive on this radio (Bluedroid and
-// esp_wifi can't both hold the internal heap), so SWITCHING from one to the
-// other reboots to re-init the chosen transport cleanly. Turning the active
-// transport OFF, or turning one ON when neither is active, is a clean runtime
-// operation with no reboot.
-#if defined(ESP32)
-static void ccWifiOnApply() {                 // reboot into Wi-Fi (from BT)
-  wifiConfigSetRadioEnabled(true);            // boot picks Wi-Fi as transport
-  if (g_lv.task) g_lv.task->rebootDevice();   // saves chat history first
-}
-static void ccBleOnApply() {                  // reboot into Bluetooth (from Wi-Fi)
-  wifiConfigSetRadioEnabled(false);           // boot then picks Bluetooth
-  if (g_lv.task) g_lv.task->rebootDevice();
-}
-#endif
+// Wi-Fi and Bluetooth COEXIST now (NimBLE host shares the heap with esp_wifi),
+// so both are plain LIVE toggles — no reboot to switch. Each radio is
+// independent and its state is persisted (radio_en / ble_en).
 static void ccWifiCb(lv_event_t* e) {
   if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
 #if defined(ESP32)
-  if (s_boot_wifi_transport) {
-    // Wi-Fi is the transport inited at boot → toggle its radio live (off/on)
-    // with no reboot (esp_wifi stays inited; WIFI_OFF / WiFi.begin in the loop).
-    const bool on = wifiConfigGetRadioEnabled();
-    wifiConfigSetRadioEnabled(!on);
-    if (g_lv.task) g_lv.task->showAlert(on ? "Wi-Fi off" : "Wi-Fi on", 800);
-    openControlCenter();
-  } else {
-    // Booted into Bluetooth: esp_wifi was never inited and Bluedroid holds the
-    // heap, so bringing Wi-Fi up at runtime would OOM-freeze. Reboot to switch.
-    closeControlCenter();
-    showConfirm("Switch to Wi-Fi?\nBluetooth will turn off (reboot).",
-                "Reboot", ccWifiOnApply);
-  }
+  // Live: the main loop brings esp_wifi up (WiFi.mode/begin) or down (WIFI_OFF)
+  // in response to this pref — no reboot.
+  const bool on = wifiConfigGetRadioEnabled();
+  wifiConfigSetRadioEnabled(!on);
+  if (g_lv.task) g_lv.task->showAlert(on ? "Wi-Fi off" : "Wi-Fi on", 800);
+  openControlCenter();
 #endif
 }
 static void ccBleCb(lv_event_t* e) {
@@ -16592,20 +16713,12 @@ static void ccBleCb(lv_event_t* e) {
       !g_lv.task->hasBleCapability())
     return;
 #if defined(ESP32)
-  if (s_boot_wifi_transport) {
-    // Booted into Wi-Fi: bringing Bluetooth up at runtime would fight esp_wifi
-    // for the heap. Reboot to switch transports.
-    closeControlCenter();
-    showConfirm("Switch to Bluetooth?\nWi-Fi will turn off (reboot).",
-                "Reboot", ccBleOnApply);
-    return;
-  }
-#endif
-  // Bluetooth is the boot transport → toggle it live.
+  // Live: enableBle() lazily brings NimBLE up if it wasn't started at boot.
   const bool on = g_lv.task->isBleEnabled();
   on ? g_lv.task->disableBle() : g_lv.task->enableBle();
   g_lv.task->showAlert(on ? "Bluetooth off" : "Bluetooth on", 800);
   openControlCenter();
+#endif
 }
 static void ccGpsCb(lv_event_t* e) {
   if (lv_event_get_code(e) != LV_EVENT_CLICKED || !g_lv.task) return;
@@ -16638,12 +16751,14 @@ static void ccLockCb(lv_event_t* e) {
   closeControlCenter();
   g_lv.task->lockScreen();
 }
-// Sound on/off chip (T-Deck speaker). Plays a confirmation chime when enabling.
+#endif
+#if defined(HAS_UI_SOUND)
+// Sound on/off chip (T-Deck I2S speaker / Heltec V4 piezo). Confirmation chime on enable.
 static void ccSoundCb(lv_event_t* e) {
   if (lv_event_get_code(e) != LV_EVENT_CLICKED || !g_lv.task) return;
   g_lv.task->toggleBuzzer();
   const bool quiet = g_lv.task->isBuzzerQuiet();
-  if (!quiet) tdeckPlayNotify();
+  if (!quiet) uiPlayNotify();
   openControlCenter();   // rebuild so the chip's active state updates
 }
 #endif
@@ -16961,23 +17076,9 @@ static void openControlCenter() {
   //      compact and all four facts fit on one row.
   {
     char sys_s[72];
-#if defined(ESP32)
-    const unsigned cpu = (unsigned)ESP.getCpuFreqMHz();
-    const size_t dram_free = heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-    const size_t dram_tot  = heap_caps_get_total_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-    const size_t ps_free   = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
-    const size_t ps_tot    = heap_caps_get_total_size(MALLOC_CAP_SPIRAM);
-    const unsigned dram_pct = dram_tot ? (unsigned)(100 - (dram_free * 100 / dram_tot)) : 0;
-    const unsigned ps_pct   = ps_tot   ? (unsigned)(100 - (ps_free   * 100 / ps_tot))   : 0;
-    char ipbuf[20] = "no IP";
-    if (WiFi.status() == WL_CONNECTED)
-      snprintf(ipbuf, sizeof ipbuf, "%s", WiFi.localIP().toString().c_str());
-    snprintf(sys_s, sizeof sys_s, "%uMHz \xC2\xB7 RAM %u%% \xC2\xB7 PSRAM %u%% \xC2\xB7 %s",
-             cpu, dram_pct, ps_pct, ipbuf);
-#else
-    snprintf(sys_s, sizeof sys_s, "system info n/a");
-#endif
+    ccBuildSysInfo(sys_s, sizeof sys_s);
     lv_obj_t* sysl = lv_label_create(card);
+    s_cc_sys_label = sysl;   // track for the live refresh tick
     // ONE line only: LONG_DOT still wraps to a 2nd line (dotting only the
     // overflow) unless the height is clamped — that wrap was bleeding the line
     // through the toggle chips. Clamp to a single line height.
@@ -17005,23 +17106,24 @@ static void openControlCenter() {
   lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW_WRAP);
   lv_obj_set_style_pad_row(row, 4, LV_PART_MAIN);
 #else
-  // V4: 3 chips. WRAP so they never overflow the (narrow, in portrait) card.
+  // V4: up to 5 chips (Wi-Fi/BT/GPS/Theme/Sound) in one row, sized to fit width.
+  // WRAP as a safety net so they never overflow the (narrow, in portrait) card.
   lv_obj_set_size(row, card_w - 20, 54);
   lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW_WRAP);
-  lv_obj_set_style_pad_column(row, 6, LV_PART_MAIN);
+  lv_obj_set_style_pad_column(row, 5, LV_PART_MAIN);
 #endif
   // Bottom-anchored but lifted clear of the 1-line sysinfo (~16 px) plus a gap.
   lv_obj_align(row, LV_ALIGN_BOTTOM_MID, 0, -20);
   lv_obj_set_flex_align(row, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
   lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
   const bool gps_on = g_lv.task && g_lv.task->getGPSState();
-  // T-Deck: 5 chips in a 2-row grid. V4: 3 chips; size them to fit the card
-  // width with even gaps (portrait 240 px → ~68 px each fits 3 across).
+  // T-Deck: chips in a 2-row grid. V4: up to 5 chips sized to fit the card width
+  // with even gaps (5 chips + 4 gaps across the content width).
   int tw = 66, th = 54;
 #if defined(HAS_TDECK_GT911)
   tw = 58; th = 36;
 #else
-  tw = (card_w - 20 - 3 * 6) / 4;   // 4 chips (incl. Theme) + 3 gaps across the content width
+  tw = (card_w - 20 - 4 * 5) / 5;   // 5 chips (Wi-Fi/BT/GPS/Theme/Sound) + 4 gaps
   if (tw > 76) tw = 76;
 #endif
   ccToggle(row, LV_SYMBOL_WIFI, "Wi-Fi", wifi_on, ccWifiCb, tw, th);
@@ -17036,7 +17138,9 @@ static void openControlCenter() {
 #endif
 #if defined(HAS_TDECK_GT911)
   ccToggle(row, LV_SYMBOL_EYE_OPEN, "Lock", false, ccLockCb, tw, th);
-  // Sound on/off (notification tones over the T-Deck speaker).
+#endif
+#if defined(HAS_UI_SOUND)
+  // Sound on/off (notification tones — T-Deck I2S speaker / Heltec V4 piezo).
   const bool sound_on = g_lv.task && !g_lv.task->isBuzzerQuiet();
   ccToggle(row, LV_SYMBOL_AUDIO, "Sound", sound_on, ccSoundCb, tw, th);
 #endif
@@ -17129,8 +17233,9 @@ static void buildGlobalStatusBar() {
 static void updateGlobalStatusBar() {
   if (!g_statusbar.root || !g_lv.task) return;
 
-  // Channel-settings gear sits just left of the thread name, only in a channel chat.
-  const bool in_chan_chat = s_chat_title[0] && g_lv.task->activeThreadIsChannel();
+  // Settings gear sits just left of the thread name in ANY open chat (channel →
+  // scope + blocked users; DM → blocked users).
+  const bool in_chan_chat = (s_chat_title[0] != '\0');
   if (g_statusbar.chan_gear) {
     if (in_chan_chat) lv_obj_clear_flag(g_statusbar.chan_gear, LV_OBJ_FLAG_HIDDEN);
     else              lv_obj_add_flag(g_statusbar.chan_gear, LV_OBJ_FLAG_HIDDEN);
@@ -17192,7 +17297,11 @@ static void updateGlobalStatusBar() {
 #if defined(ESP32) && defined(MULTI_TRANSPORT_COMPANION)
   const bool wifi_up = (WiFi.status() == WL_CONNECTED);
   const bool ble_up  = g_lv.task->hasBleCapability() && g_lv.task->isBleEnabled();
-  if (wifi_up) {
+  // Wi-Fi + BLE coexist now, so show BOTH icons when both are up.
+  if (wifi_up && ble_up) {
+    lv_label_set_text(g_statusbar.conn_icon, LV_SYMBOL_WIFI " " LV_SYMBOL_BLUETOOTH);
+    lv_obj_clear_flag(g_statusbar.conn_icon, LV_OBJ_FLAG_HIDDEN);
+  } else if (wifi_up) {
     lv_label_set_text(g_statusbar.conn_icon, LV_SYMBOL_WIFI);
     lv_obj_clear_flag(g_statusbar.conn_icon, LV_OBJ_FLAG_HIDDEN);
   } else if (ble_up) {
@@ -17259,6 +17368,18 @@ static void refreshStatusLabels() {
   // Global status bar updates every refresh — visible on every tab, so
   // it's not gated on home_active like the home tab's body widgets.
   updateGlobalStatusBar();
+  // Live-refresh the control-center drop-down while it's open. It's a top-layer
+  // overlay (not a tab), so this periodic tick is what keeps its GPS line and the
+  // CPU/RAM/PSRAM/IP line current — e.g. the IP appears/clears as Wi-Fi
+  // connects/drops, without having to close and reopen the panel.
+  if (s_cc_root) {
+    if (s_cc_gps_label) lv_label_set_text(s_cc_gps_label, gpsStatusStr());
+    if (s_cc_sys_label) {
+      char cc_sys[72];
+      ccBuildSysInfo(cc_sys, sizeof cc_sys);
+      lv_label_set_text(s_cc_sys_label, cc_sys);
+    }
+  }
   uint16_t active_tab = 0xFFFF;
   if (g_lv.tabview) active_tab = lv_tabview_get_tab_act(g_lv.tabview);
   const bool home_active = (active_tab == 0);
@@ -17308,14 +17429,16 @@ static void refreshStatusLabels() {
 #endif
 
   if (g_lv.home_state && home_active) {
-    /* Show which transport radio is up. Boot picks WiFi xor BLE based on
-     * saved creds (heap can't fit both + LVGL). For WiFi we also show the IP
-     * once associated, or a connect-progress hint while it's still trying. */
+    /* Show which transport radios are up. Wi-Fi + BLE coexist now, so the BLE
+     * glyph is appended whenever BLE is on (alongside the Wi-Fi IP / progress
+     * hint). "Offline" is shown when neither radio is up. */
 #if defined(ESP32) && defined(MULTI_TRANSPORT_COMPANION)
+    const bool ble_on = g_lv.task->hasBleCapability() && g_lv.task->isBleEnabled();
+    const char* ble_suffix = ble_on ? " " LV_SYMBOL_BLUETOOTH : "";
     if (WiFi.status() == WL_CONNECTED) {
       IPAddress ip = WiFi.localIP();
-      lv_label_set_text_fmt(g_lv.home_state, LV_SYMBOL_WIFI " %d.%d.%d.%d",
-                            ip[0], ip[1], ip[2], ip[3]);
+      lv_label_set_text_fmt(g_lv.home_state, LV_SYMBOL_WIFI " %d.%d.%d.%d%s",
+                            ip[0], ip[1], ip[2], ip[3], ble_suffix);
     } else if (WiFi.getMode() == WIFI_STA) {
       const char* hint;
       switch (WiFi.status()) {
@@ -17327,11 +17450,11 @@ static void refreshStatusLabels() {
         case WL_NO_SHIELD:       hint = "Init…";         break;
         default:                 hint = "Connecting…";   break;
       }
-      lv_label_set_text_fmt(g_lv.home_state, LV_SYMBOL_WIFI " %s", hint);
-    } else if (g_lv.task->hasBleCapability() && g_lv.task->isBleEnabled()) {
+      lv_label_set_text_fmt(g_lv.home_state, LV_SYMBOL_WIFI " %s%s", hint, ble_suffix);
+    } else if (ble_on) {
       lv_label_set_text(g_lv.home_state, LV_SYMBOL_BLUETOOTH);
     } else {
-      lv_label_set_text(g_lv.home_state, "—");
+      lv_label_set_text(g_lv.home_state, "Offline");
     }
 #else
     lv_label_set_text(g_lv.home_state,
@@ -18106,6 +18229,110 @@ static void chanScopeSaveCb(lv_event_t* e) {
   chanScopeClose();
   if (g_lv.task) g_lv.task->showAlert("Channel scope saved", 1200);
 }
+// ---- Blocked-users (ignore-list) manager ----------------------------------
+static lv_obj_t* s_blocked_modal = nullptr;
+static uint8_t   s_blocked_snap[TOUCH_IGNORED_MAX * TOUCH_IGNORE_KEY_BYTES];
+static void blockedModalClose() { if (s_blocked_modal) { lv_obj_del(s_blocked_modal); s_blocked_modal = nullptr; } }
+static void blockedModalCloseCb(lv_event_t* e) { if (lv_event_get_code(e) == LV_EVENT_CLICKED) blockedModalClose(); }
+static void blockedUnblockCb(lv_event_t* e) {
+  if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+  const int idx = (int)(intptr_t)lv_event_get_user_data(e);
+  if (idx < 0 || idx >= TOUCH_IGNORED_MAX) return;
+  touchPrefsSetIgnored(&s_blocked_snap[idx * TOUCH_IGNORE_KEY_BYTES], false);
+  openBlockedUsersModal();   // rebuild the list
+}
+static void openBlockedUsersModal() {
+  blockedModalClose();
+  const lv_coord_t sw = lv_disp_get_hor_res(nullptr);
+  const lv_coord_t sh = lv_disp_get_ver_res(nullptr);
+  s_blocked_modal = lv_obj_create(lv_layer_top());
+  lv_obj_remove_style_all(s_blocked_modal);
+  lv_obj_set_size(s_blocked_modal, sw, sh - STATUSBAR_H);
+  lv_obj_set_pos(s_blocked_modal, 0, STATUSBAR_H);
+  lv_obj_set_style_bg_color(s_blocked_modal, lv_color_hex(COLOR_BG), LV_PART_MAIN);
+  lv_obj_set_style_bg_opa(s_blocked_modal, LV_OPA_COVER, LV_PART_MAIN);
+  lv_obj_clear_flag(s_blocked_modal, LV_OBJ_FLAG_SCROLLABLE);
+
+  lv_obj_t* title = lv_label_create(s_blocked_modal);
+  lv_label_set_text(title, "Blocked users");
+  lv_obj_set_style_text_font(title, &g_font_16, LV_PART_MAIN);
+  lv_obj_set_style_text_color(title, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
+  lv_obj_set_pos(title, 8, 8);
+
+  lv_obj_t* close = lv_btn_create(s_blocked_modal);
+  lv_obj_set_size(close, 30, 26);
+  lv_obj_align(close, LV_ALIGN_TOP_RIGHT, -6, 4);
+  styleButton(close);
+  lv_obj_add_event_cb(close, blockedModalCloseCb, LV_EVENT_CLICKED, nullptr);
+  lv_obj_t* cl = lv_label_create(close); lv_label_set_text(cl, LV_SYMBOL_CLOSE);
+  lv_obj_set_style_text_font(cl, &g_font_12, LV_PART_MAIN); lv_obj_center(cl);
+
+  const int n = touchPrefsCopyIgnored(s_blocked_snap);
+  if (n <= 0) {
+    lv_obj_t* empty = lv_label_create(s_blocked_modal);
+    lv_label_set_text(empty, "No blocked users.\n\nLong-press a message and tap\nBlock to add one.");
+    lv_obj_set_style_text_color(empty, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
+    lv_obj_set_style_text_font(empty, &g_font_12, LV_PART_MAIN);
+    lv_obj_set_pos(empty, 8, 48);
+    return;
+  }
+
+  lv_obj_t* list = lv_obj_create(s_blocked_modal);
+  lv_obj_remove_style_all(list);
+  lv_obj_set_size(list, sw - 12, sh - STATUSBAR_H - 44);
+  lv_obj_set_pos(list, 6, 40);
+  lv_obj_set_flex_flow(list, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_style_pad_row(list, 6, LV_PART_MAIN);
+  lv_obj_set_scroll_dir(list, LV_DIR_VER);
+
+  for (int i = 0; i < n; ++i) {
+    const uint8_t* pub6 = &s_blocked_snap[i * TOUCH_IGNORE_KEY_BYTES];
+    char nm[40];
+    bool named = false;
+    ContactInfo c;
+    const int nc = the_mesh.getNumContacts();
+    for (int j = 0; j < nc; ++j) {
+      if (the_mesh.getContactByIdx((uint32_t)j, c) &&
+          memcmp(c.id.pub_key, pub6, TOUCH_IGNORE_KEY_BYTES) == 0) {
+        snprintf(nm, sizeof nm, "%.24s", c.name); named = true; break;
+      }
+    }
+    if (!named) snprintf(nm, sizeof nm, "%02X%02X%02X%02X%02X%02X",
+                         pub6[0], pub6[1], pub6[2], pub6[3], pub6[4], pub6[5]);
+
+    lv_obj_t* row = lv_obj_create(list);
+    lv_obj_remove_style_all(row);
+    lv_obj_set_size(row, sw - 16, 40);
+    lv_obj_set_style_bg_color(row, lv_color_hex(COLOR_PANEL), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(row, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_radius(row, 6, LV_PART_MAIN);
+    lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t* lbl = lv_label_create(row);
+    lv_label_set_text(lbl, nm);
+    lv_label_set_long_mode(lbl, LV_LABEL_LONG_DOT);
+    lv_obj_set_width(lbl, sw - 16 - 96);
+    lv_obj_set_style_text_color(lbl, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
+    lv_obj_set_style_text_font(lbl, &g_font_14, LV_PART_MAIN);
+    lv_obj_align(lbl, LV_ALIGN_LEFT_MID, 8, 0);
+
+    lv_obj_t* unb = lv_btn_create(row);
+    lv_obj_set_size(unb, 80, 30);
+    lv_obj_align(unb, LV_ALIGN_RIGHT_MID, -6, 0);
+    styleButton(unb);
+    lv_obj_add_event_cb(unb, blockedUnblockCb, LV_EVENT_CLICKED, (void*)(intptr_t)i);
+    lv_obj_t* ul = lv_label_create(unb);
+    lv_label_set_text(ul, "Unblock");
+    lv_obj_set_style_text_font(ul, &g_font_12, LV_PART_MAIN);
+    lv_obj_center(ul);
+  }
+}
+static void chanScopeBlockedCb(lv_event_t* e) {
+  if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+  chanScopeClose();
+  openBlockedUsersModal();
+}
+
 static void openChannelScopeModal(int slot, const char* name) {
   chanScopeClose();
   s_chanscope_slot = slot;
@@ -18166,19 +18393,29 @@ static void openChannelScopeModal(int slot, const char* name) {
   styleButton(save);
   lv_obj_add_event_cb(save, chanScopeSaveCb, LV_EVENT_CLICKED, nullptr);
   lv_obj_t* sl = lv_label_create(save); lv_label_set_text(sl, "Save"); lv_obj_center(sl);
+
+  lv_obj_t* blk = lv_btn_create(s_chanscope_modal);
+  lv_obj_set_size(blk, sw - 16, 34);
+  lv_obj_set_pos(blk, 8, 182);
+  styleButton(blk);
+  lv_obj_add_event_cb(blk, chanScopeBlockedCb, LV_EVENT_CLICKED, nullptr);
+  lv_obj_t* bl = lv_label_create(blk); lv_label_set_text(bl, "Blocked users"); lv_obj_center(bl);
 }
 static void channelGearCb(lv_event_t* e) {
-  if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
-  if (!g_lv.task) return;
-  int slot = g_lv.task->activeChannelSlot();
-  if (slot < 0) return;
-  openChannelScopeModal(slot, s_chat_title);
+  if (lv_event_get_code(e) != LV_EVENT_CLICKED || !g_lv.task) return;
+  if (g_lv.task->activeThreadIsChannel()) {
+    int slot = g_lv.task->activeChannelSlot();
+    if (slot >= 0) openChannelScopeModal(slot, s_chat_title);
+    else           openBlockedUsersModal();   // channel slot unknown — still offer the manager
+  } else {
+    openBlockedUsersModal();                   // DM gear → straight to the blocked-users manager
+  }
 }
 
 // Full-screen pickers sit on lv_layer_top, but the swipe/gesture handler is global
 // and would otherwise switch tabs in the menu beneath them. Block that.
 static bool overlayBlocksTabSwipe() {
-  return s_accent_picker != nullptr || s_chanscope_modal != nullptr;
+  return s_accent_picker != nullptr || s_chanscope_modal != nullptr || s_blocked_modal != nullptr;
 }
 
 // ============================================================
@@ -18803,19 +19040,32 @@ static fs::FS* s_ui_data_fs       = nullptr;
 static char    s_ui_data_root[16] = "";
 static bool    s_ui_data_resolved = false;
 static bool uiDataFsReady() {
-  if (s_ui_data_resolved) return s_ui_data_fs != nullptr;
-  s_ui_data_resolved = true;   // resolve once — no per-flush SPIFFS.begin spam
-  if (SPIFFS.begin(false)) { s_ui_data_fs = &SPIFFS; s_ui_data_root[0] = '\0'; return true; }
+  if (s_ui_data_fs != nullptr) return true;   // cache SUCCESS only — a failed resolve MUST stay retryable
 #if defined(HAS_TDECK_GT911)
-  if (SD.cardType() != CARD_NONE || fmSdTryMount()) {   // prefer the live mount (no disruptive remount)
+  // T-Deck: the SD card is the persistent user-data store (large, removable,
+  // survives a reflash) and is where chat history already lives. Prefer it; only
+  // fall back to internal SPIFFS if no card is present. (Do NOT format/prefer
+  // SPIFFS here — doing so orphaned the on-SD history.)
+  if (SD.cardType() != CARD_NONE || fmSdTryMount()) {
     s_sd_mounted = true;
     SD.mkdir("/meshcomod");
     s_ui_data_fs = &SD;
     strncpy(s_ui_data_root, "/meshcomod", sizeof s_ui_data_root - 1);
     return true;
   }
+  if (SPIFFS.begin(false)) { s_ui_data_fs = &SPIFFS; s_ui_data_root[0] = '\0'; return true; }
+#else
+  // V4 (no SD): internal SPIFFS. Format-on-fail so a fresh / never-formatted
+  // partition becomes usable — that's the V4 history-loss fix. Safe: only formats
+  // an unmountable partition (contents were inaccessible anyway), and only when
+  // begin(false) already failed.
+  if (SPIFFS.begin(false) || SPIFFS.begin(true)) {
+    s_ui_data_fs = &SPIFFS; s_ui_data_root[0] = '\0';
+    return true;
+  }
 #endif
-  return false;   // no SPIFFS + no SD — cached, so no per-flush spam
+  // Not ready yet — do NOT cache the failure, so a later call can still resolve.
+  return false;
 }
 static File uiDataOpen(const char* name, const char* mode) {
   if (!uiDataFsReady()) return File();
@@ -19410,6 +19660,11 @@ void UITask::setActiveThread(int idx, bool channel_mode) {
   _active_thread_idx         = idx;
   _active_thread_is_channel  = channel_mode;
   const bool was_unread = (_ui_threads[idx].unread != 0) || _ui_threads[idx].has_mention;
+  // Capture the unread count for the Discord-style "new messages" divider +
+  // scroll-to-divider in refreshChatDetail, before we clear it here. Both chat
+  // open paths (thread list + DM-from-contacts) funnel through here.
+  s_unread_at_open   = _ui_threads[idx].unread;
+  s_chat_just_opened = true;
   _ui_threads[idx].unread    = 0;
   _ui_threads[idx].has_mention = false;
   if (was_unread) markHistoryDirty(200);   // persist the read state (survives a manual reboot)
@@ -19943,11 +20198,6 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
 #if defined(HAS_TDECK_KEYBOARD)
     s_kb_bl_mode = touchPrefsGetKbBacklight();
 #endif
-    // Record the boot transport: Wi-Fi is inited at boot only when its radio is
-    // enabled AND creds are saved (mirrors `want_wifi` in main.cpp setup()).
-    // The control center uses this to know which transport can be toggled live
-    // vs. needs a reboot to switch to.
-    s_boot_wifi_transport = wifiConfigWantsWifi();
 #endif
     const bool ui_landscape = (s_ui_rotation == LV_DISP_ROT_90 ||
                                s_ui_rotation == LV_DISP_ROT_270);
@@ -20147,6 +20397,33 @@ bool UITask::getMessageByIndex(int msg_idx, UIMessage& out) const {
 }
 
 void UITask::enterThread(bool channel_mode, int idx) { setActiveThread(idx, channel_mode); }
+
+bool UITask::ignoreSenderInActiveThread(const char* sender_name) {
+  if (_active_thread_idx < 0 || _active_thread_idx >= MAX_UI_THREADS) return false;
+  uint8_t pub[32];
+  bool have = false;
+  if (!_active_thread_is_channel) {
+    // DM: the active thread's contact IS the sender.
+    if (hasContactPub(_ui_threads[_active_thread_idx].mesh_contact_pub)) {
+      memcpy(pub, _ui_threads[_active_thread_idx].mesh_contact_pub, sizeof(pub));
+      have = true;
+    }
+  } else if (sender_name && sender_name[0]) {
+    // Channel: resolve the sender display name -> a contact pubkey.
+    ContactInfo c;
+    const int n = the_mesh.getNumContacts();
+    for (int i = 0; i < n; ++i) {
+      if (the_mesh.getContactByIdx((uint32_t)i, c) && strcmp(c.name, sender_name) == 0) {
+        memcpy(pub, c.id.pub_key, sizeof(pub));
+        have = true;
+        break;
+      }
+    }
+  }
+  if (!have) return false;
+  touchPrefsSetIgnored(pub, true);
+  return true;
+}
 
 void UITask::openMeshContactDm(uint32_t mesh_contact_index) {
   ContactInfo c;
@@ -20547,9 +20824,9 @@ void UITask::newMsgImpl(uint8_t path_len, const char* from_name, const char* tex
                         uint8_t meta_flags, int8_t snr_q4, int8_t rssi) {
   (void)path_len;
   _msgcount = msgcount;
-#if defined(HAS_TDECK_GT911)
-  // Notification chime on the T-Deck speaker (gated on the buzzer/sound pref).
-  if (!isBuzzerQuiet()) tdeckPlayNotify();
+#if defined(HAS_UI_SOUND)
+  // Notification chime (T-Deck I2S speaker / Heltec V4 piezo), gated on the pref.
+  if (!isBuzzerQuiet()) uiPlayNotify();
 #endif
   bool channel = (g_last_event == UIEventType::channelMessage);
   const char* thread = channel
@@ -20617,6 +20894,7 @@ void UITask::newMsgImpl(uint8_t path_len, const char* from_name, const char* tex
 }
 
 void UITask::newMsgFromPub(uint8_t path_len, const uint8_t* from_pub, const char* from_name, const char* text, int msgcount) {
+  if (from_pub && touchPrefsIsIgnored(from_pub)) return;   // blocked sender — drop (no chat entry, no notify)
   newMsg(path_len, from_name, text, msgcount);
   if (!from_pub || !from_name || !from_name[0]) return;
   const int t = findThreadByName(from_name, false);
@@ -20635,6 +20913,7 @@ void UITask::newMsgFromPubWithMeta(uint8_t path_len, bool is_flood,
                                    const uint8_t* from_pub, const char* from_name,
                                    const char* text, int msgcount,
                                    int8_t snr_q4, int8_t rssi) {
+  if (from_pub && touchPrefsIsIgnored(from_pub)) return;   // blocked sender — drop (no chat entry, no notify)
   const uint8_t meta_flags = MSG_META_HAS_RX | (is_flood ? MSG_META_IS_FLOOD : 0);
   newMsgImpl(path_len, from_name, text, msgcount, meta_flags, snr_q4, rssi);
   // Mirror newMsgFromPub's contact-pub plumbing so the newly-arrived DM

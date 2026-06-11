@@ -644,6 +644,66 @@ bool touchPrefsSetFavorite(const uint8_t* pub_key6, bool fav) {
   }
 }
 
+// Ignored / blocked senders -------------------------------------------------
+//
+// Same scheme as favorites: a single NVS blob "ign" of up to TOUCH_IGNORED_MAX
+// 6-byte pubkey prefixes. Incoming messages from a stored prefix are dropped
+// (no chat entry, no notification). Managed from the chat "Blocked users" sheet.
+static const char* KEY_IGN = "ign";
+
+static int ignReadAll(uint8_t out[TOUCH_IGNORED_MAX * TOUCH_IGNORE_KEY_BYTES]) {
+  if (!s_begun) touchPrefsBegin();
+  if (!s_prefs.isKey(KEY_IGN)) return 0;   // absent on a fresh device — skip the [E] NOT_FOUND log
+  size_t n = s_prefs.getBytes(KEY_IGN, out, TOUCH_IGNORED_MAX * TOUCH_IGNORE_KEY_BYTES);
+  if (n == 0 || n > (size_t)(TOUCH_IGNORED_MAX * TOUCH_IGNORE_KEY_BYTES)) return 0;
+  return (int)(n / TOUCH_IGNORE_KEY_BYTES);
+}
+
+static bool ignWriteAll(const uint8_t* buf, int count) {
+  s_prefs.end();
+  if (!s_prefs.begin(TOUCH_NS, false)) return false;
+  bool ok;
+  if (count <= 0) { s_prefs.remove(KEY_IGN); ok = true; }
+  else ok = s_prefs.putBytes(KEY_IGN, buf, (size_t)(count * TOUCH_IGNORE_KEY_BYTES)) > 0;
+  s_prefs.end();
+  s_begun = s_prefs.begin(TOUCH_NS, true);
+  return ok;
+}
+
+bool touchPrefsIsIgnored(const uint8_t* pub_key6) {
+  if (!pub_key6) return false;
+  uint8_t buf[TOUCH_IGNORED_MAX * TOUCH_IGNORE_KEY_BYTES];
+  int n = ignReadAll(buf);
+  for (int i = 0; i < n; ++i)
+    if (memcmp(&buf[i * TOUCH_IGNORE_KEY_BYTES], pub_key6, TOUCH_IGNORE_KEY_BYTES) == 0) return true;
+  return false;
+}
+
+int touchPrefsCopyIgnored(uint8_t* out_buf) {
+  if (!out_buf) return 0;
+  return ignReadAll(out_buf);
+}
+
+bool touchPrefsSetIgnored(const uint8_t* pub_key6, bool ignored) {
+  if (!pub_key6) return false;
+  uint8_t buf[TOUCH_IGNORED_MAX * TOUCH_IGNORE_KEY_BYTES];
+  int n = ignReadAll(buf);
+  int found = -1;
+  for (int i = 0; i < n; ++i)
+    if (memcmp(&buf[i * TOUCH_IGNORE_KEY_BYTES], pub_key6, TOUCH_IGNORE_KEY_BYTES) == 0) { found = i; break; }
+  if (ignored) {
+    if (found >= 0) return true;
+    if (n >= TOUCH_IGNORED_MAX) return false;   // cap reached, silently refuse
+    memcpy(&buf[n * TOUCH_IGNORE_KEY_BYTES], pub_key6, TOUCH_IGNORE_KEY_BYTES);
+    ++n; ignWriteAll(buf, n); return true;
+  } else {
+    if (found < 0) return false;
+    for (int i = found; i < n - 1; ++i)
+      memcpy(&buf[i * TOUCH_IGNORE_KEY_BYTES], &buf[(i + 1) * TOUCH_IGNORE_KEY_BYTES], TOUCH_IGNORE_KEY_BYTES);
+    --n; ignWriteAll(buf, n); return false;
+  }
+}
+
 // Remembered repeater admin passwords --------------------------------------
 //
 // Layout: single NVS blob "rpw" of up to TOUCH_REPEATER_PW_MAX records,

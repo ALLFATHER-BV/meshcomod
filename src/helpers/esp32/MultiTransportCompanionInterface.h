@@ -32,6 +32,10 @@ public:
 #ifdef BLE_PIN_CODE
   // Call after begin() and the_mesh is ready (e.g. after startInterface). Enables BLE by default.
   void beginBle(const char* prefix, char* name, uint32_t pin_code);
+  // Store the BLE name/pin WITHOUT bringing the stack up. Used at boot when the
+  // heap guard defers co-initialising BLE alongside Wi-Fi: the params are kept so
+  // a later enableBle() can lazily bring BLE up live (no reboot).
+  void prepareBle(const char* prefix, char* name, uint32_t pin_code);
   void enableBle() override;
   void disableBle() override;
   bool isBleEnabled() const override { return _ble_enabled; }

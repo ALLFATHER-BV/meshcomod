@@ -591,6 +591,19 @@ public:
    *  and lost on reboot. */
   bool uiPersistContacts() { saveContacts(); return true; }
 
+  /** Remove a contact from a device-UI action and PERSIST it (mirrors the
+   *  companion app's CMD_REMOVE_CONTACT). The base removeContact() only drops it
+   *  from RAM, so without rewriting /contacts3 the contact reappears on the next
+   *  reboot. Also deletes its stored blob and pings the chats list. */
+  bool uiRemoveContact(const ContactInfo& c) {
+    ContactInfo* slot = lookupContactByPubKey(c.id.pub_key, PUB_KEY_SIZE);
+    if (!slot || !removeContact(*slot)) return false;
+    _store->deleteBlobByKey(c.id.pub_key, PUB_KEY_SIZE);
+    saveContacts();
+    if (_ui) _ui->onThreadsChanged();
+    return true;
+  }
+
   /** Clear channel slot `idx` (zero name + secret), persist, and ping the UI
    *  so the chats list drops the entry. Returns false if the index is out of
    *  range. Used by the long-press → Delete action on the chats list. */

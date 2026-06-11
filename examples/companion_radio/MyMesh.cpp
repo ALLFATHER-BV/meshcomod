@@ -1872,15 +1872,18 @@ void MyMesh::sendFloodScoped(const TransportKey& scope, mesh::Packet* pkt, uint3
 
 void MyMesh::sendFloodScoped(const ContactInfo& recipient, mesh::Packet* pkt, uint32_t delay_millis) {
   uiTrackSentFp(txtFloodFp(pkt));
-  // TODO: dynamic send_scope, depending on recipient and current 'home' Region
-  if (send_unscoped) {
-    sendFlood(pkt, delay_millis, _prefs.path_hash_mode + 1);  // app has explicitly requested un-scoped
+  // UNICAST floods (login, DM when out_path is unknown, status/telemetry reqs,
+  // acks, path-returns) must be able to reach their specific target regardless of
+  // our 'home' Region, so they are NOT tagged with the default region scope —
+  // doing so region-locked logins/DMs and broke cross-region repeater/room login
+  // (the old "TODO: dynamic send_scope depending on recipient/Region"). Only an
+  // EXPLICIT per-send override (send_scope, set by the app's CMD_SET_FLOOD_SCOPE)
+  // is honoured here; otherwise unscoped. Channel/group floods keep default_scope
+  // — see the GroupChannel overload below — so public-channel containment is intact.
+  if (send_unscoped || send_scope.isNull()) {
+    sendFlood(pkt, delay_millis, _prefs.path_hash_mode + 1);
   } else {
-    TransportKey default_scope;
-    memcpy(&default_scope.key, _prefs.default_scope_key, sizeof(default_scope.key));
-
-    auto scope = send_scope.isNull() ? &default_scope : &send_scope;
-    sendFloodScoped(*scope, pkt, delay_millis);   // the lower overload applies path_hash_mode
+    sendFloodScoped(send_scope, pkt, delay_millis);   // explicit override only
   }
 }
 void MyMesh::sendFloodScoped(const mesh::GroupChannel& channel, mesh::Packet* pkt, uint32_t delay_millis) {

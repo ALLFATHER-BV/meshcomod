@@ -131,6 +131,18 @@ int  touchPrefsCopyFavorites(uint8_t* out_buf);
 bool touchPrefsFavoritesSnapshotContains(const uint8_t* snapshot, int count,
                                           const uint8_t* pub_key6);
 
+/** Ignored / blocked senders. Same 6-byte-prefix scheme as favorites. Incoming
+ *  messages from a stored prefix are dropped (no chat entry, no notification).
+ *  Managed from the chat "Blocked users" sheet; long-press a message to block.
+ *  • touchPrefsIsIgnored: true if the 6-byte prefix is stored.
+ *  • touchPrefsSetIgnored: add/remove; returns the new ignored state.
+ *  • touchPrefsCopyIgnored: copy all stored prefixes (for the manager UI). */
+constexpr int TOUCH_IGNORED_MAX = 32;
+constexpr int TOUCH_IGNORE_KEY_BYTES = 6;
+bool touchPrefsIsIgnored(const uint8_t* pub_key6);
+bool touchPrefsSetIgnored(const uint8_t* pub_key6, bool ignored);
+int  touchPrefsCopyIgnored(uint8_t* out_buf);
+
 /** Map tile-server base URL. The device fetches missing map tiles by
  *  HTTP GET against `<base>/<z>/<x>/<y>.png`. Defaults to the meshcomod
  *  proxy. Plain HTTP only — mbedTLS doesn't fit in the ~5 KB of internal

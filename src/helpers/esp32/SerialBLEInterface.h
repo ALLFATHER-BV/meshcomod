@@ -1,15 +1,16 @@
 #pragma once
 
 #include "../BaseSerialInterface.h"
-#include <BLEDevice.h>
-#include <BLEServer.h>
-#include <BLEUtils.h>
-#include <BLE2902.h>
+#include <NimBLEDevice.h>
 
-class SerialBLEInterface : public BaseSerialInterface, BLESecurityCallbacks, BLEServerCallbacks, BLECharacteristicCallbacks {
-  BLEServer *pServer;
-  BLEService *pService;
-  BLECharacteristic * pTxCharacteristic;
+// NimBLE port of the companion BLE (Nordic UART) transport. Public API is kept
+// identical to the previous Bluedroid implementation so MultiTransportCompanionInterface
+// and the plain *_ble envs need no changes. NimBLE's host is ~tens of KB lighter on the
+// heap than Bluedroid, which is what lets Wi-Fi + BLE coexist on this ESP32-S3.
+class SerialBLEInterface : public BaseSerialInterface, public NimBLEServerCallbacks, public NimBLECharacteristicCallbacks {
+  NimBLEServer *pServer;
+  NimBLEService *pService;
+  NimBLECharacteristic *pTxCharacteristic;
   bool deviceConnected;
   bool oldDeviceConnected;
   bool _isEnabled;
@@ -33,28 +34,25 @@ class SerialBLEInterface : public BaseSerialInterface, BLESecurityCallbacks, BLE
   Frame send_queue[FRAME_QUEUE_SIZE];
 
   void clearBuffers() { recv_queue_len = 0; send_queue_len = 0; }
+  void startAdvertising();
 
 protected:
-  // BLESecurityCallbacks methods
+  // NimBLEServerCallbacks — connection lifecycle + security
+  void onConnect(NimBLEServer* pServer, ble_gap_conn_desc* desc) override;
+  void onDisconnect(NimBLEServer* pServer) override;
+  void onMTUChange(uint16_t MTU, ble_gap_conn_desc* desc) override;
   uint32_t onPassKeyRequest() override;
-  void onPassKeyNotify(uint32_t pass_key) override;
   bool onConfirmPIN(uint32_t pass_key) override;
-  bool onSecurityRequest() override;
-  void onAuthenticationComplete(esp_ble_auth_cmpl_t cmpl) override;
+  void onAuthenticationComplete(ble_gap_conn_desc* desc) override;
 
-  // BLEServerCallbacks methods
-  void onConnect(BLEServer* pServer) override;
-  void onConnect(BLEServer* pServer, esp_ble_gatts_cb_param_t *param) override;
-  void onMtuChanged(BLEServer* pServer, esp_ble_gatts_cb_param_t* param) override;
-  void onDisconnect(BLEServer* pServer) override;
-
-  // BLECharacteristicCallbacks methods
-  void onWrite(BLECharacteristic* pCharacteristic, esp_ble_gatts_cb_param_t* param) override;
+  // NimBLECharacteristicCallbacks
+  void onWrite(NimBLECharacteristic* pCharacteristic) override;
 
 public:
   SerialBLEInterface() {
     pServer = NULL;
     pService = NULL;
+    pTxCharacteristic = NULL;
     deviceConnected = false;
     oldDeviceConnected = false;
     adv_restart_time = 0;

@@ -11,6 +11,7 @@ static const char *WIFI_CONFIG_SSID_KEY = "wifi_ssid";
 static const char *WIFI_CONFIG_PWD_KEY = "wifi_pwd";
 static const char *WIFI_CONFIG_RADIO_EN_KEY = "wifi_radio_en";
 static const char *WIFI_CONFIG_WIFI_CHOSEN_KEY = "wifi_chosen";
+static const char *WIFI_CONFIG_BLE_EN_KEY = "ble_en";   // BLE radio on/off (default on)
 
 static Preferences s_prefs;
 static bool s_begun = false;
@@ -115,6 +116,23 @@ void wifiConfigSetRadioEnabled(bool enabled) {
    * Calling WiFi.disconnect()+begin() from the LV event ctx was racing with
    * the main wifi loop and could leave the radio in WIFI_OFF mode. */
   s_wifi_apply_requested = true;
+}
+
+/* BLE radio on/off, persisted independently of the Wi-Fi radio so the two can be
+ * toggled independently (and coexist). Default ON. Uses getUChar (quiet log_v),
+ * not getString, so no NOT_FOUND console spam for a fresh device. */
+bool wifiConfigGetBleEnabled() {
+  if (!s_begun) wifiConfigBegin();
+  return s_prefs.getUChar(WIFI_CONFIG_BLE_EN_KEY, 1) != 0;
+}
+
+void wifiConfigSetBleEnabled(bool enabled) {
+  if (!s_begun) wifiConfigBegin();
+  s_prefs.end();
+  if (!s_prefs.begin(WIFI_CONFIG_NAMESPACE, false)) return;
+  s_prefs.putUChar(WIFI_CONFIG_BLE_EN_KEY, enabled ? 1 : 0);
+  s_prefs.end();
+  s_begun = s_prefs.begin(WIFI_CONFIG_NAMESPACE, true);
 }
 
 bool wifiConfigGetWifiChosen() {

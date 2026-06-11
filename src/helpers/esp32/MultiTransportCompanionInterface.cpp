@@ -1,5 +1,6 @@
 #include "MultiTransportCompanionInterface.h"
 #include <helpers/RepeaterTcpOtaEmit.h>
+#include "WifiRuntimeStore.h"   // persist BLE on/off (ble_en) across reboots
 #include <string.h>
 
 MultiTransportCompanionInterface::MultiTransportCompanionInterface()
@@ -60,7 +61,7 @@ void MultiTransportCompanionInterface::disableTcp() {
 }
 
 #ifdef BLE_PIN_CODE
-void MultiTransportCompanionInterface::beginBle(const char* prefix, char* name, uint32_t pin_code) {
+void MultiTransportCompanionInterface::prepareBle(const char* prefix, char* name, uint32_t pin_code) {
   if (prefix) {
     strncpy(_ble_prefix, prefix, sizeof(_ble_prefix) - 1);
     _ble_prefix[sizeof(_ble_prefix) - 1] = '\0';
@@ -74,6 +75,10 @@ void MultiTransportCompanionInterface::beginBle(const char* prefix, char* name, 
     _ble_name[0] = '\0';
   }
   _ble_pin_code = pin_code;
+}
+
+void MultiTransportCompanionInterface::beginBle(const char* prefix, char* name, uint32_t pin_code) {
+  prepareBle(prefix, name, pin_code);
   _ble.begin(prefix, name, pin_code);
   _ble_begun = true;
   _ble_enabled = true;
@@ -82,14 +87,29 @@ void MultiTransportCompanionInterface::beginBle(const char* prefix, char* name, 
 }
 
 void MultiTransportCompanionInterface::enableBle() {
-  if (!_ble_begun) return;
+  if (!_ble_begun) {
+    // Deferred at boot (heap guard) or toggled on from off: bring the stack up
+    // now, live, from the params stashed by prepareBle()/beginBle().
+    if (_ble_prefix[0] == '\0' && _ble_name[0] == '\0') return;   // no params known
+    char name[sizeof(_ble_name)];
+    strncpy(name, _ble_name, sizeof(name) - 1);
+    name[sizeof(name) - 1] = '\0';
+    _ble.begin(_ble_prefix, name, _ble_pin_code);
+    _ble_begun = true;
+  }
   _ble_enabled = true;
+  wifiConfigSetBleEnabled(true);    // persist so it survives reboot
   _ble.enable();
 }
 
 void MultiTransportCompanionInterface::disableBle() {
   _ble_enabled = false;
-  _ble.disable();
+  wifiConfigSetBleEnabled(false);   // persist so BT stays off across reboot
+  _ble.disable();                    // stop advertising + drop any connection
+  // NOTE: we deliberately do NOT NimBLEDevice::deinit() here. Tearing the BT
+  // controller down while Wi-Fi+BLE coexistence is active crashes — the esp_coex
+  // layer still holds a reference to the controller — so "off" stops advertising
+  // but keeps the NimBLE host resident. Its RAM is only fully reclaimed on reboot.
 }
 
 bool MultiTransportCompanionInterface::getBlePeerAddress(char* buf, size_t len) const {
@@ -164,7 +184,7 @@ void MultiTransportCompanionInterface::prepareForHttpOta() {
 #ifdef BLE_PIN_CODE
   if (_ble_begun && _ble_enabled) {
     _ble.disable();
-    BLEDevice::deinit(true);
+    NimBLEDevice::deinit(true);
     _ble_begun = false;
     _ble_enabled = false;
     _ota_ble_released = true;

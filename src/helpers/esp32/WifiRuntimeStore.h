@@ -20,6 +20,12 @@ void wifiConfigApply();
 bool wifiConfigGetRadioEnabled();
 void wifiConfigSetRadioEnabled(bool enabled);
 
+/* BLE radio on/off, persisted independently of the Wi-Fi radio (default ON) so
+ * the two can be toggled separately and coexist. The companion BLE toggle writes
+ * this; boot honors it. Fixes "BT turned off reverts to on after reboot". */
+bool wifiConfigGetBleEnabled();
+void wifiConfigSetBleEnabled(bool enabled);
+
 /* "Wi-Fi chosen" sticky flag: set whenever the radio is explicitly enabled
  * (setRadioEnabled(true)). Historically gated whether the touch build brought
  * Wi-Fi up with no creds; now vestigial — touch defaults to Wi-Fi whenever the
