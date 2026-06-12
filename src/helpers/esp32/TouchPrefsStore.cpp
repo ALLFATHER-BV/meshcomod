@@ -4,7 +4,7 @@
 
 #include "WifiRuntimeStore.h"
 
-#include <Preferences.h>
+#include "SdNvsPrefs.h"   // NVS, or SD /meshcomod fallback when NVS is unusable (Launcher)
 
 static const char* TOUCH_NS = "touch";
 static const char* KEY_SCR_TO = "scr_to_s";
@@ -12,7 +12,7 @@ static const char* KEY_DC_SHOW = "dc_show";
 static const uint16_t DEFAULT_SCREEN_TIMEOUT_S = 20;
 static const bool DEFAULT_DC_SHOW = true;
 
-static Preferences s_prefs;
+static SdNvsPrefs s_prefs;
 static bool s_begun = false;
 
 void touchPrefsBegin() {

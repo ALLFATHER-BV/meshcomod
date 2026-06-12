@@ -22,7 +22,13 @@ void SerialBLEInterface::begin(const char* prefix, char* name, uint32_t pin_code
           addr[5], addr[4], addr[3], addr[2], addr[1], addr[0]);
   }
   char dev_name[32+16];
-  sprintf(dev_name, "%s%s", prefix, name);
+  // snprintf, NOT sprintf: under Launcher (no SPIFFS, full NVS) the identity/prefs
+  // can fail to load and `name` (NodePrefs.node_name) is left as non-null-terminated
+  // garbage, so an unbounded "%s%s" walked past the 32-byte source and smashed this
+  // 48-byte stack buffer ("Stack smashing protect failure!" on boot). Bound the
+  // write so a bad name yields a truncated/odd BLE name instead of a crash.
+  snprintf(dev_name, sizeof(dev_name), "%s%s", prefix, name);
+  dev_name[sizeof(dev_name) - 1] = '\0';
 
   // Create the BLE Device (NimBLE host). init()/createServer() are internally
   // idempotent and OTA's NimBLEDevice::deinit(true) resets them, so a plain

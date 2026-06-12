@@ -382,6 +382,12 @@ void setup() {
    * comfortable internal heap left after Wi-Fi — otherwise defer to Wi-Fi-only
    * this boot rather than risk an OOM at NimBLE init (recoverable via the live
    * toggle once memory frees). */
+  // Defensive: force node_name NUL-terminated before it builds the BLE device
+  // name. Under Launcher (degraded storage) it can load non-terminated, which
+  // is what overran the BLE name buffer; the snprintf there now bounds the write,
+  // and this bounds the read so the name is the first <=31 chars, not garbage.
+  { NodePrefs* _np = the_mesh.getNodePrefs();
+    _np->node_name[sizeof(_np->node_name) - 1] = '\0'; }
   serial_interface.prepareBle(BLE_NAME_PREFIX, the_mesh.getNodePrefs()->node_name, the_mesh.getBLEPin());
   if (wifiConfigGetBleEnabled()) {
     const size_t BLE_COEXIST_MIN_FREE  = 50 * 1024;   // free heap after Wi-Fi to also start BLE

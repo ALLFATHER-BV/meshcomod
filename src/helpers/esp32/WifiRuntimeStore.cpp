@@ -2,7 +2,7 @@
 
 #if defined(ESP32)
 
-#include <Preferences.h>
+#include "SdNvsPrefs.h"   // NVS, or SD /meshcomod fallback when NVS is unusable (Launcher)
 #include <WiFi.h>
 #include <cstring>
 
@@ -13,7 +13,7 @@ static const char *WIFI_CONFIG_RADIO_EN_KEY = "wifi_radio_en";
 static const char *WIFI_CONFIG_WIFI_CHOSEN_KEY = "wifi_chosen";
 static const char *WIFI_CONFIG_BLE_EN_KEY = "ble_en";   // BLE radio on/off (default on)
 
-static Preferences s_prefs;
+static SdNvsPrefs s_prefs;
 static bool s_begun = false;
 static volatile bool s_wifi_apply_requested = false;
 

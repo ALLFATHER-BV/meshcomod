@@ -570,6 +570,20 @@ public:
     return true;
   }
 
+  /** Update a contact's stored GPS position (microdegrees, *1e6) — e.g. from a
+   *  telemetry reply that carried a CayenneLPP GPS field. Lets contacts that
+   *  don't flood position adverts (but do answer telemetry) appear on the map
+   *  (issue #27). Returns false if the contact isn't in the table. */
+  bool uiSetContactGps(const uint8_t pub_key[32], int32_t lat_e6, int32_t lon_e6) {
+    ContactInfo* slot = lookupContactByPubKey(pub_key, PUB_KEY_SIZE);
+    if (!slot) return false;
+    slot->gps_lat = lat_e6;
+    slot->gps_lon = lon_e6;
+    slot->lastmod = getRTCClock()->getCurrentTime();
+    saveContacts();
+    return true;
+  }
+
   /** Manually add a chat-type peer to contacts[] from a raw 32-byte pubkey
    *  + display name. Used by the Contacts tab "+" → "Add by pubkey" flow
    *  when we want to talk to someone whose advert we haven't received yet.

@@ -75,6 +75,7 @@
   #include <helpers/TouchDiagTrace.h>
   #if defined(ESP32)
     #include <Preferences.h>
+    #include <helpers/esp32/SdNvsPrefs.h>   // NVS-or-SD prefs backend (Launcher-safe)
     #include <helpers/esp32/TouchPrefsStore.h>
     #if defined(MULTI_TRANSPORT_COMPANION)
       #include <WiFi.h>
@@ -302,7 +303,7 @@ static void initTouchFontFallbacks() {
   const lv_font_t* extras[3] = { &extras_12, &extras_14, &extras_16 };
   lv_font_t*       prim[3]   = { &g_font_12, &g_font_14, &g_font_16 };
   for (int i = 0; i < 3; ++i) {
-    s_emoji_font[i] = lv_imgfont_create(14, emojiImgfontPathCb);   // 14 px baked glyphs (sit on the text baseline)
+    s_emoji_font[i] = lv_imgfont_create(16, emojiImgfontPathCb);   // 16 px baked glyphs (~15% larger; sit on the text baseline)
     if (s_emoji_font[i]) { s_emoji_font[i]->fallback = extras[i]; prim[i]->fallback = s_emoji_font[i]; }
     else                 { prim[i]->fallback = extras[i]; }        // OOM: plain chain
   }
@@ -561,6 +562,7 @@ struct LvChatPanel {
   /** When true, `list_cont` shows channels + DMs with history (Chats tab only). */
   bool inbox_combined;
   bool detail_open;
+  uint32_t list_sig = 0;   // change-signature of the rendered thread list (skip no-op rebuilds)
 };
 
 struct LvContactButtonCtx {
@@ -1780,7 +1782,7 @@ static void kbApplyRotation(uint8_t rot) {
 
 static void kbSaveRotationPref() {
 #if defined(ESP32)
-  Preferences pr;
+  SdNvsPrefs pr;
   if (pr.begin("meshTouch", false)) {
     pr.putUChar("kbrot", s_kb_rotation);
     pr.end();
@@ -11675,8 +11677,13 @@ constexpr int     k_map_tile_size     = 256;
 // covers 768 px and is generous enough for either viewport.
 static int        k_map_canvas_w      = 240;
 static int        k_map_canvas_h      = 226;
-constexpr uint8_t k_map_zoom_min      = 12;
-constexpr uint8_t k_map_zoom_max      = 16;
+// Manual zoom-button range. Wide on purpose: the zoom in/out buttons are gated by
+// mapZoomReachable() (a tile exists in the SD /maps/osm pack or LittleFS cache, OR
+// Wi-Fi can fetch it), so the buttons stop at the edge of the tiles you actually
+// have — these are just the hard floor/ceiling. Previously capped at 12..16, which
+// stranded anyone whose pack went wider. 19 is OSM's max zoom; 3 is continent-scale.
+constexpr uint8_t k_map_zoom_min      = 3;
+constexpr uint8_t k_map_zoom_max      = 19;
 constexpr uint8_t k_map_zoom_default  = 14;
 // 3×3 grid covers a 768×768-px slab — ~130 px of pan buffer on each side
 // of the 240×226 viewport. We tried 5×5 (25 tiles, 3.2 MB PSRAM) for the
@@ -12237,7 +12244,10 @@ static void queueTileForFetch(uint8_t z, int32_t x, int32_t y) {
 static void queueZoomPackForCenter() {
   if (s_map_center_lat == 0.0 && s_map_center_lon == 0.0) return;
   if (!s_tiles_fs_ready) return;
-  const uint8_t levels[2] = { k_map_zoom_min, k_map_zoom_max };
+  // Cache a moderate overview + detail pair for offline use — NOT the wide manual
+  // min/max (we don't want every recenter prefetching a continent z3 + a building
+  // z19 tile). Centred on the default zoom.
+  const uint8_t levels[2] = { (uint8_t)(k_map_zoom_default - 2), (uint8_t)(k_map_zoom_default + 2) };
   for (int i = 0; i < 2; ++i) {
     const uint8_t z = levels[i];
     if (z == s_map_zoom) continue;            // current zoom: renderMapTiles already queues it
@@ -13970,7 +13980,11 @@ static void makeChatDetail(LvChatPanel& p) {
   lv_obj_align(p.composer_ta, LV_ALIGN_BOTTOM_LEFT, 72, 0);
   styleCard(p.composer_ta);
   lv_obj_set_style_radius(p.composer_ta, 15, LV_PART_MAIN);   // pill shape
-  lv_obj_set_style_pad_ver(p.composer_ta, 3, LV_PART_MAIN);   // tighter so the slim row fits the text
+  // Keep a few px of vertical slack in the textarea CONTENT so it never sits at
+  // exactly one line-height (that made the internal scroll oscillate ±1px per
+  // keystroke — the text bobbed up/down). The text is centred via the inner
+  // label's pad_top below instead.
+  lv_obj_set_style_pad_ver(p.composer_ta, 3, LV_PART_MAIN);
   // Multi-line: wrap long text onto extra lines (the row grows to fit, then
   // scrolls down) instead of scrolling a single line sideways. Enter still sends
   // — the physical-keyboard CR and the on-screen OK are handled before any
@@ -13988,6 +14002,10 @@ static void makeChatDetail(LvChatPanel& p) {
     lv_obj_set_style_bg_color(comp_lbl, lv_color_hex(COLOR_TEXT), LV_PART_SELECTED);
     lv_obj_set_style_bg_opa(comp_lbl, LV_OPA_COVER, LV_PART_SELECTED);
     lv_obj_set_style_text_color(comp_lbl, lv_color_hex(COLOR_PANEL), LV_PART_SELECTED);
+    // Push the text down inside the (roomy) content so it sits centred — 3 px
+    // textarea pad + 4 px here = the line at y=7 of the 30 px box. The content keeps
+    // its slack, so no exact-fit scroll jitter, and the auto-grow centres every line count.
+    lv_obj_set_style_pad_top(comp_lbl, 4, LV_PART_MAIN);
   }
   // Tap on composer → show keyboard
   lv_obj_add_event_cb(p.composer_ta, composerFocusCb, LV_EVENT_FOCUSED, &p);
@@ -15108,7 +15126,6 @@ static void refreshChatDetail(LvChatPanel& p) {
 // Rebuild the thread list inside a tab.
 static void refreshChatList(LvChatPanel& p) {
   if (!g_lv.task || !p.list_cont) return;
-  lv_obj_clean(p.list_cont);
 
   int idxs[UITask::MAX_UI_THREADS];
   int count = 0;
@@ -15117,6 +15134,28 @@ static void refreshChatList(LvChatPanel& p) {
   } else {
     count = g_lv.task->getThreadCount(p.channel_mode, idxs, UITask::MAX_UI_THREADS);
   }
+
+  // Change signature over everything the list shows (order, names, unread counts,
+  // last-message time, channel/mention flags). This list is rebuilt from scratch on
+  // every periodic refresh, which resets the scroll to the top — so skip the rebuild
+  // entirely when nothing changed (the common case while you're just scrolling), and
+  // otherwise preserve the scroll position across it.
+  uint32_t sig = 2166136261u;
+  auto mix = [&sig](uint32_t v) { sig = (sig ^ v) * 16777619u; };
+  mix((uint32_t)count);
+  for (int i = 0; i < count; ++i) {
+    bool ch = false; uint16_t unread = 0; uint32_t ts = 0;
+    char nm[UITask::MAX_THREAD_NAME + 1];
+    if (!g_lv.task->getThreadInfo(idxs[i], ch, unread, ts, nm, sizeof(nm))) continue;
+    mix((uint32_t)idxs[i]); mix(unread); mix(ts);
+    mix((ch ? 2u : 0u) | (g_lv.task->threadHasMention(idxs[i]) ? 1u : 0u));
+    for (const char* s = nm; *s; ++s) mix((uint8_t)*s);
+  }
+  if (sig == p.list_sig && lv_obj_get_child_cnt(p.list_cont) > 0) return;   // nothing changed
+  p.list_sig = sig;
+
+  const lv_coord_t saved_scroll = lv_obj_get_scroll_y(p.list_cont);
+  lv_obj_clean(p.list_cont);
 
   if (count <= 0) {
     const char* empty = p.inbox_combined ? "No channels or chats yet" : (p.channel_mode ? "No channels yet" : "No chats yet");
@@ -15195,6 +15234,9 @@ static void refreshChatList(LvChatPanel& p) {
     lv_obj_add_event_cb(btn, threadSelectCb,    LV_EVENT_CLICKED,      &p.ctx_store[i]);
     lv_obj_add_event_cb(btn, threadLongPressCb, LV_EVENT_LONG_PRESSED, &p.ctx_store[i]);
   }
+  // Put the scroll back where it was so a data-driven rebuild doesn't snap to the top.
+  lv_obj_update_layout(p.list_cont);
+  lv_obj_scroll_to_y(p.list_cont, saved_scroll, LV_ANIM_OFF);
 }
 
 // Format a duration in seconds as a short badge like "12s" / "13m" / "2h" /
@@ -19095,7 +19137,7 @@ static void buildUiTree() {
   // Restore saved keyboard rotation preference (portrait by default).
 #if defined(ESP32)
   {
-    Preferences pr;
+    SdNvsPrefs pr;
     if (pr.begin("meshTouch", true)) {
       uint8_t saved = pr.getUChar("kbrot", 0);
       pr.end();
@@ -19364,7 +19406,19 @@ void UITask::onTelemetryReply(const ContactInfo& contact, const uint8_t* data, s
       case LPP_GPS: {
         float lat = 0, lon = 0, alt = 0;
         if (!rd.readGPS(lat, lon, alt)) goto done;
-        if (bodyRoom()) p += snprintf(body + p, bodyRoom(), "%s%.4f,%.4f", sep, (double)lat, (double)lon);
+        // Persist the position to the contact so they show on the map — telemetry
+        // is the only location some nodes share (they don't flood position
+        // adverts). Issue #27. Guard against a no-fix 0,0 and out-of-range junk.
+        bool saved = false;
+        if ((lat != 0.0f || lon != 0.0f) &&
+            lat >= -90.0f && lat <= 90.0f && lon >= -180.0f && lon <= 180.0f) {
+          saved = the_mesh.uiSetContactGps(contact.id.pub_key,
+                                           (int32_t)lroundf(lat * 1e6f),
+                                           (int32_t)lroundf(lon * 1e6f));
+        }
+        if (bodyRoom())
+          p += snprintf(body + p, bodyRoom(), "%s%s%.4f,%.4f",
+                        sep, saved ? LV_SYMBOL_GPS " " : "", (double)lat, (double)lon);
         any = true; break;
       }
       case LPP_ANALOG_INPUT:
@@ -21005,7 +21059,7 @@ void UITask::onLvTabChanged(int tab_index) {
   }
   _touch_screen = static_cast<TouchUiScreen>(static_cast<uint8_t>(tab_index));
 #if defined(ESP32_PLATFORM) && defined(HAS_TOUCH_UI)
-  Preferences prefs;
+  SdNvsPrefs prefs;
   if (prefs.begin("meshTouch", false)) {
     prefs.putUChar("tab", static_cast<uint8_t>(tab_index));
     prefs.end();
