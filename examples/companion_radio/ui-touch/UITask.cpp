@@ -67,6 +67,8 @@
     #include <helpers/input/TDeckKeyboard.h>
   #endif
   #include "KeyboardLayouts.h"
+  #include "i18n.h"
+  #include "emoji_data.h"     // baked Noto colour-emoji glyphs (emojiGlyphLookup)
   #include <helpers/ui/ST7789LCDDisplay.h>
   #include <helpers/AdvertDataHelpers.h>
   #include <helpers/sensors/LPPDataHelpers.h>
@@ -248,6 +250,11 @@ constexpr uint32_t COLOR_STATUS_DANGER= 0xA04040;  // muted red
 #define TOUCH_SYM_STAR_BIG "\xE2\x98\x85"  /* render ONLY with star_font_28    */
 extern "C" const lv_font_t star_font_28;
 extern "C" const lv_font_t star_font_14;
+// FontAwesome "user" glyph (U+F007) for the Contacts tab icon. Spliced into the
+// g_font_14 fallback chain (the tab bar's font) in initTouchFontFallbacks, so the
+// single PUA codepoint renders a person and still follows the tab's active colour.
+extern "C" const lv_font_t person_font;
+#define TOUCH_SYM_PERSON "\xEF\x80\x87"    /* U+F007 */
 
 // Extras fallback fonts — em-dash (U+2014), ellipsis (U+2026), middle dot
 // (U+00B7). LVGL's stock Montserrat subset doesn't include these, so any
@@ -263,13 +270,55 @@ extern "C" const lv_font_t extras_16;
 static lv_font_t g_font_12;
 static lv_font_t g_font_14;
 static lv_font_t g_font_16;
+#if LV_USE_IMGFONT
+// lv_imgfont path callback: hand back the baked colour image for an emoji
+// codepoint (copied into the imgfont's scratch buffer as an lv_img_dsc_t), or
+// false so LVGL keeps walking the fallback chain for everything else.
+static bool emojiImgfontPathCb(const lv_font_t* /*font*/, void* img_src, uint16_t /*len*/,
+                               uint32_t unicode, uint32_t /*unicode_next*/) {
+  const lv_img_dsc_t* d = emojiGlyphLookup(unicode);
+  if (!d) return false;
+  lv_memcpy(img_src, d, sizeof(lv_img_dsc_t));
+  // The imgfont reuses ONE scratch buffer as the image source for every glyph, so
+  // LVGL's image cache (keyed on the src pointer) hands back the first-decoded
+  // emoji for all of them — every emoji renders identical. Drop the stale entry so
+  // the just-copied dsc is decoded fresh. (True-colour "decode" is a no-op copy, so
+  // this is cheap, and other images — map tiles — use distinct src ptrs, untouched.)
+  lv_img_cache_invalidate_src(img_src);
+  return true;
+}
+static lv_font_t* s_emoji_font[3] = { nullptr, nullptr, nullptr };  // one per text size
+#endif
+
 static void initTouchFontFallbacks() {
   g_font_12 = lv_font_montserrat_12;
-  g_font_12.fallback = &extras_12;
   g_font_14 = lv_font_montserrat_14;
-  g_font_14.fallback = &extras_14;
   g_font_16 = lv_font_montserrat_16;
+#if LV_USE_IMGFONT
+  // Insert the colour-emoji image font as the tail of each chain:
+  //   g_font_NN (montserrat, Latin) -> emoji (colour images) -> extras_NN
+  //   (Cyrillic/Greek/Arabic). The emoji font returns false for non-emoji
+  //   codepoints, so they fall straight through to the size-matched extras.
+  const lv_font_t* extras[3] = { &extras_12, &extras_14, &extras_16 };
+  lv_font_t*       prim[3]   = { &g_font_12, &g_font_14, &g_font_16 };
+  for (int i = 0; i < 3; ++i) {
+    s_emoji_font[i] = lv_imgfont_create(14, emojiImgfontPathCb);   // 14 px baked glyphs (sit on the text baseline)
+    if (s_emoji_font[i]) { s_emoji_font[i]->fallback = extras[i]; prim[i]->fallback = s_emoji_font[i]; }
+    else                 { prim[i]->fallback = extras[i]; }        // OOM: plain chain
+  }
+#else
+  g_font_12.fallback = &extras_12;
+  g_font_14.fallback = &extras_14;
   g_font_16.fallback = &extras_16;
+#endif
+  // Contacts-tab person glyph: splice onto the HEAD of g_font_16's chain — the
+  // tab bar's btnmatrix renders its icons in g_font_16 (g_font_16 -> person ->
+  // [emoji ->] extras). One PUA codepoint (U+F007); it follows the tab's
+  // active/inactive text colour like the other monochrome tab symbols.
+  static lv_font_t s_person_font;
+  s_person_font = person_font;
+  s_person_font.fallback = g_font_16.fallback;
+  g_font_16.fallback = &s_person_font;
 }
 
 // ---- T-Deck notification tones (I2S → MAX98357A speaker amp) ----
@@ -661,6 +710,10 @@ static lv_obj_t* s_kb_rot_right_btn  = nullptr;
 static lv_obj_t* s_kb_lang_btn       = nullptr;   // on-screen language-cycle key (boards w/o a physical keyboard)
 static lv_obj_t* s_kb_lang_lbl       = nullptr;   // its label — the active layout's 2-letter code
 static lv_obj_t* s_kb_alt_btn        = nullptr;   // on-screen "Alt" key: cycles the last letter's accent (issue #22)
+// Accent-popup picker on/off (default on). Loaded from NVS at boot; gates
+// accentBoxMaybeShow() so the tap-to-pick accent box can be turned off in
+// the keyboard settings (applies to the on-screen + physical keyboards).
+static bool      s_accent_popups     = true;
 
 // ---- Global UI orientation (persistent) ----
 // The base orientation of the whole UI, loaded from NVS ("uirot") and applied
@@ -996,16 +1049,16 @@ static constexpr lv_coord_t k_settings_row_gap = 6;
 static bool settingsModalIsOpen() { return g_set_modal.root != nullptr; }
 
 // Compact one-line GPS status for the Device settings panel + control center.
-// "GPS: off" / "GPS: searching · N sats" / "GPS: fix · N sats  <lat>, <lon>".
+// TR("GPS: off") / "GPS: searching · N sats" / "GPS: fix · N sats  <lat>, <lon>".
 static const char* gpsStatusStr() {
   static char s[72];
-  if (!g_lv.task || !g_lv.task->getGPSState()) { snprintf(s, sizeof s, "GPS: off"); return s; }
+  if (!g_lv.task || !g_lv.task->getGPSState()) { snprintf(s, sizeof s, TR("GPS: off")); return s; }
   // satellitesCount() is satellites USED IN THE FIX (0 until a lock), so during
   // cold acquisition it stays 0 — show "acquiring…" rather than a misleading
   // "0 sats". On lock, show the sat count + the (auto-populated) coordinates.
-  if (!g_lv.task->getGpsFix()) { snprintf(s, sizeof s, "GPS: acquiring..."); return s; }
+  if (!g_lv.task->getGpsFix()) { snprintf(s, sizeof s, TR("GPS: acquiring...")); return s; }
   const int sats = g_lv.task->getGpsSats();
-  int n = snprintf(s, sizeof s, "GPS: fix");
+  int n = snprintf(s, sizeof s, TR("GPS: fix"));
   if (sats >= 0 && n < (int)sizeof s) n += snprintf(s + n, sizeof s - n, " · %d sats", sats);
   if (n < (int)sizeof s)
     snprintf(s + n, sizeof s - n, "  %.5f, %.5f",
@@ -1299,6 +1352,7 @@ static bool hasChatDetailOpen() {
   return (g_lv.dm.detail_open && g_lv.dm.overlay) ||
          (g_lv.ch.detail_open && g_lv.ch.overlay);
 }
+static void closeChatPanel(LvChatPanel* p);   // fwd: HOME button + swipe-back both close an open chat
 
 static void resetSettingsModalState() {
   g_set_modal = {};
@@ -1351,14 +1405,51 @@ static lv_obj_t* getActiveTabPage() {
   return lv_obj_get_child(content, getActiveTab());
 }
 
-// The settings sub-tabview (assigned in makeSettings). Horizontal swipes on the
-// Settings tab move between its sub-tabs instead of switching the main tab.
-static lv_obj_t* s_settings_subtab = nullptr;
-static constexpr int kSettingsSubtabCount = 5;   // Profile / Radio / Network / Device / About
-static lv_obj_t* s_settings_pages[kSettingsSubtabCount] = { nullptr };  // sub-tab page containers
-static void settingsBuildPage(int idx);          // fwd: lazy page builder (swipe handler calls it)
-static int       s_settings_built_page = -1;     // which sub-tab currently has its controls built
-                                                 // (only one is built at a time to keep DRAM low)
+// Settings is a category landing (a scrollable list in portrait, a 2-column grid
+// in landscape) that opens a focused detail "sheet" per category — replacing the
+// old nested sub-tabview. Stage 1 maps the categories onto the existing inline
+// builders; Stage 2 will split the "Device" catch-all further.
+enum {
+  CAT_PROFILE = 0,   // identity / name / advert location / QR / export-import
+  CAT_RADIO,         // radio params + auto-add + experimental
+  CAT_WIFI,          // Wi-Fi config + saved slots
+  CAT_BLUETOOTH,     // BLE enable + pairing code
+  CAT_DISPLAY,       // screen timeout, units, bubbles, theme, orientation
+  CAT_KEYBOARD,      // secondary layouts + accent popups
+  CAT_QUICKREPLIES,  // quick-reply macros
+  CAT_SOUND,         // notification sound
+  CAT_LOCK,          // lock-screen wallpaper + text colour (T-Deck only)
+  CAT_SYSTEM,        // GPS, clock, advert, storage, time offset, battery, reboot, setup, live info
+  CAT_BACKUPS,       // list/delete .json backups + factory reset
+  CAT_LANGUAGE,      // UI language picker
+  CAT_ABOUT,         // firmware / update / system info / diagnostics
+  CAT_COUNT
+};
+struct SettingsCatDef { const char* label; const char* icon; };
+static const SettingsCatDef kSettingsCats[CAT_COUNT] = {
+  { "Profile",       LV_SYMBOL_EDIT },
+  { "Radio & Mesh",  LV_SYMBOL_GPS },
+  { "Wi-Fi",         LV_SYMBOL_WIFI },
+  { "Bluetooth",     LV_SYMBOL_BLUETOOTH },
+  { "Display",       LV_SYMBOL_IMAGE },
+  { "Keyboard",      LV_SYMBOL_KEYBOARD },
+  { "Quick replies", LV_SYMBOL_ENVELOPE },
+  { "Sound",         LV_SYMBOL_AUDIO },
+  { "Lock screen",   LV_SYMBOL_EYE_CLOSE },
+  { "System",        LV_SYMBOL_SETTINGS },
+  { "Backups",       LV_SYMBOL_SAVE },
+  { "Language",      LV_SYMBOL_BARS },
+  { "About",         LV_SYMBOL_LIST },
+};
+// Which slice of the (formerly monolithic) Device settings a builder emits. One
+// detail page per section; buildDeviceSettings(sec) emits only that section's
+// blocks (the skipped blocks don't advance the y-cursor, so each page lays out
+// from the top).
+enum { DSEC_DISPLAY = 0, DSEC_KEYBOARD, DSEC_SOUND, DSEC_LOCK, DSEC_SYSTEM };
+static lv_obj_t* s_settings_landing  = nullptr;  // the category landing container
+static lv_obj_t* s_settings_sheet    = nullptr;  // open detail sheet (layer_top); null = on landing
+static int       s_settings_open_cat = -1;       // which category is open (for About-label teardown)
+static void      closeSettingsCategory();        // fwd: tab-change + key-dismiss close the sheet
 
 // ---- Firmware update check (red badge on the Settings gear + About-tab line) ----
 // Compares our embedded release tag against the latest pre-alpha_N published to
@@ -1441,7 +1532,7 @@ static void versionCheckUpdateUi() {
     snprintf(b, sizeof b, LV_SYMBOL_OK "  Up to date (beta_%d)", my_n);
     lv_obj_set_style_text_color(s_update_about_lbl, lv_color_hex(0x6FCF6F), LV_PART_MAIN);
   } else if (s_verchk_ran) {
-    snprintf(b, sizeof b, "Firmware beta_%d\nCouldn't reach the update server", my_n);
+    snprintf(b, sizeof b, TR("Firmware beta_%d\nCouldn't reach the update server"), my_n);
     lv_obj_set_style_text_color(s_update_about_lbl, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
   } else {
     snprintf(b, sizeof b, "Firmware beta_%d\nChecking for updates over Wi-Fi…", my_n);
@@ -1501,7 +1592,7 @@ static void otaInstallLatestCb(lv_event_t* e) {
     lv_obj_set_style_text_color(s_ota_status_lbl, lv_color_hex(0xE2A23A), LV_PART_MAIN);
   }
   if (g_lv.task)
-    g_lv.task->showAlert("Update manually at flasher.meshcomod.com\n(Wi-Fi update is paused for now)", 3500);
+    g_lv.task->showAlert(TR("Update manually at flasher.meshcomod.com\n(Wi-Fi update is paused for now)"), 3500);
 }
 
 // Trigger a check once Wi-Fi is up (then every 6 h); apply the result when ready.
@@ -1528,8 +1619,15 @@ static void versionCheckService(unsigned long now) {
 #endif
 }
 static void applySwipeGesture(int8_t swipe_x, int8_t swipe_y) {
-  // Block tab swipes while a chat detail is open; back button is the exit.
-  if (hasChatDetailOpen()) return;
+  // An open chat/channel: a left→right (rightward) swipe closes it (iOS-style
+  // back). Any other swipe is swallowed so the conversation keeps the screen.
+  if (hasChatDetailOpen()) {
+    if (swipe_x > 0) {
+      if (g_lv.dm.detail_open)      closeChatPanel(&g_lv.dm);
+      else if (g_lv.ch.detail_open) closeChatPanel(&g_lv.ch);
+    }
+    return;
+  }
   if (s_wifi_scan_popup) return;   // scan popup is modal; don't switch tabs underneath
   if (overlayBlocksTabSwipe()) return;   // theme / channel-scope pickers: don't swipe the menu beneath
   // The control center drops down from the top bar, so an up-swipe dismisses
@@ -1542,29 +1640,19 @@ static void applySwipeGesture(int8_t swipe_x, int8_t swipe_y) {
   }
   if (!g_lv.tabview) return;
   if (swipe_x != 0) {
+    // An open settings detail sheet: a left→right (rightward) swipe goes Back,
+    // like iOS edge-back. Any other swipe is swallowed so the tab underneath the
+    // sheet never switches.
+    if (s_settings_sheet) {
+      if (swipe_x > 0) closeSettingsCategory();
+      return;
+    }
+    // A settings modal overlays the tab — never switch under it.
     if (settingsModalIsOpen()) return;
     // Block horizontal tab-swipes on the Map tab — that gesture is "pan"
     // there, not "switch tab". The +/− and recenter buttons + the tabbar
     // icons remain the only way off the tab.
     if (getActiveTab() == MAP_TAB_INDEX) return;
-    // On the Settings tab, swipe moves between the settings sub-tabs (clamped at
-    // the ends — use the bottom bar to change the main tab).
-    if (getActiveTab() == SETTINGS_TAB_INDEX && s_settings_subtab) {
-      const int n   = kSettingsSubtabCount;
-      const int cur = (int)lv_tabview_get_tab_act(s_settings_subtab);
-      int nx = cur + (swipe_x < 0 ? 1 : -1);
-      if (nx < 0) nx = 0;
-      if (nx > n - 1) nx = n - 1;
-      if (nx != cur) {
-        lv_tabview_set_act(s_settings_subtab, (uint16_t)nx, LV_ANIM_ON);
-        // set_act() only scrolls + re-checks the button; it does NOT emit
-        // LV_EVENT_VALUE_CHANGED, so the lazy builder that runs on a tab *click*
-        // never fires for a swipe. Build the target page explicitly (it no-ops
-        // if already built, so a later stray VALUE_CHANGED can't duplicate it).
-        settingsBuildPage(nx);
-      }
-      return;
-    }
     int idx = getActiveTab();
     int next = idx + (swipe_x < 0 ? 1 : -1);
     if (next < 0) next = 0;
@@ -1783,7 +1871,7 @@ static void kbMirrorEnsureCreated() {
   lv_obj_add_flag(s_kb_mirror_root, LV_OBJ_FLAG_HIDDEN);
 
   lv_obj_t* hint = lv_label_create(s_kb_mirror_root);
-  lv_label_set_text(hint, "Editing");
+  lv_label_set_text(hint, TR("Editing"));
   lv_obj_set_style_text_font(hint, &g_font_12, LV_PART_MAIN);
   lv_obj_set_style_text_color(hint, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
   lv_obj_align(hint, LV_ALIGN_TOP_LEFT, 0, 0);
@@ -2208,6 +2296,7 @@ static void accentBoxCellCb(lv_event_t* e) {
 }
 static void accentBoxMaybeShow() {
   accentBoxHide();                          // each new keystroke clears the last box
+  if (!s_accent_popups) return;             // user turned accent popups off in settings
   if (!g_lv.keyboard) return;
   lv_obj_t* ta = lv_keyboard_get_textarea(g_lv.keyboard);
   if (!ta) return;
@@ -2290,6 +2379,19 @@ static void composerFocusCb(lv_event_t* e) {
 static uint16_t s_unread_at_open   = 0;
 static bool     s_chat_just_opened = false;
 
+// Close an open chat/channel detail panel → back to the thread list. Shared by
+// the floating HOME button (backBtnCb) and the left→right swipe-back gesture.
+static void closeChatPanel(LvChatPanel* p) {
+  if (!p || !p->detail_open) return;  // already closed (e.g. a repeat fire)
+  hideKb();
+  if (p->overlay) lv_obj_add_flag(p->overlay, LV_OBJ_FLAG_HIDDEN);
+  p->detail_open = false;
+  s_unread_at_open = 0;          // clear the unread divider when leaving the chat
+  s_chat_just_opened = false;
+  if (p->jump_btn) lv_obj_add_flag(p->jump_btn, LV_OBJ_FLAG_HIDDEN);
+  setChatStatusTitle(nullptr);   // drop the thread name from the status bar
+}
+
 static void backBtnCb(lv_event_t* e) {
   // Fire on PRESSED rather than CLICKED so the back action triggers on
   // touch-down instead of touch-up. CLICKED was sometimes dropped because
@@ -2298,15 +2400,7 @@ static void backBtnCb(lv_event_t* e) {
   // freshly-pressed button. Triggering on PRESSED side-steps that race.
   const lv_event_code_t code = lv_event_get_code(e);
   if (code != LV_EVENT_PRESSED && code != LV_EVENT_CLICKED) return;
-  auto* p = static_cast<LvChatPanel*>(lv_event_get_user_data(e));
-  if (!p || !p->detail_open) return;  // ignore repeat fires from CLICKED after PRESSED already closed it
-  hideKb();
-  if (p->overlay) lv_obj_add_flag(p->overlay, LV_OBJ_FLAG_HIDDEN);
-  p->detail_open = false;
-  s_unread_at_open = 0;          // clear the unread divider when leaving the chat
-  s_chat_just_opened = false;
-  if (p->jump_btn) lv_obj_add_flag(p->jump_btn, LV_OBJ_FLAG_HIDDEN);
-  setChatStatusTitle(nullptr);   // drop the thread name from the status bar
+  closeChatPanel(static_cast<LvChatPanel*>(lv_event_get_user_data(e)));
 }
 
 // Long-press → delete-this-chat confirmation popup. The popup uses the
@@ -2348,7 +2442,7 @@ static void openChannelShareModal(const char* channel_name, const uint8_t secret
   lv_obj_set_width(hint, lv_pct(100));
   lv_obj_set_style_text_color(hint, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
   lv_obj_set_style_text_font(hint, &g_font_12, LV_PART_MAIN);
-  lv_label_set_text(hint, "32-hex secret. Anyone with this can read the channel.");
+  lv_label_set_text(hint, TR("32-hex secret. Anyone with this can read the channel."));
   lv_obj_set_pos(hint, 2, y);
   y += 32;
 
@@ -2377,7 +2471,7 @@ static void openChannelShareModal(const char* channel_name, const uint8_t secret
   lv_obj_set_style_bg_color(b, lv_color_hex(0x3B7039), LV_PART_MAIN | LV_STATE_PRESSED);
   lv_obj_add_event_cb(b, channelShareCopyCb, LV_EVENT_CLICKED, nullptr);
   lv_obj_t* bl = lv_label_create(b);
-  lv_label_set_text(bl, "Copy secret");
+  lv_label_set_text(bl, TR("Copy secret"));
   lv_obj_center(bl);
 }
 
@@ -2415,7 +2509,7 @@ static void channelLongSheetShareCb(lv_event_t* e) {
     }
   }
 #endif
-  if (g_lv.task) g_lv.task->showAlert("Channel not found", 1200);
+  if (g_lv.task) g_lv.task->showAlert(TR("Channel not found"), 1200);
 }
 
 static void channelLongSheetDeleteCb(lv_event_t* e) {
@@ -2426,7 +2520,7 @@ static void channelLongSheetDeleteCb(lv_event_t* e) {
   if (!g_lv.task->getThreadInfo(s_chat_del_thread_idx, ch, unread, ts, tname, sizeof(tname))) return;
   char msg[80];
   snprintf(msg, sizeof(msg),
-           "Remove channel \"%s\"?\nLeaves it on this device only.", tname);
+           TR("Remove channel \"%s\"?\nLeaves it on this device only."), tname);
   showConfirm(msg, "Remove", chatDeleteApply);
 }
 
@@ -2437,7 +2531,7 @@ static void threadSheetMarkReadCb(lv_event_t* e) {
   if (t < 0 || !g_lv.task) return;
   g_lv.task->markThreadRead(t);
   g_lv.dirty_threads = true;
-  g_lv.task->showAlert("Marked read", 900);
+  g_lv.task->showAlert(TR("Marked read"), 900);
 }
 static void threadSheetDeleteDmCb(lv_event_t* e) {
   if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
@@ -2449,7 +2543,7 @@ static void threadSheetDeleteDmCb(lv_event_t* e) {
   s_chat_del_thread_idx = t;
   s_chat_del_is_channel = false;
   char msg[96];
-  snprintf(msg, sizeof(msg), "Delete chat with \"%s\"?\nMessage history will be cleared.", name);
+  snprintf(msg, sizeof(msg), TR("Delete chat with \"%s\"?\nMessage history will be cleared."), name);
   showConfirm(msg, "Delete", chatDeleteApply);
 }
 
@@ -2494,7 +2588,7 @@ static void openThreadActionSheet(int thread_idx, const char* name, bool is_chan
   lv_obj_t* title = lv_label_create(card);
   char nm[40];
   copyUtf8ReplacingMissingGlyphs(&g_font_14, nm, sizeof(nm), name ? name : "");
-  lv_label_set_text_fmt(title, "%s  %s", is_channel ? LV_SYMBOL_LOOP : LV_SYMBOL_ENVELOPE,
+  lv_label_set_text_fmt(title, TR("%s  %s"), is_channel ? LV_SYMBOL_LOOP : LV_SYMBOL_ENVELOPE,
                         nm[0] ? nm : (is_channel ? "(channel)" : "(chat)"));
   lv_obj_set_style_text_color(title, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
   lv_obj_set_style_text_font(title, &g_font_14, LV_PART_MAIN);
@@ -2554,14 +2648,14 @@ static void chatDeleteApply() {
   }
 
   if (!g_lv.task->removeThread(idx)) {
-    g_lv.task->showAlert("Couldn't delete", 1200);
+    g_lv.task->showAlert(TR("Couldn't delete"), 1200);
     return;
   }
   if (is_channel && channel_slot >= 0) {
     the_mesh.uiDeleteChannel(channel_slot);
   }
   g_lv.dirty_threads = true;
-  g_lv.task->showAlert(is_channel ? "Channel removed" : "Chat removed", 1000);
+  g_lv.task->showAlert(is_channel ? TR("Channel removed") : TR("Chat removed"), 1000);
 }
 
 static void threadLongPressCb(lv_event_t* e) {
@@ -2814,7 +2908,7 @@ static void openEmojiPicker(lv_obj_t* ta) {
   lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
 
   lv_obj_t* title = lv_label_create(card);
-  lv_label_set_text(title, "Insert emoji / symbol");
+  lv_label_set_text(title, TR("Insert emoji / symbol"));
   lv_obj_set_style_text_color(title, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
   lv_obj_set_style_text_font(title, &g_font_14, LV_PART_MAIN);
   lv_obj_set_pos(title, 2, 0);
@@ -2822,7 +2916,7 @@ static void openEmojiPicker(lv_obj_t* ta) {
 
   // Hint line: how to use the trackball (T-Deck) — finger tap also works.
   lv_obj_t* hint = lv_label_create(card);
-  lv_label_set_text(hint, "Roll to highlight \xE2\x80\xA2 click to insert");
+  lv_label_set_text(hint, TR("Roll to highlight \xE2\x80\xA2 click to insert"));
   lv_obj_set_style_text_color(hint, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
   lv_obj_set_style_text_font(hint, &g_font_12, LV_PART_MAIN);
   lv_obj_align(hint, LV_ALIGN_TOP_RIGHT, -24, 4);
@@ -2943,7 +3037,7 @@ static void openQuickReplyPickerCb(lv_event_t* e) {
   addCloseXBadge(card, qrSheetCloseCb);
 
   lv_obj_t* title = lv_label_create(card);
-  lv_label_set_text(title, "Quick reply");
+  lv_label_set_text(title, TR("Quick reply"));
   lv_obj_set_style_text_color(title, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
   lv_obj_set_style_text_font(title, &g_font_14, LV_PART_MAIN);
   lv_obj_set_pos(title, 0, 0);
@@ -2971,7 +3065,7 @@ static void openQuickReplyPickerCb(lv_event_t* e) {
   }
 #endif
   lv_obj_t* hint = lv_label_create(card);
-  lv_label_set_text(hint, "Edit in Settings \xe2\x86\x92 Quick replies");
+  lv_label_set_text(hint, TR("Edit in Settings \xe2\x86\x92 Quick replies"));
   lv_obj_set_style_text_color(hint, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
   lv_obj_set_style_text_font(hint, &g_font_12, LV_PART_MAIN);
   lv_obj_set_pos(hint, 0, y + 2);
@@ -2981,6 +3075,7 @@ static void tabChangedCb(lv_event_t* e) {
   if (lv_event_get_code(e) != LV_EVENT_VALUE_CHANGED) return;
   scheduleHeavyRefresh(170);
   closeSettingsModal();
+  closeSettingsCategory();   // a category detail sheet floats on layer_top — drop it on tab change
 
   const int new_t         = getActiveTab();
   const bool leaving_inbox =
@@ -3019,22 +3114,17 @@ static void tabChangedCb(lv_event_t* e) {
     freeMapTiles();
   }
 
-  // Settings tab: reclaim the top status-bar strip — the dense settings UI is
-  // cramped otherwise. Hide the global bar and raise/grow the tabview to the full
-  // height; restore on every other tab. Runs after the map-chrome block so a
-  // map → settings switch still ends up with the bar hidden.
+  // The status bar is shown on every tab now: the Settings page is a clean
+  // category landing (not the cramped sub-tab UI that needed the extra strip),
+  // so the clock/battery/signal row stays put. Keep the tabview docked below it.
   {
-    const bool on_settings = (new_t == SETTINGS_TAB_INDEX);
     const lv_coord_t hor = lv_disp_get_hor_res(nullptr);
     const lv_coord_t ver = lv_disp_get_ver_res(nullptr);
     if (g_lv.tabview) {
-      lv_obj_set_pos(g_lv.tabview, 0, on_settings ? 0 : STATUSBAR_H);
-      lv_obj_set_size(g_lv.tabview, hor, on_settings ? ver : (lv_coord_t)(ver - STATUSBAR_H));
+      lv_obj_set_pos(g_lv.tabview, 0, STATUSBAR_H);
+      lv_obj_set_size(g_lv.tabview, hor, (lv_coord_t)(ver - STATUSBAR_H));
     }
-    if (g_statusbar.root) {
-      if (on_settings) lv_obj_add_flag(g_statusbar.root, LV_OBJ_FLAG_HIDDEN);
-      else              lv_obj_clear_flag(g_statusbar.root, LV_OBJ_FLAG_HIDDEN);
-    }
+    if (g_statusbar.root) lv_obj_clear_flag(g_statusbar.root, LV_OBJ_FLAG_HIDDEN);
   }
   if (g_lv.task) g_lv.task->onLvTabChanged(new_t);
 }
@@ -3058,21 +3148,21 @@ static void resetPathCb(lv_event_t* e) {
 static void toggleTcpCb(lv_event_t* e) {
   if (lv_event_get_code(e) != LV_EVENT_CLICKED || !g_lv.task) return;
   g_lv.task->isTcpEnabled() ? g_lv.task->disableTcp() : g_lv.task->enableTcp();
-  g_lv.task->showAlert(g_lv.task->isTcpEnabled() ? "TCP on" : "TCP off", 900);
+  g_lv.task->showAlert(g_lv.task->isTcpEnabled() ? TR("TCP on") : TR("TCP off"), 900);
   refreshStatusLabels();
 }
 
 static void toggleBleCb(lv_event_t* e) {
   if (lv_event_get_code(e) != LV_EVENT_CLICKED || !g_lv.task || !g_lv.task->hasBleCapability()) return;
   g_lv.task->isBleEnabled() ? g_lv.task->disableBle() : g_lv.task->enableBle();
-  g_lv.task->showAlert(g_lv.task->isBleEnabled() ? "BLE on" : "BLE off", 900);
+  g_lv.task->showAlert(g_lv.task->isBleEnabled() ? TR("BLE on") : TR("BLE off"), 900);
   refreshStatusLabels();
 }
 
 static void toggleGpsCb(lv_event_t* e) {
   if (lv_event_get_code(e) != LV_EVENT_CLICKED || !g_lv.task) return;
   g_lv.task->toggleGPS();
-  g_lv.task->showAlert(g_lv.task->getGPSState() ? "GPS on" : "GPS off", 900);
+  g_lv.task->showAlert(g_lv.task->getGPSState() ? TR("GPS on") : TR("GPS off"), 900);
   refreshStatusLabels();
 }
 
@@ -3085,9 +3175,9 @@ static void toggleBuzzerCb(lv_event_t* e) {
   lv_obj_t* btn = lv_event_get_target(e);
   if (btn) {
     lv_obj_t* lbl = lv_obj_get_child(btn, 0);
-    if (lbl) lv_label_set_text_fmt(lbl, "Sound: %s", quiet ? "off" : "on");
+    if (lbl) lv_label_set_text_fmt(lbl, TR("Sound: %s"), quiet ? "off" : "on");
   }
-  g_lv.task->showAlert(quiet ? "Sound off" : "Sound on", 900);
+  g_lv.task->showAlert(quiet ? TR("Sound off") : TR("Sound on"), 900);
 #if defined(HAS_UI_SOUND)
   if (!quiet) uiPlayNotify();   // confirmation chime when enabling
 #endif
@@ -3164,7 +3254,7 @@ static void clipboardSet(const char* text, const char* tag) {
   s_clipboard[n] = '\0';
   if (g_lv.task) {
     char toast[60];
-    snprintf(toast, sizeof(toast), "Copied %s",
+    snprintf(toast, sizeof(toast), TR("Copied %s"),
              tag && tag[0] ? tag : "");
     g_lv.task->showAlert(toast, 900);
   }
@@ -3520,7 +3610,7 @@ static lv_obj_t* createSettingsModal(const char* title, SettingsModalKind kind) 
     lv_obj_clear_flag(wrap, LV_OBJ_FLAG_SCROLLABLE);
     if (title && title[0]) {
       lv_obj_t* h = lv_label_create(wrap);
-      lv_label_set_text(h, title);
+      lv_label_set_text(h, TR(title));
       lv_obj_set_style_text_font(h, &g_font_12, LV_PART_MAIN);
       lv_obj_set_style_text_color(h, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
       lv_obj_set_style_pad_left(h, 4, LV_PART_MAIN);
@@ -3578,7 +3668,7 @@ static lv_obj_t* createSettingsModal(const char* title, SettingsModalKind kind) 
   lv_obj_set_style_border_color(header, lv_color_hex(0x18191A), LV_PART_MAIN);
 
   lv_obj_t* lbl = lv_label_create(header);
-  lv_label_set_text(lbl, title);
+  lv_label_set_text(lbl, TR(title));
   lv_obj_set_style_text_color(lbl, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
   lv_obj_set_style_text_font(lbl, &g_font_14, LV_PART_MAIN);
   lv_obj_align(lbl, LV_ALIGN_LEFT_MID, 8, 0);
@@ -3589,7 +3679,7 @@ static lv_obj_t* createSettingsModal(const char* title, SettingsModalKind kind) 
   styleButton(close_btn);
   lv_obj_add_event_cb(close_btn, settingsCloseCb, LV_EVENT_CLICKED, nullptr);
   lv_obj_t* close_lbl = lv_label_create(close_btn);
-  lv_label_set_text(close_lbl, "Close");
+  lv_label_set_text(close_lbl, TR("Close"));
   lv_obj_center(close_lbl);
 
   lv_obj_t* body = lv_obj_create(root);
@@ -3636,7 +3726,7 @@ static void saveProfileNameCb(lv_event_t* e) {
   kbMirrorSyncToReal();
   const char* name = lv_textarea_get_text(g_set_modal.name_ta);
   if (g_lv.task->setNodeName(name)) {
-    g_lv.task->showAlert("Name saved", 1000);
+    g_lv.task->showAlert(TR("Name saved"), 1000);
     refreshStatusLabels();
   }
 }
@@ -3646,11 +3736,11 @@ static void saveProfilePosCb(lv_event_t* e) {
   kbMirrorSyncToReal();
   float lat = 0.0f, lon = 0.0f;
   if (!parseFloatField(g_set_modal.lat_ta, lat) || !parseFloatField(g_set_modal.lon_ta, lon)) {
-    g_lv.task->showAlert("Invalid lat/lon", 1200);
+    g_lv.task->showAlert(TR("Invalid lat/lon"), 1200);
     return;
   }
   if (g_lv.task->setPosition(static_cast<double>(lat), static_cast<double>(lon))) {
-    g_lv.task->showAlert("Position saved", 1000);
+    g_lv.task->showAlert(TR("Position saved"), 1000);
     refreshStatusLabels();
   }
 }
@@ -3663,7 +3753,7 @@ static void saveRadioParamsCb(lv_event_t* e) {
   if (!parseFloatField(g_set_modal.freq_ta, freq) || !parseFloatField(g_set_modal.bw_ta, bw) ||
       !parseIntField(g_set_modal.sf_ta, sf) || !parseIntField(g_set_modal.cr_ta, cr) ||
       !parseIntField(g_set_modal.tx_ta, tx) || !parseFloatField(g_set_modal.airtime_ta, af)) {
-    g_lv.task->showAlert("Invalid radio values", 1200);
+    g_lv.task->showAlert(TR("Invalid radio values"), 1200);
     return;
   }
   bool ok = g_lv.task->setRadioParams(freq, bw, static_cast<uint8_t>(sf), static_cast<uint8_t>(cr),
@@ -3684,7 +3774,7 @@ static void saveRadioParamsCb(lv_event_t* e) {
     has_region = (r[0] != '\0');
   }
   if (ok) {
-    g_lv.task->showAlert(has_region ? "Radio + region set" : "Radio applied", 1000);
+    g_lv.task->showAlert(has_region ? TR("Radio + region set") : TR("Radio applied"), 1000);
     refreshStatusLabels();
   }
 }
@@ -3694,7 +3784,7 @@ static void saveAutoAddCb(lv_event_t* e) {
   kbMirrorSyncToReal();
   int max_hops = 0;
   if (!parseIntField(g_set_modal.max_hops_ta, max_hops)) {
-    g_lv.task->showAlert("Invalid max hops", 1200);
+    g_lv.task->showAlert(TR("Invalid max hops"), 1200);
     return;
   }
   if (max_hops < 0) max_hops = 0;
@@ -3709,7 +3799,7 @@ static void saveAutoAddCb(lv_event_t* e) {
   uint8_t manual = 1u;   // touch UI is always selective: the per-type Auto switches are authoritative (off = really off)
 
   g_lv.task->setAutoAddConfig(mask, static_cast<uint8_t>(max_hops), manual);
-  g_lv.task->showAlert("Auto-add saved", 1000);
+  g_lv.task->showAlert(TR("Auto-add saved"), 1000);
   refreshStatusLabels();
 }
 
@@ -3737,7 +3827,7 @@ static void savePolicyCb(lv_event_t* e) {
   if (lv_event_get_code(e) != LV_EVENT_CLICKED || !g_lv.task) return;
   uint8_t share = (g_set_modal.share_loc_sw && lv_obj_has_state(g_set_modal.share_loc_sw, LV_STATE_CHECKED)) ? 1u : 0u;
   g_lv.task->setAdvertLocationPolicy(share);   // path-hash size lives in Radio settings now
-  g_lv.task->showAlert("Advert policy saved", 1000);
+  g_lv.task->showAlert(TR("Advert policy saved"), 1000);
   refreshStatusLabels();
 }
 
@@ -3751,24 +3841,24 @@ static void saveExperimentalCb(lv_event_t* e) {
   bool dc_show = (g_set_modal.exp_dc_sw && lv_obj_has_state(g_set_modal.exp_dc_sw, LV_STATE_CHECKED));
   touchPrefsSetDutyMeterShown(dc_show);
 #endif
-  g_lv.task->showAlert("Experimental saved", 1000);
+  g_lv.task->showAlert(TR("Experimental saved"), 1000);
   refreshStatusLabels();
 }
 
 static void syncClockCb(lv_event_t* e) {
   if (lv_event_get_code(e) != LV_EVENT_CLICKED || !g_lv.task) return;
   g_lv.task->setDeviceTimeFromSystemClock();
-  g_lv.task->showAlert("Clock synced", 900);
+  g_lv.task->showAlert(TR("Clock synced"), 900);
 }
 
 static void advertNowCb(lv_event_t* e) {
   if (lv_event_get_code(e) != LV_EVENT_CLICKED || !g_lv.task) return;
-  g_lv.task->showAlert(g_lv.task->sendAdvertNow() ? "Advert sent" : "Advert failed", 900);
+  g_lv.task->showAlert(g_lv.task->sendAdvertNow() ? TR("Advert sent") : TR("Advert failed"), 900);
 }
 
 static void rebootCb(lv_event_t* e) {
   if (lv_event_get_code(e) != LV_EVENT_CLICKED || !g_lv.task) return;
-  g_lv.task->showAlert("Rebooting...", 600);
+  g_lv.task->showAlert(TR("Rebooting..."), 600);
   g_lv.task->rebootDevice();
 }
 
@@ -3788,14 +3878,14 @@ static bool touchHasOtaUpdateSlot() {
 static void advertFloodCb(lv_event_t* e) {
   if (lv_event_get_code(e) != LV_EVENT_CLICKED || !g_lv.task) return;
   bool ok = g_lv.task->sendAdvertFlood();
-  g_lv.task->showAlert(ok ? "Flood advert sent" : "Advert failed", 1000);
+  g_lv.task->showAlert(ok ? TR("Flood advert sent") : TR("Advert failed"), 1000);
   closeSettingsModal();
 }
 
 static void advertZeroHopCb(lv_event_t* e) {
   if (lv_event_get_code(e) != LV_EVENT_CLICKED || !g_lv.task) return;
   bool ok = g_lv.task->sendAdvertZeroHop();
-  g_lv.task->showAlert(ok ? "Zero-hop advert sent" : "Advert failed", 1000);
+  g_lv.task->showAlert(ok ? TR("Zero-hop advert sent") : TR("Advert failed"), 1000);
   closeSettingsModal();
 }
 
@@ -3855,14 +3945,14 @@ static void discoveredAddCb(lv_event_t* e) {
   if (the_mesh.addContact(e_disc.ci)) {
     the_mesh.uiPersistContacts();   // write /contacts3 so the add survives reboot
     e_disc.in_contacts = true;
-    g_lv.task->showAlert("Added to contacts", 1000);
+    g_lv.task->showAlert(TR("Added to contacts"), 1000);
     // Re-open the Discovered modal so the list updates immediately.
     closeSettingsModal();
     lv_event_t synth{};
     synth.code = LV_EVENT_CLICKED;
     openDiscoveredModalCb(&synth);
   } else {
-    g_lv.task->showAlert("Contacts full", 1200);
+    g_lv.task->showAlert(TR("Contacts full"), 1200);
   }
 }
 
@@ -3999,7 +4089,7 @@ static void openDiscoveredModalCb(lv_event_t* e) {
     s_disc_add_ctx[idx].slot_idx = idx;
     lv_obj_add_event_cb(add_btn, discoveredAddCb, LV_EVENT_CLICKED, &s_disc_add_ctx[idx]);
     lv_obj_t* add_lbl = lv_label_create(add_btn);
-    lv_label_set_text(add_lbl, "Add");
+    lv_label_set_text(add_lbl, TR("Add"));
     lv_obj_center(add_lbl);
 
     y += card_h + 6;
@@ -4027,6 +4117,8 @@ public:
 // same UX as the lock-wallpaper picker. Defined later in this file (where the
 // SD mount state is in scope); forward-declared here for the button below.
 static void openBackupPicker();
+static void buildBackupsSettings();   // Settings -> Backups detail page (list/delete + factory reset)
+static void doExportBackupFile(const char* fname);   // write a backup (SD if a card is present, else internal)
 
 // Heavy-flash-write watchdog guard (ref-counted, nesting-safe). A large or
 // fragmenting SPIFFS write can trigger garbage collection — a multi-second
@@ -4045,24 +4137,42 @@ static inline void wdtHeavyEnd() {
 }
 struct WdtHeavyGuard { WdtHeavyGuard() { wdtHeavyBegin(); } ~WdtHeavyGuard() { wdtHeavyEnd(); } };
 
+// --- Settings row label helper --------------------------------------------
+// The settings detail pages lay rows out with a manual y-cursor and used to
+// create labels with no width, so a long (translated) string overflowed the
+// card or slid under a right-aligned switch. This makes a width-constrained,
+// wrapping label and returns its laid-out height so the caller advances its
+// y-cursor by the real (possibly multi-line) height. `reserve_right` leaves room
+// for a control pinned to the card's right edge (~56 for a switch); pass 0 for a
+// full-width label. font==nullptr keeps the inherited default (g_font_14). The
+// text is run through TR() here, so callers pass the bare English literal.
+static int settingsRowLabel(lv_obj_t* body, int y, int y_off, const char* text,
+                            uint32_t color, const lv_font_t* font, int reserve_right) {
+  lv_obj_t* l = lv_label_create(body);
+  lv_obj_set_width(l, s_settings_content_w - 2 - reserve_right);
+  lv_label_set_long_mode(l, LV_LABEL_LONG_WRAP);
+  lv_label_set_text(l, TR(text));
+  lv_obj_set_style_text_color(l, lv_color_hex(color), LV_PART_MAIN);
+  if (font) lv_obj_set_style_text_font(l, font, LV_PART_MAIN);
+  lv_obj_set_pos(l, 2, y + y_off);
+  lv_obj_update_layout(l);
+  return lv_obj_get_height(l);
+}
+
 static void buildProfileSettings() {
   // No "Profile" group header — it just duplicates the sub-tab button name.
   lv_obj_t* body = createSettingsModal("", SettingsModalKind::Profile);
   int y = 0;
   const lv_coord_t cw = s_settings_content_w;
   auto mk_label = [&](const char* text) {
-    lv_obj_t* l = lv_label_create(body);
-    lv_label_set_text(l, text);
-    lv_obj_set_style_text_color(l, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
-    lv_obj_set_pos(l, 2, y);
-    y += 16;
+    y += settingsRowLabel(body, y, 0, text, COLOR_SUB, nullptr, 0) + 2;
   };
   auto mk_ta = [&](int w, int x, const char* ph, int max_len) -> lv_obj_t* {
     lv_obj_t* ta = lv_textarea_create(body);
     lv_obj_set_size(ta, w, 30);
     lv_obj_set_pos(ta, x, y);
     lv_textarea_set_one_line(ta, true);
-    lv_textarea_set_placeholder_text(ta, ph);
+    lv_textarea_set_placeholder_text(ta, TR(ph));
     lv_textarea_set_max_length(ta, max_len);
     attachSettingsTaEvents(ta);
     return ta;
@@ -4097,7 +4207,7 @@ static void buildProfileSettings() {
   styleButton(b1);
   lv_obj_add_event_cb(b1, saveProfileNameCb, LV_EVENT_CLICKED, nullptr);
   lv_obj_t* l1 = lv_label_create(b1);
-  lv_label_set_text(l1, "Save name");
+  lv_label_set_text(l1, TR("Save name"));
   lv_obj_center(l1);
 
   lv_obj_t* b2 = lv_btn_create(body);
@@ -4106,27 +4216,20 @@ static void buildProfileSettings() {
   styleButton(b2);
   lv_obj_add_event_cb(b2, saveProfilePosCb, LV_EVENT_CLICKED, nullptr);
   lv_obj_t* l2 = lv_label_create(b2);
-  lv_label_set_text(l2, "Save position");
+  lv_label_set_text(l2, TR("Save position"));
   lv_obj_center(l2);
   y += 40;
 
   {
     auto mk_label = [&](const char* text) {
-      lv_obj_t* l = lv_label_create(body);
-      lv_label_set_text(l, text);
-      lv_obj_set_style_text_color(l, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
-      lv_obj_set_pos(l, 2, y);
-      y += 16;
+      y += settingsRowLabel(body, y, 0, text, COLOR_SUB, nullptr, 0) + 2;
     };
     auto mk_switch = [&](const char* text, lv_obj_t** out) {
-      lv_obj_t* l = lv_label_create(body);
-      lv_label_set_text(l, text);
-      lv_obj_set_style_text_color(l, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
-      lv_obj_set_pos(l, 2, y + 6);
+      int h = settingsRowLabel(body, y, 6, text, COLOR_SUB, nullptr, 56);
       lv_obj_t* sw = lv_switch_create(body);
       lv_obj_align(sw, LV_ALIGN_TOP_RIGHT, 0, y);   // flush to the card's right edge
       if (out) *out = sw;
-      y += 34;
+      y += LV_MAX(34, h + 12);
     };
 
     // (Path-hash size moved to Radio settings as "Multi-byte routing" — it's the
@@ -4143,7 +4246,7 @@ static void buildProfileSettings() {
     styleButton(bpol);
     lv_obj_add_event_cb(bpol, savePolicyCb, LV_EVENT_CLICKED, nullptr);
     lv_obj_t* lpol = lv_label_create(bpol);
-    lv_label_set_text(lpol, "Save policy");
+    lv_label_set_text(lpol, TR("Save policy"));
     lv_obj_center(lpol);
     y += 40;   // advance past the Save-policy button so the moved Identity block clears it
   }
@@ -4203,40 +4306,12 @@ static void buildProfileSettings() {
     lv_obj_set_pos(eb, 2, y);
     styleButton(eb);
     lv_obj_add_event_cb(eb, +[](lv_event_t* e) {
-      if (lv_event_get_code(e) != LV_EVENT_CLICKED || !g_lv.task) return;
-      // "Exporting…" overlay, painted now so the (now brief) write isn't a
-      // mystery freeze.
-      lv_obj_t* ov = lv_obj_create(lv_layer_top());
-      lv_obj_remove_style_all(ov);
-      lv_obj_set_size(ov, lv_disp_get_hor_res(nullptr), lv_disp_get_ver_res(nullptr));
-      lv_obj_set_style_bg_color(ov, lv_color_black(), LV_PART_MAIN);
-      lv_obj_set_style_bg_opa(ov, LV_OPA_70, LV_PART_MAIN);
-      lv_obj_clear_flag(ov, LV_OBJ_FLAG_SCROLLABLE);
-      { lv_obj_t* ol = lv_label_create(ov);
-        lv_label_set_text(ol, "Exporting settings\xe2\x80\xa6");
-        lv_obj_set_style_text_color(ol, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
-        lv_obj_set_style_text_font(ol, &g_font_16, LV_PART_MAIN);
-        lv_obj_center(ol); }
-      lv_refr_now(nullptr);
-
-      File f; const char* where = "internal";
-#if defined(HAS_TDECK_GT911)
-      if (SD.cardType() != CARD_NONE) { f = SD.open("/meshcore-backup.json", FILE_WRITE); if (f) where = "SD"; }
-#endif
-      if (!f) { SPIFFS.begin(false); f = SPIFFS.open("/meshcore-backup.json", FILE_WRITE); }
-      if (!f) { lv_obj_del(ov); g_lv.task->showAlert("Export failed (can't open file)", 1800); return; }
-      { WdtHeavyGuard _wg;   // a 60 KB backup write to internal flash can trigger a SPIFFS GC
-        { FileBufWriter bw(f);
-          the_mesh.uiExportBackup(bw, g_lv.task->getNodeLat(), g_lv.task->getNodeLon());
-          bw.flushBuf(); }
-        f.close(); }
-      lv_obj_del(ov);
-      char msg[88];
-      snprintf(msg, sizeof msg, "Saved %s:/meshcore-backup.json", where);
-      g_lv.task->showAlert(msg, 2600);
+      if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+      // Fixed, app-compatible name so the stock app / web client can read it back.
+      doExportBackupFile("meshcore-backup.json");
     }, LV_EVENT_CLICKED, nullptr);
     lv_obj_t* el = lv_label_create(eb);
-    lv_label_set_text(el, "Export settings");
+    lv_label_set_text(el, TR("Export settings"));
     lv_obj_set_style_text_color(el, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
     lv_obj_set_style_text_font(el, &g_font_14, LV_PART_MAIN);
     lv_obj_center(el);
@@ -4256,7 +4331,7 @@ static void buildProfileSettings() {
       openBackupPicker();
     }, LV_EVENT_CLICKED, nullptr);
     lv_obj_t* il = lv_label_create(ib);
-    lv_label_set_text(il, "Import settings");
+    lv_label_set_text(il, TR("Import settings"));
     lv_obj_set_style_text_color(il, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
     lv_obj_set_style_text_font(il, &g_font_14, LV_PART_MAIN);
     lv_obj_center(il);
@@ -4269,7 +4344,7 @@ static void pathHashModeChangedCb(lv_event_t* e) {
   uint8_t sel = (uint8_t)lv_dropdown_get_selected(lv_event_get_target(e));
   g_lv.task->setPathHashMode(sel);   // existing setter: clamps to 0..2 + savePrefs
   char m[40];
-  snprintf(m, sizeof m, "Path hash: %u byte%s", (unsigned)(sel + 1), sel ? "s" : "");
+  snprintf(m, sizeof m, TR("Path hash: %u byte%s"), (unsigned)(sel + 1), sel ? "s" : "");
   g_lv.task->showAlert(m, 1400);
 }
 
@@ -4317,18 +4392,14 @@ static void buildRadioSettings() {
   NodePrefs* prefs = the_mesh.getNodePrefs();
   int y = 0;
   auto mk_label = [&](const char* text) {
-    lv_obj_t* l = lv_label_create(body);
-    lv_label_set_text(l, text);
-    lv_obj_set_style_text_color(l, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
-    lv_obj_set_pos(l, 2, y);
-    y += 16;
+    y += settingsRowLabel(body, y, 0, text, COLOR_SUB, nullptr, 0) + 2;
   };
   auto mk_ta = [&](int w, int x, const char* ph, int max_len) -> lv_obj_t* {
     lv_obj_t* ta = lv_textarea_create(body);
     lv_obj_set_size(ta, w, 30);
     lv_obj_set_pos(ta, x, y);
     lv_textarea_set_one_line(ta, true);
-    lv_textarea_set_placeholder_text(ta, ph);
+    lv_textarea_set_placeholder_text(ta, TR(ph));
     lv_textarea_set_max_length(ta, max_len);
     attachSettingsTaEvents(ta);
     return ta;
@@ -4446,7 +4517,7 @@ static void buildRadioSettings() {
   styleButton(b);
   lv_obj_add_event_cb(b, saveRadioParamsCb, LV_EVENT_CLICKED, nullptr);
   lv_obj_t* l = lv_label_create(b);
-  lv_label_set_text(l, "Apply radio params");
+  lv_label_set_text(l, TR("Apply radio params"));
   lv_obj_center(l);
 }
 
@@ -4455,15 +4526,12 @@ static void buildAutoAddSettings() {
   NodePrefs* prefs = the_mesh.getNodePrefs();
   int y = 0;
   auto mk_switch = [&](const char* text, lv_obj_t** out) {
-    lv_obj_t* l = lv_label_create(body);
-    lv_label_set_text(l, text);
-    lv_obj_set_style_text_color(l, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
-    lv_obj_set_pos(l, 2, y + 6);
+    int h = settingsRowLabel(body, y, 6, text, COLOR_SUB, nullptr, 56);
     lv_obj_t* sw = lv_switch_create(body);
     lv_obj_align(sw, LV_ALIGN_TOP_RIGHT, 0, y);   // flush to the card's right edge
     lv_obj_add_event_cb(sw, autoAddSwitchCb, LV_EVENT_VALUE_CHANGED, nullptr);  // auto-save on toggle
     if (out) *out = sw;
-    y += 34;
+    y += LV_MAX(34, h + 12);
   };
   mk_switch("Auto chat", &g_set_modal.auto_chat_sw);
   mk_switch("Auto repeater", &g_set_modal.auto_rep_sw);
@@ -4473,7 +4541,7 @@ static void buildAutoAddSettings() {
   g_set_modal.manual_add_sw = nullptr;   // master "manual add" removed — per-type switches are authoritative now
 
   lv_obj_t* hops_l = lv_label_create(body);
-  lv_label_set_text(hops_l, "Max hops (0..64)");
+  lv_label_set_text(hops_l, TR("Max hops (0..64)"));
   lv_obj_set_style_text_color(hops_l, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
   lv_obj_set_pos(hops_l, 2, y + 6);
   g_set_modal.max_hops_ta = lv_textarea_create(body);
@@ -4505,7 +4573,7 @@ static void buildAutoAddSettings() {
   styleButton(b);
   lv_obj_add_event_cb(b, saveAutoAddCb, LV_EVENT_CLICKED, nullptr);
   lv_obj_t* l = lv_label_create(b);
-  lv_label_set_text(l, "Save auto-add");
+  lv_label_set_text(l, TR("Save auto-add"));
   lv_obj_center(l);
 }
 
@@ -4514,14 +4582,11 @@ static void buildExperimentalSettings() {
   NodePrefs* prefs = the_mesh.getNodePrefs();
   int y = 0;
   auto mk_switch = [&](const char* text, lv_obj_t** out) {
-    lv_obj_t* l = lv_label_create(body);
-    lv_label_set_text(l, text);
-    lv_obj_set_style_text_color(l, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
-    lv_obj_set_pos(l, 2, y + 6);
+    int h = settingsRowLabel(body, y, 6, text, COLOR_SUB, nullptr, 56);
     lv_obj_t* sw = lv_switch_create(body);
     lv_obj_align(sw, LV_ALIGN_TOP_RIGHT, 0, y);   // flush to the card's right edge
     if (out) *out = sw;
-    y += 34;
+    y += LV_MAX(34, h + 12);
   };
 
   mk_switch("Multi ACKs", &g_set_modal.exp_multi_sw);
@@ -4544,7 +4609,7 @@ static void buildExperimentalSettings() {
   styleButton(b2);
   lv_obj_add_event_cb(b2, saveExperimentalCb, LV_EVENT_CLICKED, nullptr);
   lv_obj_t* l2 = lv_label_create(b2);
-  lv_label_set_text(l2, "Save experimental");
+  lv_label_set_text(l2, TR("Save experimental"));
   lv_obj_center(l2);
 }
 
@@ -4615,7 +4680,7 @@ static void buildQuickReplySettings() {
   styleButton(b);
   lv_obj_add_event_cb(b, saveQuickRepliesCb, LV_EVENT_CLICKED, nullptr);
   lv_obj_t* l = lv_label_create(b);
-  lv_label_set_text(l, "Save quick replies");
+  lv_label_set_text(l, TR("Save quick replies"));
   lv_obj_center(l);
 }
 
@@ -4628,11 +4693,11 @@ static void saveScreenTimeoutCb(lv_event_t* e) {
   if (secs > 3600) secs = 3600;
   if (g_lv.task->setScreenTimeoutSecs(static_cast<uint16_t>(secs))) {
     char msg[48];
-    if (secs == 0) snprintf(msg, sizeof(msg), "Screen timeout: never");
-    else           snprintf(msg, sizeof(msg), "Screen timeout: %ds", secs);
+    if (secs == 0) snprintf(msg, sizeof(msg), TR("Screen timeout: never"));
+    else           snprintf(msg, sizeof(msg), TR("Screen timeout: %ds"), secs);
     g_lv.task->showAlert(msg, 1200);
   } else {
-    g_lv.task->showAlert("Save failed", 1200);
+    g_lv.task->showAlert(TR("Save failed"), 1200);
   }
 }
 
@@ -4722,7 +4787,7 @@ static void openMemoryDetailCb(lv_event_t* e) {
   addCloseXBadge(card, memInfoCloseCb);
 
   lv_obj_t* title = lv_label_create(card);
-  lv_label_set_text(title, "Memory detail");
+  lv_label_set_text(title, TR("Memory detail"));
   lv_obj_set_style_text_font(title, &g_font_14, LV_PART_MAIN);
   lv_obj_set_style_text_color(title, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
   lv_obj_set_pos(title, 0, 2);
@@ -4803,7 +4868,7 @@ static void refreshSysInfo(unsigned long now) {
   next = now + 1000;
   if (!s_sysinfo_lbl) return;
   if (getActiveTab() != SETTINGS_TAB_INDEX) return;
-  if (s_settings_subtab && (int)lv_tabview_get_tab_act(s_settings_subtab) != 4) return;  // About == index 4
+  if (s_settings_open_cat != CAT_ABOUT) return;   // sysinfo lives on the About detail sheet
   char buf[800];
   sysInfoText(buf, sizeof buf);
   lv_label_set_text(s_sysinfo_lbl, buf);
@@ -4831,7 +4896,7 @@ static void buildSystemInfoSettings() {
   styleButton(membtn);
   lv_obj_add_event_cb(membtn, openMemoryDetailCb, LV_EVENT_CLICKED, nullptr);
   lv_obj_t* mbl = lv_label_create(membtn);
-  lv_label_set_text(mbl, "Memory detail");
+  lv_label_set_text(mbl, TR("Memory detail"));
   lv_obj_set_style_text_font(mbl, &g_font_14, LV_PART_MAIN);
   lv_obj_center(mbl);
 }
@@ -4852,8 +4917,8 @@ static void useSdStorageToggleCb(lv_event_t* e) {
 #if defined(ESP32)
   touchPrefsSetUseSdStorage(on);
 #endif
-  if (g_lv.task) g_lv.task->showAlert(on ? "Data -> SD card on reboot\n(card must be inserted)"
-                                         : "Data -> internal on reboot", 1800);
+  if (g_lv.task) g_lv.task->showAlert(on ? TR("Data -> SD card on reboot\n(card must be inserted)")
+                                         : TR("Data -> internal on reboot"), 1800);
 }
 #endif
 
@@ -4863,7 +4928,7 @@ static void useMilesToggleCb(lv_event_t* e) {
 #if defined(ESP32)
   touchPrefsSetUseMiles(miles);
 #endif
-  if (g_lv.task) g_lv.task->showAlert(miles ? "Distance: miles" : "Distance: km", 900);
+  if (g_lv.task) g_lv.task->showAlert(miles ? TR("Distance: miles") : TR("Distance: km"), 900);
   // The contacts cache now keys on the units flag, so this rebuilds the
   // badges on the next refresh (and immediately if the list is visible).
   refreshContactsList();
@@ -4877,8 +4942,21 @@ static void colorfulBubblesToggleCb(lv_event_t* e) {
 #if defined(ESP32)
   touchPrefsSetColorfulBubbles(on);
 #endif
-  if (g_lv.task) g_lv.task->showAlert(on ? "Taste the rainbow!" : "Chat bubbles: plain",
+  if (g_lv.task) g_lv.task->showAlert(on ? TR("Taste the rainbow!") : TR("Chat bubbles: plain"),
                                       on ? 1500 : 900);
+}
+
+// Accent-popup picker on/off. Persisted + live: gates accentBoxMaybeShow() so
+// the tap-to-pick accent box stops appearing as you type. Default ON.
+static void accentPopupsToggleCb(lv_event_t* e) {
+  if (lv_event_get_code(e) != LV_EVENT_VALUE_CHANGED) return;
+  const bool on = lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED);
+  s_accent_popups = on;
+#if defined(ESP32)
+  touchPrefsSetAccentPopups(on);
+#endif
+  if (!on) accentBoxHide();   // dismiss any box already on screen
+  if (g_lv.task) g_lv.task->showAlert(on ? TR("Accent popups: on") : TR("Accent popups: off"), 1100);
 }
 
 // One handler for every per-language switch in the multi-select list. The
@@ -4935,7 +5013,7 @@ static void rotateScreenCycleCb(lv_event_t* e) {
   touchPrefsSetUiRotation(next);
 #endif
   if (g_lv.task) {
-    g_lv.task->showAlert("Rotating\xe2\x80\xa6 rebooting", 600);
+    g_lv.task->showAlert(TR("Rotating\xe2\x80\xa6 rebooting"), 600);
     g_lv.task->rebootDevice();
   }
 }
@@ -4967,7 +5045,7 @@ static void timeOffsetStep(int delta) {
   applyTimeOffsetNow();
   timeOffsetLabelRefresh();
   if (g_lv.task) {
-    char m[28]; snprintf(m, sizeof m, "Time offset: %+d h", off);
+    char m[28]; snprintf(m, sizeof m, TR("Time offset: %+d h"), off);
     g_lv.task->showAlert(m, 900);
   }
 }
@@ -4996,18 +5074,20 @@ static void lockColorChosenCb(lv_event_t* e);
 #endif
 
 static void calibrateBatteryCb(lv_event_t* e);   // defined with the battery helpers below
-static void buildDeviceSettings() {
-  // No "Device" group header — it just duplicates the sub-tab button name.
+static void buildDeviceSettings(int sec) {
+  // One detail page per section: each block below is gated to its DSEC_* section
+  // (skipped blocks don't advance y, so every page lays out from the top).
   lv_obj_t* body = createSettingsModal("", SettingsModalKind::Device);
   int y = 0;
 
+  if (sec == DSEC_SYSTEM) {   // --- GPS ---
   lv_obj_t* b_gps = lv_btn_create(body);
   lv_obj_set_size(b_gps, lv_pct(100),34);
   lv_obj_set_pos(b_gps, 2, y);
   styleButton(b_gps);
   lv_obj_add_event_cb(b_gps, toggleGpsCb, LV_EVENT_CLICKED, nullptr);
   lv_obj_t* lg = lv_label_create(b_gps);
-  lv_label_set_text(lg, "Toggle GPS");
+  lv_label_set_text(lg, TR("Toggle GPS"));
   lv_obj_center(lg);
   y += 38;
 
@@ -5028,7 +5108,7 @@ static void buildDeviceSettings() {
     lv_obj_set_style_text_color(bl, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
     lv_obj_set_style_text_font(bl, &g_font_12, LV_PART_MAIN);
     lv_obj_set_pos(bl, 4, y);
-    lv_label_set_text(bl, "GPS serial baud");
+    lv_label_set_text(bl, TR("GPS serial baud"));
     y += 18;
 
     lv_obj_t* dd = lv_dropdown_create(body);
@@ -5056,6 +5136,9 @@ static void buildDeviceSettings() {
     y += 40;
   }
 
+  }
+
+  if (sec == DSEC_SOUND) {   // --- Sound ---
   // Sound toggle — T-Deck I2S speaker or Heltec V4 expansion-kit piezo buzzer.
 #if defined(HAS_UI_SOUND)
   lv_obj_t* b_bz = lv_btn_create(body);
@@ -5064,18 +5147,21 @@ static void buildDeviceSettings() {
   styleButton(b_bz);
   lv_obj_add_event_cb(b_bz, toggleBuzzerCb, LV_EVENT_CLICKED, nullptr);
   lv_obj_t* lb = lv_label_create(b_bz);
-  lv_label_set_text_fmt(lb, "Sound: %s", g_lv.task && !g_lv.task->isBuzzerQuiet() ? "on" : "off");
+  lv_label_set_text_fmt(lb, TR("Sound: %s"), g_lv.task && !g_lv.task->isBuzzerQuiet() ? TR("on") : TR("off"));
   lv_obj_center(lb);
   y += 40;
 #endif
 
+  }
+
+  if (sec == DSEC_SYSTEM) {   // --- Clock + advert ---
   lv_obj_t* b_time = lv_btn_create(body);
   lv_obj_set_size(b_time, lv_pct(100),34);
   lv_obj_set_pos(b_time, 2, y);
   styleButton(b_time);
   lv_obj_add_event_cb(b_time, syncClockCb, LV_EVENT_CLICKED, nullptr);
   lv_obj_t* l_time = lv_label_create(b_time);
-  lv_label_set_text(l_time, "Sync clock from system");
+  lv_label_set_text(l_time, TR("Sync clock from system"));
   lv_obj_center(l_time);
   y += 40;
 
@@ -5085,18 +5171,16 @@ static void buildDeviceSettings() {
   styleButton(b_adv);
   lv_obj_add_event_cb(b_adv, advertNowCb, LV_EVENT_CLICKED, nullptr);
   lv_obj_t* l_adv = lv_label_create(b_adv);
-  lv_label_set_text(l_adv, "Send advert now");
+  lv_label_set_text(l_adv, TR("Send advert now"));
   lv_obj_center(l_adv);
   y += 40;
 
+  }
+
+  if (sec == DSEC_DISPLAY) {   // --- Display ---
   /* Screen timeout (seconds, 0 = never). Persists in NVS via TouchPrefsStore. */
   {
-    lv_obj_t* l = lv_label_create(body);
-    lv_label_set_text(l, "Screen timeout (s, 0 = never)");
-    lv_obj_set_style_text_color(l, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
-    lv_obj_set_style_text_font(l, &g_font_12, LV_PART_MAIN);
-    lv_obj_set_pos(l, 2, y);
-    y += 16;
+    y += settingsRowLabel(body, y, 0, "Screen timeout (s, 0 = never)", COLOR_SUB, &g_font_12, 0) + 2;
     g_set_modal.screen_to_ta = lv_textarea_create(body);
     lv_obj_set_size(g_set_modal.screen_to_ta, 100, 30);
     lv_obj_set_pos(g_set_modal.screen_to_ta, 2, y);
@@ -5114,58 +5198,47 @@ static void buildDeviceSettings() {
     styleButton(b_save_to);
     lv_obj_add_event_cb(b_save_to, saveScreenTimeoutCb, LV_EVENT_CLICKED, nullptr);
     lv_obj_t* ls = lv_label_create(b_save_to);
-    lv_label_set_text(ls, "Save");
+    lv_label_set_text(ls, TR("Save"));
     lv_obj_center(ls);
     y += 38;
   }
 
   /* Distance units: OFF = km (default), ON = miles. Applies immediately. */
   {
-    lv_obj_t* l = lv_label_create(body);
-    lv_label_set_text(l, "Distance in miles");
-    lv_obj_set_style_text_color(l, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
-    lv_obj_set_pos(l, 2, y + 6);
+    int h = settingsRowLabel(body, y, 6, "Distance in miles", COLOR_SUB, nullptr, 56);
     lv_obj_t* sw = lv_switch_create(body);
     lv_obj_align(sw, LV_ALIGN_TOP_RIGHT, 0, y);   // flush to the card's right edge
 #if defined(ESP32)
     if (touchPrefsGetUseMiles()) lv_obj_add_state(sw, LV_STATE_CHECKED);
 #endif
     lv_obj_add_event_cb(sw, useMilesToggleCb, LV_EVENT_VALUE_CHANGED, nullptr);
-    y += 40;
+    y += LV_MAX(40, h + 12);
   }
 
   /* Colourful chat bubbles: colour every bubble + sender name by a hash of the
      sender's name (same name -> same colour). "Taste the rainbow" on enable. */
   {
-    lv_obj_t* l = lv_label_create(body);
-    lv_label_set_text(l, "Colourful chat bubbles");
-    lv_obj_set_style_text_color(l, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
-    lv_obj_set_pos(l, 2, y + 6);
+    int h = settingsRowLabel(body, y, 6, "Colourful chat bubbles", COLOR_SUB, nullptr, 56);
     lv_obj_t* sw = lv_switch_create(body);
     lv_obj_align(sw, LV_ALIGN_TOP_RIGHT, 0, y);
 #if defined(ESP32)
     if (touchPrefsGetColorfulBubbles()) lv_obj_add_state(sw, LV_STATE_CHECKED);
 #endif
     lv_obj_add_event_cb(sw, colorfulBubblesToggleCb, LV_EVENT_VALUE_CHANGED, nullptr);
-    y += 40;
+    y += LV_MAX(40, h + 12);
   }
 
   /* Theme colour (UI accent): opens a colour-wheel + hex picker. The chosen
      colour is clamped dark enough that off-white button text stays readable. */
   {
-    lv_obj_t* l = lv_label_create(body);
-    lv_label_set_text(l, "Theme colour");
-    lv_obj_set_style_text_color(l, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
-    lv_obj_set_style_text_font(l, &g_font_12, LV_PART_MAIN);
-    lv_obj_set_pos(l, 2, y);
-    y += 18;
+    y += settingsRowLabel(body, y, 0, "Theme colour", COLOR_SUB, &g_font_12, 0) + 4;
     lv_obj_t* b = lv_btn_create(body);
     lv_obj_set_size(b, 150, 32);
     lv_obj_set_pos(b, 2, y);
     styleButton(b);
     lv_obj_add_event_cb(b, openAccentPickerCb, LV_EVENT_CLICKED, nullptr);
     lv_obj_t* bl = lv_label_create(b);
-    lv_label_set_text(bl, "Pick colour");
+    lv_label_set_text(bl, TR("Pick colour"));
     lv_obj_center(bl);
     lv_obj_t* swatch = lv_obj_create(body);
     lv_obj_remove_style_all(swatch);
@@ -5177,47 +5250,41 @@ static void buildDeviceSettings() {
     y += 40;
   }
 
+  }
+
+  if (sec == DSEC_SYSTEM) {   // --- Storage (SD) ---
 #if defined(HAS_TDECK_GT911)
   /* Store all data (identity/prefs/contacts/channels) on the SD card under
      /meshcomod instead of internal flash — for running under Launcher, or just
      to keep everything on a card. Read at boot, so it applies after a reboot. */
   {
-    lv_obj_t* l = lv_label_create(body);
-    lv_label_set_text(l, "Store data on SD (reboot)");
-    lv_obj_set_style_text_color(l, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
-    lv_obj_set_pos(l, 2, y + 6);
+    int h = settingsRowLabel(body, y, 6, "Store data on SD (reboot)", COLOR_SUB, nullptr, 56);
     lv_obj_t* sw = lv_switch_create(body);
     lv_obj_align(sw, LV_ALIGN_TOP_RIGHT, 0, y);
 #if defined(ESP32)
     if (touchPrefsGetUseSdStorage()) lv_obj_add_state(sw, LV_STATE_CHECKED);
 #endif
     lv_obj_add_event_cb(sw, useSdStorageToggleCb, LV_EVENT_VALUE_CHANGED, nullptr);
-    y += 40;
+    y += LV_MAX(40, h + 12);
   }
 #endif
 
+  }
+
+  if (sec == DSEC_KEYBOARD) {   // --- Keyboard ---
   /* Secondary keyboards (multi-select). Switch on any layouts you want in the
      rotation; a double-tap of SPACE on the physical keyboard cycles
      English -> each enabled layout -> back. The active layout is remembered
      across reboots. */
   {
-    lv_obj_t* l = lv_label_create(body);
-    lv_label_set_text(l, "Secondary keyboards");
-    lv_obj_set_style_text_color(l, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
-    lv_obj_set_style_text_font(l, &g_font_12, LV_PART_MAIN);
-    lv_obj_set_pos(l, 2, y);
-    y += 16;
+    y += settingsRowLabel(body, y, 0, "Secondary keyboards", COLOR_SUB, &g_font_12, 0) + 2;
 
-    lv_obj_t* hint = lv_label_create(body);
 #if defined(HAS_TDECK_KEYBOARD)
-    lv_label_set_text(hint, "double-tap SPACE cycles through the ones you enable");
+    const char* kb_cycle_hint = "double-tap SPACE cycles through the ones you enable";
 #else
-    lv_label_set_text(hint, "tap the language key (e.g. EN) on the keyboard to cycle the ones you enable");
+    const char* kb_cycle_hint = "tap the language key (e.g. EN) on the keyboard to cycle the ones you enable";
 #endif
-    lv_obj_set_style_text_color(hint, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
-    lv_obj_set_style_text_font(hint, &g_font_12, LV_PART_MAIN);
-    lv_obj_set_pos(hint, 2, y);
-    y += 18;
+    y += settingsRowLabel(body, y, 0, kb_cycle_hint, COLOR_SUB, &g_font_12, 0) + 2;
 
 #if defined(ESP32)
     uint16_t en_mask = touchPrefsGetEnabledLayouts();
@@ -5230,30 +5297,41 @@ static void buildDeviceSettings() {
       "Bulgarian", "Russian", "Ukrainian", "Serbian", "Greek", "Arabic (experimental)"
     };
     for (int id = 1; id < KEYBOARD_LAYOUT_COUNT; ++id) {
-      lv_obj_t* rl = lv_label_create(body);
-      lv_label_set_text(rl, k_kb_disp[id - 1]);
-      lv_obj_set_style_text_color(rl, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
-      lv_obj_set_style_text_font(rl, &g_font_12, LV_PART_MAIN);
-      lv_obj_set_pos(rl, 2, y + 4);
-
+      int h = settingsRowLabel(body, y, 4, k_kb_disp[id - 1], COLOR_TEXT, &g_font_12, 56);
       lv_obj_t* sw = lv_switch_create(body);
       lv_obj_align(sw, LV_ALIGN_TOP_RIGHT, 0, y);
       if (en_mask & (1u << id)) lv_obj_add_state(sw, LV_STATE_CHECKED);
       lv_obj_set_user_data(sw, (void*)(intptr_t)id);
       lv_obj_add_event_cb(sw, kbLayoutSwitchCb, LV_EVENT_VALUE_CHANGED, nullptr);
-      y += 34;
+      y += LV_MAX(34, h + 10);
     }
   }
 
+  /* Accent popups. Typing a Latin letter that has accented variants pops up a
+     tap-to-pick box; turn this off for plain typing. Default on. */
+  {
+    int h = settingsRowLabel(body, y, 4, "Accent popups", COLOR_TEXT, &g_font_12, 56);
+    lv_obj_t* sw = lv_switch_create(body);
+    lv_obj_align(sw, LV_ALIGN_TOP_RIGHT, 0, y);
+#if defined(ESP32)
+    if (touchPrefsGetAccentPopups()) lv_obj_add_state(sw, LV_STATE_CHECKED);
+#else
+    if (s_accent_popups) lv_obj_add_state(sw, LV_STATE_CHECKED);
+#endif
+    lv_obj_add_event_cb(sw, accentPopupsToggleCb, LV_EVENT_VALUE_CHANGED, nullptr);
+    y += LV_MAX(34, h + 10);
+
+    y += settingsRowLabel(body, y, 0, "pick accented letters as you type; off = plain typing",
+                          COLOR_SUB, &g_font_12, 0) + 2;
+  }
+
+  }
+
+  if (sec == DSEC_DISPLAY) {   // --- Orientation (display) ---
   /* Screen orientation. Cycles Portrait -> Landscape -> Landscape (flipped);
      applied at boot, so tapping reboots the device. */
   {
-    lv_obj_t* l = lv_label_create(body);
-    lv_label_set_text(l, "Orientation (tap to rotate, reboots)");
-    lv_obj_set_style_text_color(l, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
-    lv_obj_set_style_text_font(l, &g_font_12, LV_PART_MAIN);
-    lv_obj_set_pos(l, 2, y);
-    y += 16;
+    y += settingsRowLabel(body, y, 0, "Orientation (tap to rotate, reboots)", COLOR_SUB, &g_font_12, 0) + 2;
     lv_obj_t* b_rot = lv_btn_create(body);
     lv_obj_set_size(b_rot, lv_pct(100),34);
     lv_obj_set_pos(b_rot, 2, y);
@@ -5265,16 +5343,14 @@ static void buildDeviceSettings() {
     y += 42;
   }
 
+  }
+
+  if (sec == DSEC_LOCK) {   // --- Lock screen ---
 #if defined(HAS_TDECK_GT911)
   /* Lock screen: pick the wallpaper (internal /lock/ or SD) and the colour of
      the clock + lock text drawn over it. */
   {
-    lv_obj_t* l = lv_label_create(body);
-    lv_label_set_text(l, "Lock screen wallpaper");
-    lv_obj_set_style_text_color(l, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
-    lv_obj_set_style_text_font(l, &g_font_12, LV_PART_MAIN);
-    lv_obj_set_pos(l, 2, y);
-    y += 16;
+    y += settingsRowLabel(body, y, 0, "Lock screen wallpaper", COLOR_SUB, &g_font_12, 0) + 2;
     lv_obj_t* b_wall = lv_btn_create(body);
     lv_obj_set_size(b_wall, lv_pct(100), 34);
     lv_obj_set_pos(b_wall, 2, y);
@@ -5292,12 +5368,7 @@ static void buildDeviceSettings() {
     lv_obj_center(s_lockwall_btn_lbl);
     y += 40;
 
-    lv_obj_t* lc = lv_label_create(body);
-    lv_label_set_text(lc, "Lock text colour");
-    lv_obj_set_style_text_color(lc, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
-    lv_obj_set_style_text_font(lc, &g_font_12, LV_PART_MAIN);
-    lv_obj_set_pos(lc, 2, y);
-    y += 16;
+    y += settingsRowLabel(body, y, 0, "Lock text colour", COLOR_SUB, &g_font_12, 0) + 2;
     const int ncol = (int)(sizeof(kLockColors) / sizeof(kLockColors[0]));
     const uint32_t curcol = touchPrefsGetLockTextColor();
     const int swz = 22, gap = 3;
@@ -5318,22 +5389,20 @@ static void buildDeviceSettings() {
   }
 #endif
 
+  }
+
+  if (sec == DSEC_SYSTEM) {   // --- Time / actions / live info ---
   /* Time offset: nudge the displayed clock +/- whole hours on top of the
      automatic (NTP / companion / mesh) time. Display-only. Both boards. */
   {
-    lv_obj_t* l = lv_label_create(body);
-    lv_label_set_text(l, "Time offset (vs automatic)");
-    lv_obj_set_style_text_color(l, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
-    lv_obj_set_style_text_font(l, &g_font_12, LV_PART_MAIN);
-    lv_obj_set_pos(l, 2, y);
-    y += 16;
+    y += settingsRowLabel(body, y, 0, "Time offset (vs automatic)", COLOR_SUB, &g_font_12, 0) + 2;
 
     lv_obj_t* bminus = lv_btn_create(body);
     lv_obj_set_size(bminus, 50, 34);
     lv_obj_set_pos(bminus, 2, y);
     styleButton(bminus);
     lv_obj_add_event_cb(bminus, timeOffsetMinusCb, LV_EVENT_CLICKED, nullptr);
-    lv_obj_t* lm = lv_label_create(bminus); lv_label_set_text(lm, "-1 h"); lv_obj_center(lm);
+    lv_obj_t* lm = lv_label_create(bminus); lv_label_set_text(lm, TR("-1 h")); lv_obj_center(lm);
 
     s_time_offset_lbl = lv_label_create(body);
     lv_obj_set_width(s_time_offset_lbl, 100);
@@ -5348,7 +5417,7 @@ static void buildDeviceSettings() {
     lv_obj_set_pos(bplus, 168, y);
     styleButton(bplus);
     lv_obj_add_event_cb(bplus, timeOffsetPlusCb, LV_EVENT_CLICKED, nullptr);
-    lv_obj_t* lp = lv_label_create(bplus); lv_label_set_text(lp, "+1 h"); lv_obj_center(lp);
+    lv_obj_t* lp = lv_label_create(bplus); lv_label_set_text(lp, TR("+1 h")); lv_obj_center(lp);
     y += 42;
   }
 
@@ -5359,7 +5428,7 @@ static void buildDeviceSettings() {
   styleButton(b_setup);
   lv_obj_add_event_cb(b_setup, setupRerunCb, LV_EVENT_CLICKED, nullptr);
   lv_obj_t* l_setup = lv_label_create(b_setup);
-  lv_label_set_text(l_setup, LV_SYMBOL_REFRESH "  Run setup again");
+  lv_label_set_text_fmt(l_setup, LV_SYMBOL_REFRESH "  %s", TR("Run setup again"));
   lv_obj_center(l_setup);
   y += 42;
 
@@ -5372,7 +5441,7 @@ static void buildDeviceSettings() {
   lv_obj_set_style_text_color(b_reboot, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
   lv_obj_add_event_cb(b_reboot, rebootCb, LV_EVENT_CLICKED, nullptr);
   lv_obj_t* l_reboot = lv_label_create(b_reboot);
-  lv_label_set_text(l_reboot, "Reboot device");
+  lv_label_set_text(l_reboot, TR("Reboot device"));
   lv_obj_center(l_reboot);
   y += 42;
 
@@ -5392,7 +5461,7 @@ static void buildDeviceSettings() {
     lv_obj_add_event_cb(b_cal, calibrateBatteryCb, LV_EVENT_SHORT_CLICKED, nullptr);
     lv_obj_add_event_cb(b_cal, calibrateBatteryCb, LV_EVENT_LONG_PRESSED, nullptr);
     lv_obj_t* l_cal = lv_label_create(b_cal);
-    lv_label_set_text(l_cal, LV_SYMBOL_BATTERY_FULL "  Calibrate battery (full = 100%)");
+    lv_label_set_text_fmt(l_cal, LV_SYMBOL_BATTERY_FULL "  %s", TR("Calibrate battery (full = 100%)"));
     lv_obj_center(l_cal);
     y += 46;
   }
@@ -5430,12 +5499,12 @@ static void buildDeviceSettings() {
     char buf[96];
     // Firmware
     snprintf(buf, sizeof(buf), "%s · %s", FIRMWARE_VERSION, FIRMWARE_BUILD_DATE);
-    mk_info("Firmware:", buf);
+    mk_info(TR("Firmware:"), buf);
     // Device model (build-time constant for this variant)
 #if defined(HELTEC_LORA_V4_TFT)
-    mk_info("Model:", "Heltec LoRa32 V4 TFT (touch)");
+    mk_info(TR("Model:"), "Heltec LoRa32 V4 TFT (touch)");
 #else
-    mk_info("Model:", "Heltec LoRa32 V4");
+    mk_info(TR("Model:"), "Heltec LoRa32 V4");
 #endif
     // Public key prefix (first 8 bytes = 16 hex)
     {
@@ -5445,9 +5514,9 @@ static void buildDeviceSettings() {
         mesh::Utils::toHex(hex, pk, 8);
         hex[16] = '\0';
         snprintf(buf, sizeof(buf), "%s…", hex);
-        mk_info("Public key:", buf);
+        mk_info(TR("Public key:"), buf);
       } else {
-        mk_info("Public key:", "—");
+        mk_info(TR("Public key:"), "—");
       }
     }
     // Contacts / Channels with max limits
@@ -5456,13 +5525,13 @@ static void buildDeviceSettings() {
 #else
     snprintf(buf, sizeof(buf), "%d", the_mesh.getNumContacts());
 #endif
-    mk_info("Contacts:", buf);
+    mk_info(TR("Contacts:"), buf);
 #ifdef MAX_GROUP_CHANNELS
     snprintf(buf, sizeof(buf), "%d / %d", the_mesh.getNumChannels(), (int)MAX_GROUP_CHANNELS);
 #else
     snprintf(buf, sizeof(buf), "%d", the_mesh.getNumChannels());
 #endif
-    mk_info("Channels:", buf);
+    mk_info(TR("Channels:"), buf);
     // Battery
     if (g_lv.task) {
       uint16_t mv = g_lv.task->getBattMilliVolts();
@@ -5471,7 +5540,7 @@ static void buildDeviceSettings() {
       } else {
         snprintf(buf, sizeof(buf), "—");
       }
-      mk_info("Battery:", buf);
+      mk_info(TR("Battery:"), buf);
     }
     // Device time (formatted as YYYY-MM-DD HH:MM in local timezone)
     {
@@ -5488,9 +5557,9 @@ static void buildDeviceSettings() {
                  tmv.tm_year + 1900, tmv.tm_mon + 1, tmv.tm_mday,
                  tmv.tm_hour, tmv.tm_min,
                  tmv.tm_isdst > 0 ? "CEST" : "CET");
-        mk_info("Device time:", ts);
+        mk_info(TR("Device time:"), ts);
       } else {
-        mk_info("Device time:", "not set");
+        mk_info(TR("Device time:"), "not set");
       }
     }
   }
@@ -5502,7 +5571,8 @@ static void buildDeviceSettings() {
   lv_obj_set_pos(hint, 2, y);
   lv_obj_set_style_text_color(hint, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
   lv_obj_set_style_text_font(hint, &g_font_12, LV_PART_MAIN);
-  lv_label_set_text(hint, "Diagnostics scroll on the main Set tab below.");
+  lv_label_set_text(hint, TR("Diagnostics are on the About page."));
+  }
 }
 
 #if defined(ESP32) && defined(MULTI_TRANSPORT_COMPANION)
@@ -5530,11 +5600,11 @@ static void saveTransportWifiCb(lv_event_t* e) {
   trimWifiField(pwd);
 
   if (!wifiConfigSetSsid(ssid)) {
-    g_lv.task->showAlert("SSID too long", 1400);
+    g_lv.task->showAlert(TR("SSID too long"), 1400);
     return;
   }
   if (!wifiConfigSetPwd(pwd)) {
-    g_lv.task->showAlert("Password too long", 1400);
+    g_lv.task->showAlert(TR("Password too long"), 1400);
     return;
   }
 
@@ -5542,14 +5612,14 @@ static void saveTransportWifiCb(lv_event_t* e) {
   wifiConfigSetRadioEnabled(radio_on);
   if (radio_on) {
     if (!wifiConfigHasRuntime() || ssid[0] == '\0') {
-      g_lv.task->showAlert("Set an SSID first", 1400);
+      g_lv.task->showAlert(TR("Set an SSID first"), 1400);
       return;
     }
     wifiConfigRequestApply();
-    g_lv.task->showAlert("Wi-Fi saved, reconnecting", 1400);
+    g_lv.task->showAlert(TR("Wi-Fi saved, reconnecting"), 1400);
   } else {
     wifiConfigRequestApply();
-    g_lv.task->showAlert("Wi-Fi saved (radio off)", 1400);
+    g_lv.task->showAlert(TR("Wi-Fi saved (radio off)"), 1400);
   }
   refreshStatusLabels();
 }
@@ -5624,7 +5694,7 @@ static void showConfirm(const char* msg, const char* ok_label, SimpleCb on_confi
   // Push the label down 4 px so the X glyph and the start of the text
   // baseline don't touch optically.
   lv_obj_set_width(lbl, 186 - 32);
-  lv_label_set_text(lbl, msg);
+  lv_label_set_text(lbl, TR(msg));
   lv_obj_set_style_text_color(lbl, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
   lv_obj_set_style_text_font(lbl, &g_font_14, LV_PART_MAIN);
   lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, 0, 0);
@@ -5638,7 +5708,7 @@ static void showConfirm(const char* msg, const char* ok_label, SimpleCb on_confi
   lv_obj_set_style_text_color(b_cancel, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
   lv_obj_add_event_cb(b_cancel, confirmCancelEvt, LV_EVENT_CLICKED, nullptr);
   lv_obj_t* lc = lv_label_create(b_cancel);
-  lv_label_set_text(lc, "Cancel");
+  lv_label_set_text(lc, TR("Cancel"));
   lv_obj_center(lc);
 
   lv_obj_t* b_ok = lv_btn_create(card);
@@ -5647,7 +5717,7 @@ static void showConfirm(const char* msg, const char* ok_label, SimpleCb on_confi
   styleButton(b_ok);
   lv_obj_add_event_cb(b_ok, confirmOkEvt, LV_EVENT_CLICKED, nullptr);
   lv_obj_t* lo = lv_label_create(b_ok);
-  lv_label_set_text(lo, ok_label ? ok_label : "OK");
+  lv_label_set_text(lo, ok_label ? TR(ok_label) : TR("OK"));
   lv_obj_center(lo);
 }
 
@@ -5659,16 +5729,16 @@ static void showConfirm(const char* msg, const char* ok_label, SimpleCb on_confi
 static void saveBluetoothCb(lv_event_t* e) {
   if (lv_event_get_code(e) != LV_EVENT_CLICKED || !g_lv.task) return;
   if (!g_set_modal.wifi_sw) return;
-  if (!g_lv.task->hasBleCapability()) { g_lv.task->showAlert("No Bluetooth on this device", 1400); return; }
+  if (!g_lv.task->hasBleCapability()) { g_lv.task->showAlert(TR("No Bluetooth on this device"), 1400); return; }
   const bool want_ble = lv_obj_has_state(g_set_modal.wifi_sw, LV_STATE_CHECKED);
   const bool ble_active_now = g_lv.task->isBleEnabled();
   if (want_ble == ble_active_now) {
-    g_lv.task->showAlert(want_ble ? "Bluetooth already on" : "Bluetooth already off", 1200);
+    g_lv.task->showAlert(want_ble ? TR("Bluetooth already on") : TR("Bluetooth already off"), 1200);
     return;
   }
   // enableBle() lazily brings NimBLE up if it wasn't started at boot.
   if (want_ble) g_lv.task->enableBle(); else g_lv.task->disableBle();
-  g_lv.task->showAlert(want_ble ? "Bluetooth on" : "Bluetooth off", 1000);
+  g_lv.task->showAlert(want_ble ? TR("Bluetooth on") : TR("Bluetooth off"), 1000);
 }
 #endif
 
@@ -5685,7 +5755,7 @@ static void buildBluetoothSettings() {
   if (ble_active)
     lv_label_set_text(mode, wifi_on_m ? "Mode: BLE on (+ Wi-Fi)" : "Mode: BLE on");
   else if (ble_cap_m && wifiConfigGetBleEnabled())
-    lv_label_set_text(mode, "Mode: BLE starting / low memory");
+    lv_label_set_text(mode, TR("Mode: BLE starting / low memory"));
   else
     lv_label_set_text(mode, wifi_on_m ? "Mode: BLE off (Wi-Fi on)" : "Mode: BLE off");
 #else
@@ -5700,8 +5770,8 @@ static void buildBluetoothSettings() {
   if (g_lv.task) {
     char blebuf[40];
     const uint32_t ble_pin = the_mesh.getBLEPin();
-    if (ble_pin > 0) snprintf(blebuf, sizeof(blebuf), "Pairing code: %06lu", static_cast<unsigned long>(ble_pin));
-    else snprintf(blebuf, sizeof(blebuf), "Pairing code: n/a");
+    if (ble_pin > 0) snprintf(blebuf, sizeof(blebuf), TR("Pairing code: %06lu"), static_cast<unsigned long>(ble_pin));
+    else snprintf(blebuf, sizeof(blebuf), TR("Pairing code: n/a"));
     lv_obj_t* ble_l = lv_label_create(body);
     lv_label_set_text(ble_l, blebuf);
     lv_obj_set_style_text_color(ble_l, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
@@ -5713,7 +5783,7 @@ static void buildBluetoothSettings() {
 #if defined(ESP32) && defined(MULTI_TRANSPORT_COMPANION)
   // ---- Enable switch + save button ----
   lv_obj_t* sw_lbl = lv_label_create(body);
-  lv_label_set_text(sw_lbl, "Enable Bluetooth");
+  lv_label_set_text(sw_lbl, TR("Enable Bluetooth"));
   lv_obj_set_style_text_color(sw_lbl, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
   lv_obj_set_pos(sw_lbl, 2, y + 6);
   g_set_modal.wifi_sw = lv_switch_create(body);  // reuse the same slot — only one switch lives in a modal at a time
@@ -5731,7 +5801,7 @@ static void buildBluetoothSettings() {
   styleButton(b_save);
   lv_obj_add_event_cb(b_save, saveBluetoothCb, LV_EVENT_CLICKED, nullptr);
   lv_obj_t* lbl = lv_label_create(b_save);
-  lv_label_set_text(lbl, "Save");
+  lv_label_set_text(lbl, TR("Save"));
   lv_obj_center(lbl);
 #else
   (void)y;
@@ -5751,11 +5821,11 @@ static bool    s_pending_wifi_was_wifi = false;   // Wi-Fi already the live tran
 
 static void doApplyWifi() {
   if (!wifiConfigSetSsid(s_pending_wifi_ssid)) {
-    if (g_lv.task) g_lv.task->showAlert("SSID too long", 1400);
+    if (g_lv.task) g_lv.task->showAlert(TR("SSID too long"), 1400);
     return;
   }
   if (!wifiConfigSetPwd(s_pending_wifi_pwd)) {
-    if (g_lv.task) g_lv.task->showAlert("Password too long", 1400);
+    if (g_lv.task) g_lv.task->showAlert(TR("Password too long"), 1400);
     return;
   }
   wifiConfigSetRadioEnabled(s_pending_wifi_radio_on);
@@ -5767,12 +5837,12 @@ static void doApplyWifi() {
   // re-begins with the new creds (consumeApplyRequest path) — no reboot needed.
   const bool reboot_needed = !(s_pending_wifi_was_wifi && s_pending_wifi_radio_on);
   if (!reboot_needed) {
-    if (g_lv.task) g_lv.task->showAlert("Saved — reconnecting\xE2\x80\xA6", 1600);
+    if (g_lv.task) g_lv.task->showAlert(TR("Saved — reconnecting\xE2\x80\xA6"), 1600);
     refreshStatusLabels();
     return;
   }
   if (g_lv.task) {
-    g_lv.task->showAlert("Saved — rebooting", 1400);
+    g_lv.task->showAlert(TR("Saved — rebooting"), 1400);
     g_lv.task->persistHistoryNow();   // persist chat before reboot
   }
   refreshStatusLabels();
@@ -5797,11 +5867,11 @@ static void wifiSlotLoadCb(lv_event_t* e) {
   if (!touchPrefsGetWifiSlot((int)idx, label, sizeof(label),
                              ssid_b, sizeof(ssid_b),
                              pwd_b, sizeof(pwd_b))) {
-    if (g_lv.task) g_lv.task->showAlert("Slot empty", 1000);
+    if (g_lv.task) g_lv.task->showAlert(TR("Slot empty"), 1000);
     return;
   }
   if (ssid_b[0] == '\0') {
-    if (g_lv.task) g_lv.task->showAlert("Slot empty", 1000);
+    if (g_lv.task) g_lv.task->showAlert(TR("Slot empty"), 1000);
     return;
   }
   lv_textarea_set_text(g_set_modal.wifi_ssid_ta, ssid_b);
@@ -5835,7 +5905,7 @@ static void wifiSlotSaveCb(lv_event_t* e) {
   const char* ssid = lv_textarea_get_text(g_set_modal.wifi_ssid_ta);
   const char* pwd  = lv_textarea_get_text(g_set_modal.wifi_pwd_ta);
   if (!ssid || !ssid[0]) {
-    if (g_lv.task) g_lv.task->showAlert("Enter SSID first", 1200);
+    if (g_lv.task) g_lv.task->showAlert(TR("Enter SSID first"), 1200);
     return;
   }
   // Use the SSID as the slot label so the row text reads naturally even
@@ -5844,11 +5914,11 @@ static void wifiSlotSaveCb(lv_event_t* e) {
   strncpy(label, ssid, sizeof(label) - 1);
   label[sizeof(label) - 1] = '\0';
   if (!touchPrefsSetWifiSlot((int)idx, label, ssid, pwd)) {
-    if (g_lv.task) g_lv.task->showAlert("Save failed", 1200);
+    if (g_lv.task) g_lv.task->showAlert(TR("Save failed"), 1200);
     return;
   }
   char msg[40];
-  snprintf(msg, sizeof(msg), "Saved to slot %d", (int)idx + 1);
+  snprintf(msg, sizeof(msg), TR("Saved to slot %d"), (int)idx + 1);
   if (g_lv.task) g_lv.task->showAlert(msg, 1100);
   // Refresh just this slot's row label in place. Do NOT close+rebuild here: on
   // the inline Network sub-tab s_settings_inline_parent is null in this callback,
@@ -5859,6 +5929,25 @@ static void wifiSlotSaveCb(lv_event_t* e) {
     wifiSlotFmtRow((int)idx, label, ssid, row_text, sizeof(row_text));
     lv_label_set_text(s_wifi_slot_row_lbl[idx], row_text);
     lv_obj_set_style_text_color(s_wifi_slot_row_lbl[idx], lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
+  }
+}
+
+// Clear a saved Wi-Fi slot (the trash button on its row). Refreshes the row
+// label to "(empty)" in place — same in-place pattern as the slot Save.
+static void wifiSlotDeleteCb(lv_event_t* e) {
+  if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+  intptr_t idx = (intptr_t)lv_event_get_user_data(e);
+  if (idx < 0 || idx >= TOUCH_WIFI_SLOT_COUNT) return;
+  touchPrefsSetWifiSlot((int)idx, "", "", "");
+  if (s_wifi_slot_row_lbl[idx]) {
+    char row_text[80];
+    wifiSlotFmtRow((int)idx, "", "", row_text, sizeof(row_text));
+    lv_label_set_text(s_wifi_slot_row_lbl[idx], row_text);
+    lv_obj_set_style_text_color(s_wifi_slot_row_lbl[idx], lv_color_hex(COLOR_SUB), LV_PART_MAIN);
+  }
+  if (g_lv.task) {
+    char m[28]; snprintf(m, sizeof m, TR("Slot %d cleared"), (int)idx + 1);
+    g_lv.task->showAlert(m, 1000);
   }
 }
 
@@ -5915,7 +6004,7 @@ static void wifiScanSsidCb(lv_event_t* e) {
   // the SSID field, a later sync would clobber this back to the old SSID.
   if (ok) setTextareaSynced(g_set_modal.wifi_ssid_ta, s_wifiscan_ssids[idx]);
   wifiScanPopupClose();
-  if (ok && g_lv.task) g_lv.task->showAlert("SSID set — enter password, then Save", 1700);
+  if (ok && g_lv.task) g_lv.task->showAlert(TR("SSID set — enter password, then Save"), 1700);
 }
 
 // (Re)draw the scan-results list inside the popup from the latest scan.
@@ -5925,7 +6014,7 @@ static void wifiScanFillList() {
   const lv_coord_t rw = lv_disp_get_hor_res(nullptr) - 28;
   if (s_wifiscan_count <= 0) {
     lv_obj_t* l = lv_label_create(s_wifi_scan_list);
-    lv_label_set_text(l, "No networks found (2.4 GHz only)");
+    lv_label_set_text(l, TR("No networks found (2.4 GHz only)"));
     lv_obj_set_style_text_color(l, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
     lv_obj_set_style_text_font(l, &g_font_14, LV_PART_MAIN);
     return;
@@ -5960,7 +6049,7 @@ static void openWifiScanPopup() {
   lv_obj_clear_flag(s_wifi_scan_popup, LV_OBJ_FLAG_SCROLLABLE);
 
   lv_obj_t* title = lv_label_create(s_wifi_scan_popup);
-  lv_label_set_text(title, "Select network");
+  lv_label_set_text(title, TR("Select network"));
   lv_obj_set_style_text_font(title, &g_font_16, LV_PART_MAIN);
   lv_obj_set_style_text_color(title, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
   lv_obj_set_pos(title, 8, 9);
@@ -5970,7 +6059,7 @@ static void openWifiScanPopup() {
   lv_obj_align(close, LV_ALIGN_TOP_RIGHT, -6, 4);
   styleButton(close);
   lv_obj_add_event_cb(close, wifiScanPopupCloseCb, LV_EVENT_CLICKED, nullptr);
-  { lv_obj_t* cl = lv_label_create(close); lv_label_set_text(cl, "Close");
+  { lv_obj_t* cl = lv_label_create(close); lv_label_set_text(cl, TR("Close"));
     lv_obj_set_style_text_font(cl, &g_font_12, LV_PART_MAIN); lv_obj_center(cl); }
 
   s_wifi_scan_list = lv_obj_create(s_wifi_scan_popup);
@@ -5994,7 +6083,7 @@ static void wifiScanOpenAndKick() {
     wifiScanFillList();   // show last results immediately, refresh when the rescan lands
   } else if (s_wifi_scan_list) {
     lv_obj_t* l = lv_label_create(s_wifi_scan_list);
-    lv_label_set_text(l, "Scanning\xE2\x80\xA6");
+    lv_label_set_text(l, TR("Scanning\xE2\x80\xA6"));
     lv_obj_set_style_text_color(l, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
     lv_obj_set_style_text_font(l, &g_font_14, LV_PART_MAIN);
   }
@@ -6045,7 +6134,7 @@ static void buildWifiSettings() {
 #if defined(ESP32) && defined(MULTI_TRANSPORT_COMPANION)
   // ---- Status (+ Wi-Fi radio toggle on the same row to save vertical space) ----
   lv_obj_t* sec1 = lv_label_create(body);
-  lv_label_set_text(sec1, "Status");
+  lv_label_set_text(sec1, TR("Status"));
   lv_obj_set_style_text_color(sec1, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
   lv_obj_set_style_text_font(sec1, &g_font_12, LV_PART_MAIN);
   lv_obj_set_pos(sec1, 2, y + 6);
@@ -6060,12 +6149,12 @@ static void buildWifiSettings() {
   lv_obj_set_style_text_color(g_set_modal.wifi_sta_status_l, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
   lv_obj_set_style_text_font(g_set_modal.wifi_sta_status_l, &g_font_14, LV_PART_MAIN);
   lv_obj_set_pos(g_set_modal.wifi_sta_status_l, 2, y);
-  lv_label_set_text(g_set_modal.wifi_sta_status_l, "Loading...");
+  lv_label_set_text(g_set_modal.wifi_sta_status_l, TR("Loading..."));
   y += 42;   // room for the 2-line connected status so it can't overlap the SSID field
 
   // ---- SSID + Scan (same row: field on the left, Scan opens the picker) ----
   lv_obj_t* wssid_l = lv_label_create(body);
-  lv_label_set_text(wssid_l, "Network name (SSID)");
+  lv_label_set_text(wssid_l, TR("Network name (SSID)"));
   lv_obj_set_style_text_color(wssid_l, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
   lv_obj_set_style_text_font(wssid_l, &g_font_12, LV_PART_MAIN);
   lv_obj_set_pos(wssid_l, 2, y);
@@ -6075,7 +6164,7 @@ static void buildWifiSettings() {
   lv_obj_set_size(g_set_modal.wifi_ssid_ta, cw - scan_w - scan_g, 32);
   lv_obj_set_pos(g_set_modal.wifi_ssid_ta, 0, y);
   lv_textarea_set_one_line(g_set_modal.wifi_ssid_ta, true);
-  lv_textarea_set_placeholder_text(g_set_modal.wifi_ssid_ta, "Network name");
+  lv_textarea_set_placeholder_text(g_set_modal.wifi_ssid_ta, TR("Network name"));
   lv_textarea_set_max_length(g_set_modal.wifi_ssid_ta, WIFI_CONFIG_SSID_MAX - 1);
   attachSettingsTaEvents(g_set_modal.wifi_ssid_ta);
   lv_obj_t* scan_btn = lv_btn_create(body);
@@ -6090,7 +6179,7 @@ static void buildWifiSettings() {
 
   // ---- Password ----
   lv_obj_t* wpwd_l = lv_label_create(body);
-  lv_label_set_text(wpwd_l, "Password (empty = open)");
+  lv_label_set_text(wpwd_l, TR("Password (empty = open)"));
   lv_obj_set_style_text_color(wpwd_l, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
   lv_obj_set_style_text_font(wpwd_l, &g_font_12, LV_PART_MAIN);
   lv_obj_set_pos(wpwd_l, 2, y);
@@ -6100,7 +6189,7 @@ static void buildWifiSettings() {
   lv_obj_set_pos(g_set_modal.wifi_pwd_ta, 2, y);
   lv_textarea_set_one_line(g_set_modal.wifi_pwd_ta, true);
   lv_textarea_set_password_mode(g_set_modal.wifi_pwd_ta, true);
-  lv_textarea_set_placeholder_text(g_set_modal.wifi_pwd_ta, "PSK");
+  lv_textarea_set_placeholder_text(g_set_modal.wifi_pwd_ta, TR("PSK"));
   lv_textarea_set_max_length(g_set_modal.wifi_pwd_ta, WIFI_CONFIG_PWD_MAX - 1);
   attachSettingsTaEvents(g_set_modal.wifi_pwd_ta);
   y += 36;
@@ -6126,7 +6215,7 @@ static void buildWifiSettings() {
   lv_obj_set_style_text_color(b_save, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
   lv_obj_add_event_cb(b_save, saveWifiCb, LV_EVENT_CLICKED, nullptr);
   lv_obj_t* lsave = lv_label_create(b_save);
-  lv_label_set_text(lsave, "Save / turn on");
+  lv_label_set_text(lsave, TR("Save / turn on"));
   lv_obj_center(lsave);
   y += 42;
 
@@ -6137,7 +6226,7 @@ static void buildWifiSettings() {
   // to actually switch over. Tapping Save copies the *current* textarea
   // contents (plus the slot's label or "Slot N" if blank) into the slot.
   lv_obj_t* sec_p = lv_label_create(body);
-  lv_label_set_text(sec_p, "Saved profiles");
+  lv_label_set_text(sec_p, TR("Saved profiles"));
   lv_obj_set_style_text_color(sec_p, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
   lv_obj_set_style_text_font(sec_p, &g_font_12, LV_PART_MAIN);
   lv_obj_set_pos(sec_p, 2, y);
@@ -6153,8 +6242,8 @@ static void buildWifiSettings() {
     char row_text[80];
     wifiSlotFmtRow(i, label, ssid_b, row_text, sizeof(row_text));
 
-    const int slot_save_w = 56, slot_gap = 6;
-    const int slot_row_w  = cw - slot_save_w - slot_gap;   // load row fills, Save sits at the right
+    const int slot_del_w = 32, slot_save_w = 52, slot_gap = 6;
+    const int slot_row_w  = cw - slot_save_w - slot_del_w - slot_gap * 2;   // load row fills; Save + Delete at the right
     lv_obj_t* row = lv_btn_create(body);
     lv_obj_set_size(row, slot_row_w, 30);
     lv_obj_set_pos(row, 0, y);
@@ -6162,7 +6251,7 @@ static void buildWifiSettings() {
     lv_obj_set_style_bg_color(row, lv_color_hex(empty ? 0x0C0D0E : 0x1A1B1C), LV_PART_MAIN);
     lv_obj_add_event_cb(row, wifiSlotLoadCb, LV_EVENT_CLICKED, (void*)(intptr_t)i);
     lv_obj_t* lt = lv_label_create(row);
-    s_wifi_slot_row_lbl[i] = lt;   // cache for in-place refresh on slot Save
+    s_wifi_slot_row_lbl[i] = lt;   // cache for in-place refresh on slot Save / Delete
     lv_label_set_text(lt, row_text);
     lv_label_set_long_mode(lt, LV_LABEL_LONG_DOT);
     lv_obj_set_width(lt, slot_row_w - 16);
@@ -6172,14 +6261,27 @@ static void buildWifiSettings() {
 
     lv_obj_t* sbtn = lv_btn_create(body);
     lv_obj_set_size(sbtn, slot_save_w, 30);
-    lv_obj_set_pos(sbtn, cw - slot_save_w, y);
+    lv_obj_set_pos(sbtn, cw - slot_save_w - slot_del_w - slot_gap, y);
     styleButton(sbtn);
     lv_obj_set_style_bg_color(sbtn, lv_color_hex(COLOR_STATUS_OK), LV_PART_MAIN);
     lv_obj_add_event_cb(sbtn, wifiSlotSaveCb, LV_EVENT_CLICKED, (void*)(intptr_t)i);
     lv_obj_t* sl = lv_label_create(sbtn);
-    lv_label_set_text(sl, "Save");
+    lv_label_set_text(sl, TR("Save"));
     lv_obj_set_style_text_font(sl, &g_font_12, LV_PART_MAIN);
     lv_obj_center(sl);
+
+    // Delete (clear) this slot.
+    lv_obj_t* dbtn = lv_btn_create(body);
+    lv_obj_set_size(dbtn, slot_del_w, 30);
+    lv_obj_set_pos(dbtn, cw - slot_del_w, y);
+    styleButton(dbtn);
+    lv_obj_set_style_bg_color(dbtn, lv_color_hex(0xC44B55), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(dbtn, lv_color_hex(0xA13F47), LV_PART_MAIN | LV_STATE_PRESSED);
+    lv_obj_add_event_cb(dbtn, wifiSlotDeleteCb, LV_EVENT_CLICKED, (void*)(intptr_t)i);
+    lv_obj_t* dl = lv_label_create(dbtn);
+    lv_label_set_text(dl, LV_SYMBOL_TRASH);
+    lv_obj_set_style_text_font(dl, &g_font_12, LV_PART_MAIN);
+    lv_obj_center(dl);
 
     y += 34;
   }
@@ -6187,7 +6289,7 @@ static void buildWifiSettings() {
   (void)body;
   (void)y;
   lv_obj_t* unsup = lv_label_create(body);
-  lv_label_set_text(unsup, "Wi-Fi is not enabled in this build.");
+  lv_label_set_text(unsup, TR("Wi-Fi is not enabled in this build."));
   lv_obj_set_style_text_color(unsup, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
   lv_obj_set_pos(unsup, 2, 8);
 #endif
@@ -6205,7 +6307,7 @@ static void openLogModalCb(lv_event_t* e) {
   styleButton(g_set_modal.log_rx_btn);
   lv_obj_add_event_cb(g_set_modal.log_rx_btn, logModeRxCb, LV_EVENT_CLICKED, nullptr);
   lv_obj_t* rx_lbl = lv_label_create(g_set_modal.log_rx_btn);
-  lv_label_set_text(rx_lbl, "RX log");
+  lv_label_set_text(rx_lbl, TR("RX log"));
   lv_obj_center(rx_lbl);
 
   g_set_modal.log_raw_btn = lv_btn_create(body);
@@ -6214,7 +6316,7 @@ static void openLogModalCb(lv_event_t* e) {
   styleButton(g_set_modal.log_raw_btn);
   lv_obj_add_event_cb(g_set_modal.log_raw_btn, logModeRawCb, LV_EVENT_CLICKED, nullptr);
   lv_obj_t* raw_lbl = lv_label_create(g_set_modal.log_raw_btn);
-  lv_label_set_text(raw_lbl, "Raw log");
+  lv_label_set_text(raw_lbl, TR("Raw log"));
   lv_obj_center(raw_lbl);
   y += 38;
 
@@ -6236,8 +6338,12 @@ static void openLogModalCb(lv_event_t* e) {
 static void goToTab(int idx) {
   if (!g_lv.tabview) return;
   lv_tabview_set_act(g_lv.tabview, static_cast<uint32_t>(idx), LV_ANIM_ON);
-  scheduleHeavyRefresh(170);
-  // `onLvTabChanged` is invoked from `tabChangedCb` when the tabview value changes.
+  // lv_tabview_set_act() does NOT emit LV_EVENT_VALUE_CHANGED, so the full
+  // tab-change handler (tabChangedCb → onMapTabActivated, status bar, chat
+  // overlay cleanup, onLvTabChanged, heavy refresh) was skipped for swipe-driven
+  // switches — which left the Map black when it was reached by a swipe instead of
+  // a tap. Fire it explicitly so a swipe behaves exactly like a bottom-bar tap.
+  lv_event_send(g_lv.tabview, LV_EVENT_VALUE_CHANGED, nullptr);
 }
 
 
@@ -6339,7 +6445,7 @@ static void openContactsSearchSheetCb(lv_event_t* e) {
   styleCard(s_contacts_search_ta);
   lv_textarea_set_one_line(s_contacts_search_ta, true);
   lv_textarea_set_max_length(s_contacts_search_ta, (uint32_t)(sizeof(g_lv.contacts_search) - 1));
-  lv_textarea_set_placeholder_text(s_contacts_search_ta, "Name fragment");
+  lv_textarea_set_placeholder_text(s_contacts_search_ta, TR("Name fragment"));
   lv_textarea_set_text(s_contacts_search_ta, g_lv.contacts_search);
   lv_obj_set_style_text_color(s_contacts_search_ta, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
   lv_obj_set_style_text_font(s_contacts_search_ta, &g_font_14, LV_PART_MAIN);
@@ -6358,7 +6464,7 @@ static void openContactsSearchSheetCb(lv_event_t* e) {
   styleButton(clear_btn);
   lv_obj_add_event_cb(clear_btn, contactsSearchClearCb, LV_EVENT_CLICKED, nullptr);
   lv_obj_t* cl = lv_label_create(clear_btn);
-  lv_label_set_text(cl, "Clear");
+  lv_label_set_text(cl, TR("Clear"));
   lv_obj_center(cl);
 
   lv_obj_t* apply_btn = lv_btn_create(card);
@@ -6368,7 +6474,7 @@ static void openContactsSearchSheetCb(lv_event_t* e) {
   lv_obj_set_style_bg_color(apply_btn, lv_color_hex(COLOR_STATUS_OK), LV_PART_MAIN);
   lv_obj_add_event_cb(apply_btn, contactsSearchApplyCb, LV_EVENT_CLICKED, nullptr);
   lv_obj_t* al = lv_label_create(apply_btn);
-  lv_label_set_text(al, "Apply");
+  lv_label_set_text(al, TR("Apply"));
   lv_obj_center(al);
 }
 
@@ -6416,7 +6522,7 @@ static void actionSheetPingCb(lv_event_t* e) {
   ContactInfo c;
   bool ok = the_mesh.getContactByIdx(s_action_sheet_mesh_idx, c);
   closeActionSheet();
-  if (!ok) { g_lv.task->showAlert("Contact gone", 1200); return; }
+  if (!ok) { g_lv.task->showAlert(TR("Contact gone"), 1200); return; }
   /* sendStatusPingWithGuestLoginForUI() pipelines a blank-password LOGIN
    * before the STATUS REQ. Repeaters refuse to decrypt a PAYLOAD_TYPE_REQ
    * from a sender that isn't already in their ACL, and the ACL is only
@@ -6433,10 +6539,10 @@ static void actionSheetPingCb(lv_event_t* e) {
                                     c.name[0] ? c.name : "repeater");
     s_ui_ping_deadline_ms = millis() + UI_PING_TIMEOUT_MS;
     g_lv.task->showAlert(r == MSG_SEND_SENT_DIRECT
-                         ? "Pinged (direct) — waiting…"
-                         : "Pinged (flood) — waiting…", 1400);
+                         ? TR("Pinged (direct) — waiting…")
+                         : TR("Pinged (flood) — waiting…"), 1400);
   } else {
-    g_lv.task->showAlert("Ping failed", 1200);
+    g_lv.task->showAlert(TR("Ping failed"), 1200);
   }
 }
 
@@ -6445,12 +6551,12 @@ static void actionSheetDeleteCb(lv_event_t* e) {
   ContactInfo c;
   bool ok = the_mesh.getContactByIdx(s_action_sheet_mesh_idx, c);
   closeActionSheet();
-  if (!ok) { g_lv.task->showAlert("Contact gone", 1200); return; }
+  if (!ok) { g_lv.task->showAlert(TR("Contact gone"), 1200); return; }
   if (the_mesh.uiRemoveContact(c)) {   // persists the removal (/contacts3) so it doesn't reappear on reboot
-    g_lv.task->showAlert("Contact deleted", 1000);
+    g_lv.task->showAlert(TR("Contact deleted"), 1000);
     refreshContactsList();
   } else {
-    g_lv.task->showAlert("Delete failed", 1200);
+    g_lv.task->showAlert(TR("Delete failed"), 1200);
   }
 }
 
@@ -6461,12 +6567,12 @@ static void actionSheetResetPathCb(lv_event_t* e) {
   ContactInfo c;
   bool ok = the_mesh.getContactByIdx(s_action_sheet_mesh_idx, c);
   closeActionSheet();
-  if (!ok) { g_lv.task->showAlert("Contact gone", 1200); return; }
+  if (!ok) { g_lv.task->showAlert(TR("Contact gone"), 1200); return; }
   if (the_mesh.uiResetContactPath(c.id.pub_key)) {
-    g_lv.task->showAlert("Path reset", 1000);
+    g_lv.task->showAlert(TR("Path reset"), 1000);
     refreshContactsList();
   } else {
-    g_lv.task->showAlert("Path reset failed", 1200);
+    g_lv.task->showAlert(TR("Path reset failed"), 1200);
   }
 }
 
@@ -6480,7 +6586,7 @@ static void actionSheetTelemetryCb(lv_event_t* e) {
   ContactInfo c;
   bool ok = the_mesh.getContactByIdx(s_action_sheet_mesh_idx, c);
   closeActionSheet();
-  if (!ok) { g_lv.task->showAlert("Contact gone", 1200); return; }
+  if (!ok) { g_lv.task->showAlert(TR("Contact gone"), 1200); return; }
   // Chain a guest LOGIN ahead of the telemetry REQ — same reason as ping:
   // repeaters & sensors require us in their ACL before they will decrypt a
   // PAYLOAD_TYPE_REQ. See sendStatusPingWithGuestLoginForUI for the full
@@ -6492,10 +6598,10 @@ static void actionSheetTelemetryCb(lv_event_t* e) {
                                     c.name[0] ? c.name : "node");
     s_ui_ping_deadline_ms = millis() + UI_PING_TIMEOUT_MS;
     g_lv.task->showAlert(r == MSG_SEND_SENT_DIRECT
-                         ? "Telemetry req (direct)…"
-                         : "Telemetry req (flood)…", 1400);
+                         ? TR("Telemetry req (direct)…")
+                         : TR("Telemetry req (flood)…"), 1400);
   } else {
-    g_lv.task->showAlert("Telemetry req failed", 1200);
+    g_lv.task->showAlert(TR("Telemetry req failed"), 1200);
   }
 }
 
@@ -6712,7 +6818,7 @@ static void openAdminCmdPicker() {
   lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
 
   lv_obj_t* title = lv_label_create(card);
-  lv_label_set_text(title, "Commands");
+  lv_label_set_text(title, TR("Commands"));
   lv_obj_set_style_text_color(title, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
   lv_obj_set_style_text_font(title, &g_font_14, LV_PART_MAIN);
   lv_obj_align(title, LV_ALIGN_TOP_LEFT, 4, 4);
@@ -6895,7 +7001,7 @@ static void openAdminConsole(const ContactInfo& c) {
   styleCard(s_admin_cmd_ta);
   lv_textarea_set_one_line(s_admin_cmd_ta, true);
   lv_textarea_set_max_length(s_admin_cmd_ta, 64);
-  lv_textarea_set_placeholder_text(s_admin_cmd_ta, "command");
+  lv_textarea_set_placeholder_text(s_admin_cmd_ta, TR("command"));
   lv_obj_set_style_text_color(s_admin_cmd_ta, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
   lv_obj_set_style_text_font(s_admin_cmd_ta, &g_font_14, LV_PART_MAIN);
   attachSettingsTaEvents(s_admin_cmd_ta);
@@ -6951,7 +7057,7 @@ static void adminPwSubmitCb(lv_event_t* e) {
   const char* pw = lv_textarea_get_text(s_admin_pw_ta);
   ContactInfo* c = the_mesh.lookupContactByPubKey(s_admin_pub32, PUB_KEY_SIZE);
   if (!c) {
-    if (g_lv.task) g_lv.task->showAlert("Contact missing", 1200);
+    if (g_lv.task) g_lv.task->showAlert(TR("Contact missing"), 1200);
     return;
   }
   // Stash the attempted password + remember preference for the async
@@ -6963,9 +7069,9 @@ static void adminPwSubmitCb(lv_event_t* e) {
                               lv_obj_has_state(s_admin_pw_remember, LV_STATE_CHECKED));
   int r = the_mesh.uiSendAdminLogin(*c, s_admin_pw_attempt);
   if (r == MSG_SEND_SENT_FLOOD || r == MSG_SEND_SENT_DIRECT) {
-    if (g_lv.task) g_lv.task->showAlert("Logging in\xe2\x80\xa6", 1500);
+    if (g_lv.task) g_lv.task->showAlert(TR("Logging in\xe2\x80\xa6"), 1500);
   } else {
-    if (g_lv.task) g_lv.task->showAlert("Send failed", 1200);
+    if (g_lv.task) g_lv.task->showAlert(TR("Send failed"), 1200);
   }
 }
 
@@ -7046,7 +7152,7 @@ static void openAdminLoginPrompt(const ContactInfo& c) {
   lv_textarea_set_one_line(s_admin_pw_ta, true);
   lv_textarea_set_password_mode(s_admin_pw_ta, true);
   lv_textarea_set_max_length(s_admin_pw_ta, 15);
-  lv_textarea_set_placeholder_text(s_admin_pw_ta, "");
+  lv_textarea_set_placeholder_text(s_admin_pw_ta, TR(""));
   lv_obj_set_style_text_color(s_admin_pw_ta, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
   lv_obj_set_style_text_font(s_admin_pw_ta, &g_font_14, LV_PART_MAIN);
   attachSettingsTaEvents(s_admin_pw_ta);
@@ -7093,7 +7199,7 @@ static void openAdminLoginPrompt(const ContactInfo& c) {
   styleButton(cancel_btn);
   lv_obj_add_event_cb(cancel_btn, adminPwCancelCb, LV_EVENT_CLICKED, nullptr);
   lv_obj_t* cl = lv_label_create(cancel_btn);
-  lv_label_set_text(cl, "Cancel");
+  lv_label_set_text(cl, TR("Cancel"));
   lv_obj_center(cl);
 
   lv_obj_t* login_btn = lv_btn_create(card);
@@ -7112,7 +7218,7 @@ static void actionSheetAdminCb(lv_event_t* e) {
   ContactInfo c;
   bool ok = the_mesh.getContactByIdx(s_action_sheet_mesh_idx, c);
   closeActionSheet();
-  if (!ok) { g_lv.task->showAlert("Contact gone", 1200); return; }
+  if (!ok) { g_lv.task->showAlert(TR("Contact gone"), 1200); return; }
   s_room_join_idx = -1;   // repeater admin login, not a room join
   openAdminLoginPrompt(c);
 }
@@ -7127,7 +7233,7 @@ static void actionSheetJoinRoomCb(lv_event_t* e) {
   bool ok = the_mesh.getContactByIdx(s_action_sheet_mesh_idx, c);
   s_room_join_idx = ok ? (int)s_action_sheet_mesh_idx : -1;
   closeActionSheet();
-  if (!ok) { g_lv.task->showAlert("Contact gone", 1200); return; }
+  if (!ok) { g_lv.task->showAlert(TR("Contact gone"), 1200); return; }
   openAdminLoginPrompt(c);
 }
 
@@ -7139,15 +7245,15 @@ static void actionSheetFavoriteCb(lv_event_t* e) {
   ContactInfo c;
   bool ok = the_mesh.getContactByIdx(s_action_sheet_mesh_idx, c);
   closeActionSheet();
-  if (!ok) { g_lv.task->showAlert("Contact gone", 1200); return; }
+  if (!ok) { g_lv.task->showAlert(TR("Contact gone"), 1200); return; }
 #if defined(ESP32)
   bool was_fav = touchPrefsIsFavorite(c.id.pub_key);
   bool now_fav = touchPrefsSetFavorite(c.id.pub_key, !was_fav);
-  g_lv.task->showAlert(now_fav ? "Added to favorites" : "Removed from favorites", 1100);
+  g_lv.task->showAlert(now_fav ? TR("Added to favorites") : TR("Removed from favorites"), 1100);
   // Force a list rebuild so the star (or its removal) shows immediately.
   refreshContactsList();
 #else
-  g_lv.task->showAlert("Favorites unsupported", 1100);
+  g_lv.task->showAlert(TR("Favorites unsupported"), 1100);
 #endif
 }
 
@@ -7164,12 +7270,12 @@ static void actionSheetTracePingCb(lv_event_t* e) {
   ContactInfo c;
   bool ok = the_mesh.getContactByIdx(s_action_sheet_mesh_idx, c);
   closeActionSheet();
-  if (!ok) { g_lv.task->showAlert("Contact gone", 1200); return; }
+  if (!ok) { g_lv.task->showAlert(TR("Contact gone"), 1200); return; }
   uint32_t tag = the_mesh.uiSendTracePing(c.id.pub_key);
   if (tag == 0) {
-    g_lv.task->showAlert("Trace failed", 1200);
+    g_lv.task->showAlert(TR("Trace failed"), 1200);
   } else {
-    g_lv.task->showAlert("Trace sent\xe2\x80\xa6", 1200);
+    g_lv.task->showAlert(TR("Trace sent\xe2\x80\xa6"), 1200);
   }
 }
 
@@ -7180,16 +7286,16 @@ static void actionSheetRangeTestCb(lv_event_t* e) {
   ContactInfo c;
   bool ok = the_mesh.getContactByIdx(s_action_sheet_mesh_idx, c);
   closeActionSheet();
-  if (!ok) { g_lv.task->showAlert("Contact gone", 1200); return; }
+  if (!ok) { g_lv.task->showAlert(TR("Contact gone"), 1200); return; }
   const uint32_t ts = the_mesh.getRTCClock()->getCurrentTime();
   uint32_t est = 0, hash4 = 0;
   uint32_t ack_hash = 0;
   int r = the_mesh.sendMessage(c, ts, 0, "RangeTest \xe2\x80\x94 ACK?", ack_hash, est, &hash4);
   if (r == MSG_SEND_SENT_FLOOD || r == MSG_SEND_SENT_DIRECT) {
-    g_lv.task->showAlert(r == MSG_SEND_SENT_DIRECT ? "RangeTest sent (direct)"
-                                                   : "RangeTest sent (flood)", 1400);
+    g_lv.task->showAlert(r == MSG_SEND_SENT_DIRECT ? TR("RangeTest sent (direct)")
+                                                   : TR("RangeTest sent (flood)"), 1400);
   } else {
-    g_lv.task->showAlert("RangeTest failed", 1200);
+    g_lv.task->showAlert(TR("RangeTest failed"), 1200);
   }
 }
 
@@ -7482,8 +7588,8 @@ static void losDrawPlot() {
   }
 
   // ---- Height value labels ----
-  if (s_los_self_h_lbl) lv_label_set_text_fmt(s_los_self_h_lbl, "%dm", (int)s_los_ant_self);
-  if (s_los_peer_h_lbl) lv_label_set_text_fmt(s_los_peer_h_lbl, "%dm", (int)s_los_ant_peer);
+  if (s_los_self_h_lbl) lv_label_set_text_fmt(s_los_self_h_lbl, TR("%dm"), (int)s_los_ant_self);
+  if (s_los_peer_h_lbl) lv_label_set_text_fmt(s_los_peer_h_lbl, TR("%dm"), (int)s_los_ant_peer);
 
   // ---- Verdict text ----
   if (s_los_verdict) {
@@ -7588,7 +7694,7 @@ static void losRenderResult() {
     lv_obj_set_style_text_font(l, &g_font_12, LV_PART_MAIN);
     lv_obj_set_style_text_color(l, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
     lv_obj_set_style_text_align(l, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    lv_label_set_text(l, "2m");
+    lv_label_set_text(l, TR("2m"));
     return l;
   };
   // Left cluster (you)
@@ -7623,9 +7729,9 @@ static void losPoll() {
       if (a != shown) {
         shown = a;
         if (a >= 2)
-          lv_label_set_text_fmt(s_los_msg, "Analyzing terrain\xe2\x80\xa6\n(retry %d of 3)", a);
+          lv_label_set_text_fmt(s_los_msg, TR("Analyzing terrain\xe2\x80\xa6\n(retry %d of 3)"), a);
         else
-          lv_label_set_text(s_los_msg, "Analyzing terrain\xe2\x80\xa6");
+          lv_label_set_text(s_los_msg, TR("Analyzing terrain\xe2\x80\xa6"));
       }
     }
     return;
@@ -7708,15 +7814,15 @@ static void openLosModal(uint32_t mesh_idx) {
 
   // Early outs that need no network.
   if (s_los_self_lat == 0.0 && s_los_self_lon == 0.0) {
-    lv_label_set_text(msg, "Your location is unknown.\nSet GPS / position in\nSettings \xe2\x86\x92 Profile first.");
+    lv_label_set_text(msg, TR("Your location is unknown.\nSet GPS / position in\nSettings \xe2\x86\x92 Profile first."));
     return;
   }
   if (s_los_peer_lat == 0.0 && s_los_peer_lon == 0.0) {
-    lv_label_set_text(msg, "This contact hasn't shared\na GPS position.");
+    lv_label_set_text(msg, TR("This contact hasn't shared\na GPS position."));
     return;
   }
   if (WiFi.status() != WL_CONNECTED) {
-    lv_label_set_text(msg, "Wi-Fi needed to fetch the\nterrain profile for this path.\nConnect in Settings \xe2\x86\x92 Wi-Fi.");
+    lv_label_set_text(msg, TR("Wi-Fi needed to fetch the\nterrain profile for this path.\nConnect in Settings \xe2\x86\x92 Wi-Fi."));
     return;
   }
   // Busy-watchdog: only block a new request if a fetch genuinely started
@@ -7724,7 +7830,7 @@ static void openLosModal(uint32_t mesh_idx) {
   // treat it as stale and let this request proceed rather than locking the
   // UI out indefinitely.
   if (s_los_busy && (uint32_t)(millis() - s_los_req_ms) < 48000u) {
-    lv_label_set_text(msg, "Still analyzing the previous\npath\xe2\x80\xa6 try again in a moment.");
+    lv_label_set_text(msg, TR("Still analyzing the previous\npath\xe2\x80\xa6 try again in a moment."));
     return;
   }
 
@@ -7734,14 +7840,14 @@ static void openLosModal(uint32_t mesh_idx) {
     s_los_slat[i] = s_los_self_lat + f * (s_los_peer_lat - s_los_self_lat);
     s_los_slon[i] = s_los_self_lon + f * (s_los_peer_lon - s_los_self_lon);
   }
-  lv_label_set_text(msg, "Analyzing terrain\xe2\x80\xa6");
+  lv_label_set_text(msg, TR("Analyzing terrain\xe2\x80\xa6"));
   s_los_result_ready = false;
   // Hand off to the shared tile-fetch worker (core 0). It checks
   // s_los_request between tile fetches and runs the elevation fetch on its
   // own stack — no extra task/stack, so no "low memory" failure. losPoll()
   // renders when it's done; the UI stays responsive meanwhile.
   if (!ensureTileFetchTaskRunning()) {
-    lv_label_set_text(msg, "Couldn't start the analyzer.\nTry again.");
+    lv_label_set_text(msg, TR("Couldn't start the analyzer.\nTry again."));
     return;
   }
   s_los_req_ms  = millis();
@@ -7835,7 +7941,7 @@ static void openContactActionSheet(uint32_t mesh_idx, bool is_repeater, const ch
   lv_obj_t* title = lv_label_create(card);
   char nm[40];
   copyUtf8ReplacingMissingGlyphs(&g_font_14, nm, sizeof(nm), name ? name : "");
-  lv_label_set_text_fmt(title, "%s%s",
+  lv_label_set_text_fmt(title, TR("%s%s"),
                         is_repeater ? LV_SYMBOL_CHARGE "  " :
                         is_room     ? LV_SYMBOL_LOOP   "  " : LV_SYMBOL_ENVELOPE "  ",
                         nm[0] ? nm : "(unnamed)");
@@ -7863,7 +7969,7 @@ static void openContactActionSheet(uint32_t mesh_idx, bool is_repeater, const ch
     if (bg) lv_obj_set_style_bg_color(b, lv_color_hex(bg), LV_PART_MAIN);
     lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, nullptr);
     lv_obj_t* l = lv_label_create(b);
-    lv_label_set_text(l, label);
+    lv_label_set_text(l, TR(label));
     lv_obj_set_style_text_font(l, &g_font_12, LV_PART_MAIN);
     lv_obj_center(l);
     if (col == 0) col = 1;
@@ -7881,7 +7987,7 @@ static void openContactActionSheet(uint32_t mesh_idx, bool is_repeater, const ch
     if (bg) lv_obj_set_style_bg_color(b, lv_color_hex(bg), LV_PART_MAIN);
     lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, nullptr);
     lv_obj_t* l = lv_label_create(b);
-    lv_label_set_text(l, label);
+    lv_label_set_text(l, TR(label));
     lv_obj_set_style_text_font(l, &g_font_12, LV_PART_MAIN);
     lv_obj_center(l);
     y += btn_h + btn_gap;
@@ -7947,7 +8053,7 @@ static void contactSelectCb(lv_event_t* e) {
   if (!ctx || !g_lv.task) return;
   ContactInfo c;
   if (!the_mesh.getContactByIdx(ctx->mesh_idx, c)) {
-    g_lv.task->showAlert("Contact gone", 1200);
+    g_lv.task->showAlert(TR("Contact gone"), 1200);
     return;
   }
   openContactActionSheet(ctx->mesh_idx, ctx->is_repeater, c.name);
@@ -7993,7 +8099,7 @@ static bool hexToSecret16(const char* hex, uint8_t out[16]) {
 }
 
 static void setAddChannelError(const char* msg) {
-  if (s_addch_error_l) lv_label_set_text(s_addch_error_l, msg ? msg : "");
+  if (s_addch_error_l) lv_label_set_text(s_addch_error_l, msg ? TR(msg) : "");
 }
 
 // ---- Create-private channel ----
@@ -8042,7 +8148,7 @@ static void createPrivateChannelSubmitCb(lv_event_t* e) {
     g_lv.dirty_threads = true;
   }
   closeSettingsModal();
-  if (g_lv.task) g_lv.task->showAlert("Channel created", 1200);
+  if (g_lv.task) g_lv.task->showAlert(TR("Channel created"), 1200);
 }
 
 // ===== Contacts → Add manually (pubkey + name) ==============================
@@ -8086,7 +8192,7 @@ static void addContactSubmitCb(lv_event_t* e) {
 
   uint8_t pub[32];
   if (!hexToPubkey32(hex, pub)) {
-    if (s_addct_error_l) lv_label_set_text(s_addct_error_l, "Pubkey must be 64 hex chars.");
+    if (s_addct_error_l) lv_label_set_text(s_addct_error_l, TR("Pubkey must be 64 hex chars."));
     return;
   }
   char name[32] = {0};
@@ -8094,15 +8200,15 @@ static void addContactSubmitCb(lv_event_t* e) {
   // trim trailing whitespace
   for (int i = (int)strlen(name) - 1; i >= 0 && (name[i] == ' ' || name[i] == '\t'); --i) name[i] = '\0';
   if (name[0] == '\0') {
-    if (s_addct_error_l) lv_label_set_text(s_addct_error_l, "Name can't be empty.");
+    if (s_addct_error_l) lv_label_set_text(s_addct_error_l, TR("Name can't be empty."));
     return;
   }
   if (!the_mesh.uiAddManualContact(pub, name)) {
-    if (s_addct_error_l) lv_label_set_text(s_addct_error_l, "Already exists or table full.");
+    if (s_addct_error_l) lv_label_set_text(s_addct_error_l, TR("Already exists or table full."));
     return;
   }
   closeSettingsModal();
-  if (g_lv.task) g_lv.task->showAlert("Contact added", 1200);
+  if (g_lv.task) g_lv.task->showAlert(TR("Contact added"), 1200);
   refreshContactsList();
 }
 
@@ -8116,12 +8222,12 @@ static void openAddContactModalCb(lv_event_t* e) {
   lv_obj_set_width(hint, lv_pct(100));
   lv_obj_set_style_text_color(hint, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
   lv_obj_set_style_text_font(hint, &g_font_12, LV_PART_MAIN);
-  lv_label_set_text(hint, "Paste the 64-hex public key and a name. Useful when you want to DM someone before their advert has arrived.");
+  lv_label_set_text(hint, TR("Paste the 64-hex public key and a name. Useful when you want to DM someone before their advert has arrived."));
   lv_obj_set_pos(hint, 2, y);
   y += 48;
 
   lv_obj_t* pub_l = lv_label_create(body);
-  lv_label_set_text(pub_l, "Public key (64 hex chars)");
+  lv_label_set_text(pub_l, TR("Public key (64 hex chars)"));
   lv_obj_set_style_text_color(pub_l, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
   lv_obj_set_style_text_font(pub_l, &g_font_12, LV_PART_MAIN);
   lv_obj_set_pos(pub_l, 2, y);
@@ -8130,13 +8236,13 @@ static void openAddContactModalCb(lv_event_t* e) {
   lv_obj_set_size(s_addct_pub_ta, lv_pct(100),56);
   lv_obj_set_pos(s_addct_pub_ta, 2, y);
   lv_textarea_set_one_line(s_addct_pub_ta, false);
-  lv_textarea_set_placeholder_text(s_addct_pub_ta, "0123456789abcdef…");
+  lv_textarea_set_placeholder_text(s_addct_pub_ta, TR("0123456789abcdef…"));
   lv_textarea_set_max_length(s_addct_pub_ta, 80);
   attachSettingsTaEvents(s_addct_pub_ta);
   y += 60;
 
   lv_obj_t* name_l = lv_label_create(body);
-  lv_label_set_text(name_l, "Name");
+  lv_label_set_text(name_l, TR("Name"));
   lv_obj_set_style_text_color(name_l, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
   lv_obj_set_style_text_font(name_l, &g_font_12, LV_PART_MAIN);
   lv_obj_set_pos(name_l, 2, y);
@@ -8145,7 +8251,7 @@ static void openAddContactModalCb(lv_event_t* e) {
   lv_obj_set_size(s_addct_name_ta, lv_pct(100),30);
   lv_obj_set_pos(s_addct_name_ta, 2, y);
   lv_textarea_set_one_line(s_addct_name_ta, true);
-  lv_textarea_set_placeholder_text(s_addct_name_ta, "Display name");
+  lv_textarea_set_placeholder_text(s_addct_name_ta, TR("Display name"));
   lv_textarea_set_max_length(s_addct_name_ta, 31);
   attachSettingsTaEvents(s_addct_name_ta);
   y += 36;
@@ -8155,7 +8261,7 @@ static void openAddContactModalCb(lv_event_t* e) {
   lv_obj_set_width(s_addct_error_l, lv_pct(100));
   lv_obj_set_style_text_color(s_addct_error_l, lv_color_hex(0xE08080), LV_PART_MAIN);
   lv_obj_set_style_text_font(s_addct_error_l, &g_font_12, LV_PART_MAIN);
-  lv_label_set_text(s_addct_error_l, "");
+  lv_label_set_text(s_addct_error_l, TR(""));
   lv_obj_set_pos(s_addct_error_l, 2, y);
   y += 24;
 
@@ -8167,7 +8273,7 @@ static void openAddContactModalCb(lv_event_t* e) {
   lv_obj_set_style_bg_color(b, lv_color_hex(0x3B7039), LV_PART_MAIN | LV_STATE_PRESSED);
   lv_obj_add_event_cb(b, addContactSubmitCb, LV_EVENT_CLICKED, nullptr);
   lv_obj_t* bl = lv_label_create(b);
-  lv_label_set_text(bl, "Add contact");
+  lv_label_set_text(bl, TR("Add contact"));
   lv_obj_center(bl);
 }
 
@@ -8180,12 +8286,12 @@ static void openCreatePrivateChannelModal() {
   lv_obj_set_width(hint, lv_pct(100));
   lv_obj_set_style_text_color(hint, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
   lv_obj_set_style_text_font(hint, &g_font_12, LV_PART_MAIN);
-  lv_label_set_text(hint, "Share the 32-char secret so others can join. Leave the secret empty to generate a random one.");
+  lv_label_set_text(hint, TR("Share the 32-char secret so others can join. Leave the secret empty to generate a random one."));
   lv_obj_set_pos(hint, 2, y);
   y += 44;
 
   lv_obj_t* name_l = lv_label_create(body);
-  lv_label_set_text(name_l, "Channel name");
+  lv_label_set_text(name_l, TR("Channel name"));
   lv_obj_set_style_text_color(name_l, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
   lv_obj_set_style_text_font(name_l, &g_font_12, LV_PART_MAIN);
   lv_obj_set_pos(name_l, 2, y);
@@ -8194,13 +8300,13 @@ static void openCreatePrivateChannelModal() {
   lv_obj_set_size(s_addch_name_ta, lv_pct(100),30);
   lv_obj_set_pos(s_addch_name_ta, 2, y);
   lv_textarea_set_one_line(s_addch_name_ta, true);
-  lv_textarea_set_placeholder_text(s_addch_name_ta, "e.g. Family");
+  lv_textarea_set_placeholder_text(s_addch_name_ta, TR("e.g. Family"));
   lv_textarea_set_max_length(s_addch_name_ta, 31);
   attachSettingsTaEvents(s_addch_name_ta);
   y += 36;
 
   lv_obj_t* sec_l = lv_label_create(body);
-  lv_label_set_text(sec_l, "Secret (32 hex, optional)");
+  lv_label_set_text(sec_l, TR("Secret (32 hex, optional)"));
   lv_obj_set_style_text_color(sec_l, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
   lv_obj_set_style_text_font(sec_l, &g_font_12, LV_PART_MAIN);
   lv_obj_set_pos(sec_l, 2, y);
@@ -8209,7 +8315,7 @@ static void openCreatePrivateChannelModal() {
   lv_obj_set_size(s_addch_secret_ta, lv_pct(100),30);
   lv_obj_set_pos(s_addch_secret_ta, 2, y);
   lv_textarea_set_one_line(s_addch_secret_ta, true);
-  lv_textarea_set_placeholder_text(s_addch_secret_ta, "leave empty to generate");
+  lv_textarea_set_placeholder_text(s_addch_secret_ta, TR("leave empty to generate"));
   lv_textarea_set_max_length(s_addch_secret_ta, 32);
   attachSettingsTaEvents(s_addch_secret_ta);
   y += 36;
@@ -8219,7 +8325,7 @@ static void openCreatePrivateChannelModal() {
   lv_obj_set_width(s_addch_error_l, lv_pct(100));
   lv_obj_set_style_text_color(s_addch_error_l, lv_color_hex(0xE08080), LV_PART_MAIN);
   lv_obj_set_style_text_font(s_addch_error_l, &g_font_12, LV_PART_MAIN);
-  lv_label_set_text(s_addch_error_l, "");
+  lv_label_set_text(s_addch_error_l, TR(""));
   lv_obj_set_pos(s_addch_error_l, 2, y);
   y += 24;
 
@@ -8231,7 +8337,7 @@ static void openCreatePrivateChannelModal() {
   lv_obj_set_style_bg_color(b, lv_color_hex(0x3B7039), LV_PART_MAIN | LV_STATE_PRESSED);
   lv_obj_add_event_cb(b, createPrivateChannelSubmitCb, LV_EVENT_CLICKED, nullptr);
   lv_obj_t* bl = lv_label_create(b);
-  lv_label_set_text(bl, "Create");
+  lv_label_set_text(bl, TR("Create"));
   lv_obj_center(bl);
 }
 
@@ -8270,7 +8376,7 @@ static void joinPrivateChannelSubmitCb(lv_event_t* e) {
     g_lv.dirty_threads = true;
   }
   closeSettingsModal();
-  if (g_lv.task) g_lv.task->showAlert("Channel joined", 1200);
+  if (g_lv.task) g_lv.task->showAlert(TR("Channel joined"), 1200);
 }
 
 static void openJoinPrivateChannelModal() {
@@ -8282,12 +8388,12 @@ static void openJoinPrivateChannelModal() {
   lv_obj_set_width(hint, lv_pct(100));
   lv_obj_set_style_text_color(hint, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
   lv_obj_set_style_text_font(hint, &g_font_12, LV_PART_MAIN);
-  lv_label_set_text(hint, "Enter the 32-hex secret shared by the channel creator.");
+  lv_label_set_text(hint, TR("Enter the 32-hex secret shared by the channel creator."));
   lv_obj_set_pos(hint, 2, y);
   y += 32;
 
   lv_obj_t* name_l = lv_label_create(body);
-  lv_label_set_text(name_l, "Name");
+  lv_label_set_text(name_l, TR("Name"));
   lv_obj_set_style_text_color(name_l, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
   lv_obj_set_style_text_font(name_l, &g_font_12, LV_PART_MAIN);
   lv_obj_set_pos(name_l, 2, y);
@@ -8296,13 +8402,13 @@ static void openJoinPrivateChannelModal() {
   lv_obj_set_size(s_addch_name_ta, lv_pct(100), 30);
   lv_obj_set_pos(s_addch_name_ta, 2, y);
   lv_textarea_set_one_line(s_addch_name_ta, true);
-  lv_textarea_set_placeholder_text(s_addch_name_ta, "Channel name");
+  lv_textarea_set_placeholder_text(s_addch_name_ta, TR("Channel name"));
   lv_textarea_set_max_length(s_addch_name_ta, 30);
   attachSettingsTaEvents(s_addch_name_ta);
   y += 36;
 
   lv_obj_t* sec_l = lv_label_create(body);
-  lv_label_set_text(sec_l, "Secret (32 hex chars)");
+  lv_label_set_text(sec_l, TR("Secret (32 hex chars)"));
   lv_obj_set_style_text_color(sec_l, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
   lv_obj_set_style_text_font(sec_l, &g_font_12, LV_PART_MAIN);
   lv_obj_set_pos(sec_l, 2, y);
@@ -8311,7 +8417,7 @@ static void openJoinPrivateChannelModal() {
   lv_obj_set_size(s_addch_secret_ta, lv_pct(100),30);
   lv_obj_set_pos(s_addch_secret_ta, 2, y);
   lv_textarea_set_one_line(s_addch_secret_ta, true);
-  lv_textarea_set_placeholder_text(s_addch_secret_ta, "32 hex characters");
+  lv_textarea_set_placeholder_text(s_addch_secret_ta, TR("32 hex characters"));
   lv_textarea_set_max_length(s_addch_secret_ta, 32);
   attachSettingsTaEvents(s_addch_secret_ta);
   y += 36;
@@ -8321,7 +8427,7 @@ static void openJoinPrivateChannelModal() {
   lv_obj_set_width(s_addch_error_l, lv_pct(100));
   lv_obj_set_style_text_color(s_addch_error_l, lv_color_hex(0xE08080), LV_PART_MAIN);
   lv_obj_set_style_text_font(s_addch_error_l, &g_font_12, LV_PART_MAIN);
-  lv_label_set_text(s_addch_error_l, "");
+  lv_label_set_text(s_addch_error_l, TR(""));
   lv_obj_set_pos(s_addch_error_l, 2, y);
   y += 24;
 
@@ -8333,7 +8439,7 @@ static void openJoinPrivateChannelModal() {
   lv_obj_set_style_bg_color(b, lv_color_hex(0x3B7039), LV_PART_MAIN | LV_STATE_PRESSED);
   lv_obj_add_event_cb(b, joinPrivateChannelSubmitCb, LV_EVENT_CLICKED, nullptr);
   lv_obj_t* bl = lv_label_create(b);
-  lv_label_set_text(bl, "Join");
+  lv_label_set_text(bl, TR("Join"));
   lv_obj_center(bl);
 }
 
@@ -8375,7 +8481,7 @@ static void joinHashtagChannelSubmitCb(lv_event_t* e) {
     g_lv.dirty_threads = true;
   }
   closeSettingsModal();
-  if (g_lv.task) g_lv.task->showAlert("Channel joined", 1200);
+  if (g_lv.task) g_lv.task->showAlert(TR("Channel joined"), 1200);
 }
 
 static void openJoinHashtagChannelModal() {
@@ -8387,12 +8493,12 @@ static void openJoinHashtagChannelModal() {
   lv_obj_set_width(hint, lv_pct(100));
   lv_obj_set_style_text_color(hint, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
   lv_obj_set_style_text_font(hint, &g_font_12, LV_PART_MAIN);
-  lv_label_set_text(hint, "Anyone can join. Key is derived from the hashtag (lowercase).");
+  lv_label_set_text(hint, TR("Anyone can join. Key is derived from the hashtag (lowercase)."));
   lv_obj_set_pos(hint, 2, y);
   y += 32;
 
   lv_obj_t* name_l = lv_label_create(body);
-  lv_label_set_text(name_l, "Hashtag name");
+  lv_label_set_text(name_l, TR("Hashtag name"));
   lv_obj_set_style_text_color(name_l, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
   lv_obj_set_style_text_font(name_l, &g_font_12, LV_PART_MAIN);
   lv_obj_set_pos(name_l, 2, y);
@@ -8401,7 +8507,7 @@ static void openJoinHashtagChannelModal() {
   lv_obj_set_size(s_addch_hashtag_ta, lv_pct(100),30);
   lv_obj_set_pos(s_addch_hashtag_ta, 2, y);
   lv_textarea_set_one_line(s_addch_hashtag_ta, true);
-  lv_textarea_set_placeholder_text(s_addch_hashtag_ta, "e.g. mesh");
+  lv_textarea_set_placeholder_text(s_addch_hashtag_ta, TR("e.g. mesh"));
   lv_textarea_set_text(s_addch_hashtag_ta, "#");
   lv_textarea_set_max_length(s_addch_hashtag_ta, 31);
   attachSettingsTaEvents(s_addch_hashtag_ta);
@@ -8412,7 +8518,7 @@ static void openJoinHashtagChannelModal() {
   lv_obj_set_width(s_addch_error_l, lv_pct(100));
   lv_obj_set_style_text_color(s_addch_error_l, lv_color_hex(0xE08080), LV_PART_MAIN);
   lv_obj_set_style_text_font(s_addch_error_l, &g_font_12, LV_PART_MAIN);
-  lv_label_set_text(s_addch_error_l, "");
+  lv_label_set_text(s_addch_error_l, TR(""));
   lv_obj_set_pos(s_addch_error_l, 2, y);
   y += 24;
 
@@ -8424,7 +8530,7 @@ static void openJoinHashtagChannelModal() {
   lv_obj_set_style_bg_color(b, lv_color_hex(0x3B7039), LV_PART_MAIN | LV_STATE_PRESSED);
   lv_obj_add_event_cb(b, joinHashtagChannelSubmitCb, LV_EVENT_CLICKED, nullptr);
   lv_obj_t* bl = lv_label_create(b);
-  lv_label_set_text(bl, "Join");
+  lv_label_set_text(bl, TR("Join"));
   lv_obj_center(bl);
 }
 
@@ -8453,10 +8559,10 @@ static void addChannelJoinPublicCb(lv_event_t* e) {
     if (g_lv.task) {
       g_lv.task->refreshThreadsFromMesh();
       g_lv.dirty_threads = true;
-      g_lv.task->showAlert("Public channel ready", 1200);
+      g_lv.task->showAlert(TR("Public channel ready"), 1200);
     }
   } else {
-    if (g_lv.task) g_lv.task->showAlert("Channel table is full", 1400);
+    if (g_lv.task) g_lv.task->showAlert(TR("Channel table is full"), 1400);
   }
 }
 
@@ -8506,7 +8612,7 @@ static void openAddChannelSheet() {
   addCloseXBadge(card, addChannelSheetDismissCb);
 
   lv_obj_t* title = lv_label_create(card);
-  lv_label_set_text(title, "Add channel");
+  lv_label_set_text(title, TR("Add channel"));
   lv_obj_set_style_text_color(title, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
   lv_obj_set_style_text_font(title, &g_font_14, LV_PART_MAIN);
   lv_obj_set_pos(title, 0, 0);
@@ -8519,7 +8625,7 @@ static void openAddChannelSheet() {
     styleButton(b);
     lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, nullptr);
     lv_obj_t* l = lv_label_create(b);
-    lv_label_set_text(l, label);
+    lv_label_set_text(l, TR(label));
     lv_obj_set_style_text_font(l, &g_font_14, LV_PART_MAIN);
     lv_obj_center(l);
     y += btn_h + 6;
@@ -8539,7 +8645,7 @@ static void markAllReadApply() {
   if (!g_lv.task) return;
   g_lv.task->markAllThreadsRead();
   g_lv.dirty_threads = true;             // rebuild the list -> badges clear
-  g_lv.task->showAlert("All marked read", 1000);
+  g_lv.task->showAlert(TR("All marked read"), 1000);
 }
 static void chatsMarkAllReadBtnCb(lv_event_t* e) {
   if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
@@ -8648,7 +8754,7 @@ static void openShareMyContactPopup() {
   addCloseXBadge(card, shareMyContactBackdropCb);
 
   lv_obj_t* title = lv_label_create(card);
-  lv_label_set_text_fmt(title, "Share: %s", name);
+  lv_label_set_text_fmt(title, TR("Share: %s"), name);
   lv_label_set_long_mode(title, LV_LABEL_LONG_DOT);
   lv_obj_set_width(title, card_w - 20 - 32);   // trim for close-X
   lv_obj_set_style_text_color(title, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
@@ -8822,7 +8928,7 @@ static void calibrateBatteryCb(lv_event_t* e) {
   if (code == LV_EVENT_LONG_PRESSED) {
     touchPrefsSetBattFullMv(0);
     s_batt_full_mv = 0; s_batt_full_loaded = true;
-    if (g_lv.task) g_lv.task->showAlert("Battery calibration reset to default", 2200);
+    if (g_lv.task) g_lv.task->showAlert(TR("Battery calibration reset to default"), 2200);
     return;
   }
   if (code != LV_EVENT_SHORT_CLICKED) return;
@@ -8832,13 +8938,13 @@ static void calibrateBatteryCb(lv_event_t* e) {
   for (int i = 0; i < 8; ++i) { uint16_t s = batteryMvSampled(); if (s) { sum += s; ++n; } delay(20); }
   const uint16_t mv = n ? (uint16_t)(sum / n) : 0;
   if (mv < 3500) {   // implausibly low for a "full" pack — refuse rather than store junk
-    if (g_lv.task) g_lv.task->showAlert("Battery read too low — charge fully first", 2600);
+    if (g_lv.task) g_lv.task->showAlert(TR("Battery read too low — charge fully first"), 2600);
     return;
   }
   touchPrefsSetBattFullMv(mv);
   s_batt_full_mv = mv; s_batt_full_loaded = true;
   char b[72];
-  snprintf(b, sizeof b, "Calibrated: 100%% = %u.%02u V  (long-press to reset)",
+  snprintf(b, sizeof b, TR("Calibrated: 100%% = %u.%02u V  (long-press to reset)"),
            (unsigned)(mv / 1000), (unsigned)((mv % 1000) / 10));
   if (g_lv.task) g_lv.task->showAlert(b, 3000);
 }
@@ -9232,7 +9338,7 @@ static void termCmdTo(const char* arg) {
       strncpy(s_term_to_name, c.name, sizeof(s_term_to_name) - 1);
       s_term_to_name[sizeof(s_term_to_name) - 1] = '\0';
       char r[64];
-      snprintf(r, sizeof r, "now talking to %s", s_term_to_name);
+      snprintf(r, sizeof r, TR("now talking to %s"), s_term_to_name);
       termLogAppendC(TERM_C_INFO, nullptr, r);
       termLogAppendC(TERM_C_INFO, nullptr, "(type to send; 'exit' leaves)");
       return;
@@ -9248,7 +9354,7 @@ static void termCmdTo(const char* arg) {
       strncpy(s_term_to_name, cd.name, sizeof(s_term_to_name) - 1);
       s_term_to_name[sizeof(s_term_to_name) - 1] = '\0';
       char r[64];
-      snprintf(r, sizeof r, "now on channel %s", s_term_to_name);
+      snprintf(r, sizeof r, TR("now on channel %s"), s_term_to_name);
       termLogAppendC(TERM_C_INFO, nullptr, r);
       termLogAppendC(TERM_C_INFO, nullptr, "(type to send; 'exit' leaves)");
       return;
@@ -9262,7 +9368,7 @@ static void termCmdTo(const char* arg) {
 static void termCmdList() {
   int nc = the_mesh.getNumContacts();
   char hdr[40];
-  snprintf(hdr, sizeof hdr, "contacts (%d):", nc);
+  snprintf(hdr, sizeof hdr, TR("contacts (%d):"), nc);
   termLogAppendC(TERM_C_INFO, nullptr, hdr);
   int shown = 0;
   for (int i = 0; i < nc && shown < 60; ++i) {
@@ -9415,7 +9521,7 @@ static void openTermCmdPicker() {
   lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
 
   lv_obj_t* title = lv_label_create(card);
-  lv_label_set_text(title, "Commands");
+  lv_label_set_text(title, TR("Commands"));
   lv_obj_set_style_text_color(title, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
   lv_obj_set_style_text_font(title, &g_font_14, LV_PART_MAIN);
   lv_obj_align(title, LV_ALIGN_TOP_LEFT, 4, 4);
@@ -9526,7 +9632,7 @@ static void buildTerminal(lv_obj_t* body) {
   styleCard(s_term_input_ta);
   lv_textarea_set_one_line(s_term_input_ta, true);
   lv_textarea_set_max_length(s_term_input_ta, 96);
-  lv_textarea_set_placeholder_text(s_term_input_ta, "command");
+  lv_textarea_set_placeholder_text(s_term_input_ta, TR("command"));
   lv_obj_set_style_text_color(s_term_input_ta, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
   lv_obj_set_style_text_font(s_term_input_ta, &g_font_14, LV_PART_MAIN);
   attachSettingsTaEvents(s_term_input_ta);
@@ -9959,7 +10065,7 @@ static void fmTextPrompt(const char* title, const char* initial, void (*cb)(cons
   styleButton(bc);
   lv_obj_set_style_bg_color(bc, lv_color_hex(0x3A4A5C), LV_PART_MAIN);
   lv_obj_add_event_cb(bc, fmPromptCancelCb, LV_EVENT_CLICKED, nullptr);
-  lv_obj_t* lc = lv_label_create(bc); lv_label_set_text(lc, "Cancel"); lv_obj_center(lc);
+  lv_obj_t* lc = lv_label_create(bc); lv_label_set_text(lc, TR("Cancel")); lv_obj_center(lc);
 
   lv_obj_t* bo = lv_btn_create(card);
   lv_obj_set_size(bo, 80, 32);
@@ -9967,7 +10073,7 @@ static void fmTextPrompt(const char* title, const char* initial, void (*cb)(cons
   styleButton(bo);
   lv_obj_set_style_bg_color(bo, lv_color_hex(COLOR_STATUS_OK), LV_PART_MAIN);
   lv_obj_add_event_cb(bo, fmPromptOkCb, LV_EVENT_CLICKED, nullptr);
-  lv_obj_t* lo = lv_label_create(bo); lv_label_set_text(lo, "OK"); lv_obj_center(lo);
+  lv_obj_t* lo = lv_label_create(bo); lv_label_set_text(lo, TR("OK")); lv_obj_center(lo);
 
   if (g_lv.keyboard) kbMirrorBind(s_fm_prompt_ta);
 }
@@ -9979,7 +10085,7 @@ static void fmDoDelete() {
   fmFullPath(s_fm_sel_name, path, sizeof path);
   if (s_fm_sel_isdir) fmRmRecursive(s_fm_fs, path);
   else                s_fm_fs->remove(path);
-  if (g_lv.task) g_lv.task->showAlert("Deleted", 1200);
+  if (g_lv.task) g_lv.task->showAlert(TR("Deleted"), 1200);
   fmRefresh();
 }
 static void fmRenameApply(const char* newname) {
@@ -9988,25 +10094,25 @@ static void fmRenameApply(const char* newname) {
   fmFullPath(s_fm_sel_name, oldp, sizeof oldp);
   fmFullPath(newname,       newp, sizeof newp);
   bool ok = s_fm_fs->rename(oldp, newp);
-  if (g_lv.task) g_lv.task->showAlert(ok ? "Renamed" : "Rename failed", ok ? 1200 : 1600);
+  if (g_lv.task) g_lv.task->showAlert(ok ? TR("Renamed") : TR("Rename failed"), ok ? 1200 : 1600);
   fmRefresh();
 }
 static void fmNewFolderApply(const char* name) {
   if (!s_fm_fs || !name[0]) return;
-  if (s_fm_fs == &SPIFFS) { if (g_lv.task) g_lv.task->showAlert("Internal has no folders", 1800); return; }
+  if (s_fm_fs == &SPIFFS) { if (g_lv.task) g_lv.task->showAlert(TR("Internal has no folders"), 1800); return; }
   char p[200];
   fmFullPath(name, p, sizeof p);
   bool ok = s_fm_fs->mkdir(p);
-  if (g_lv.task) g_lv.task->showAlert(ok ? "Folder created" : "mkdir failed", ok ? 1200 : 1600);
+  if (g_lv.task) g_lv.task->showAlert(ok ? TR("Folder created") : TR("mkdir failed"), ok ? 1200 : 1600);
   fmRefresh();
 }
 static void fmNewFileApply(const char* name) {
   if (!s_fm_fs || !name[0]) return;
   char p[200];
   fmFullPath(name, p, sizeof p);
-  if (s_fm_fs->exists(p)) { if (g_lv.task) g_lv.task->showAlert("Already exists", 1600); return; }
+  if (s_fm_fs->exists(p)) { if (g_lv.task) g_lv.task->showAlert(TR("Already exists"), 1600); return; }
   File f = s_fm_fs->open(p, "w");          // create an empty file
-  if (!f) { if (g_lv.task) g_lv.task->showAlert("Create failed", 1600); return; }
+  if (!f) { if (g_lv.task) g_lv.task->showAlert(TR("Create failed"), 1600); return; }
   f.close();
   fmRefresh();
   fmOpenEditor(name);                      // jump straight into the editor
@@ -10100,7 +10206,7 @@ static lv_obj_t* fmActionBtn(lv_obj_t* parent, const char* text, lv_event_cb_t c
   lv_obj_set_style_bg_color(b, lv_color_hex(bg), LV_PART_MAIN);
   lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, nullptr);
   lv_obj_t* l = lv_label_create(b);
-  lv_label_set_text(l, text);
+  lv_label_set_text(l, TR(text));
   lv_obj_center(l);
   return b;
 }
@@ -10137,7 +10243,7 @@ static void fmClipSet(bool cut) {
   s_fm_clip.isdir  = s_fm_sel_isdir;
   s_fm_clip.is_cut = cut;
   s_fm_clip.active = true;
-  if (g_lv.task) g_lv.task->showAlert(cut ? "Cut - Paste in a folder" : "Copied - Paste in a folder", 1600);
+  if (g_lv.task) g_lv.task->showAlert(cut ? TR("Cut - Paste in a folder") : TR("Copied - Paste in a folder"), 1600);
 }
 static void fmActCopyCb(lv_event_t* e) {
   if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
@@ -10247,7 +10353,7 @@ static void fmEditorSaveCb(lv_event_t* e) {
   File f = s_fm_fs->open(s_editor_path, "w");
   bool ok = false;
   if (f) { ok = (f.write((const uint8_t*)txt, len) == len); f.close(); }
-  if (g_lv.task) g_lv.task->showAlert(ok ? "Saved" : "Save failed", ok ? 1300 : 1800);
+  if (g_lv.task) g_lv.task->showAlert(ok ? TR("Saved") : TR("Save failed"), ok ? 1300 : 1800);
   fmEditorClose();
   fmRefresh();
 }
@@ -10256,12 +10362,12 @@ static void fmOpenEditor(const char* name) {
   char path[200];
   fmFullPath(name, path, sizeof path);
   File f = s_fm_fs->open(path, "r");
-  if (!f) { if (g_lv.task) g_lv.task->showAlert("Cannot open file", 1500); return; }
+  if (!f) { if (g_lv.task) g_lv.task->showAlert(TR("Cannot open file"), 1500); return; }
   size_t sz = f.size();
-  if (sz > FM_EDIT_MAX) { f.close(); if (g_lv.task) g_lv.task->showAlert("Too large to edit (>8 KB)", 2200); return; }
+  if (sz > FM_EDIT_MAX) { f.close(); if (g_lv.task) g_lv.task->showAlert(TR("Too large to edit (>8 KB)"), 2200); return; }
   char* buf = (char*)heap_caps_malloc(sz + 1, MALLOC_CAP_SPIRAM);
   if (!buf) buf = (char*)malloc(sz + 1);
-  if (!buf) { f.close(); if (g_lv.task) g_lv.task->showAlert("Out of memory", 1500); return; }
+  if (!buf) { f.close(); if (g_lv.task) g_lv.task->showAlert(TR("Out of memory"), 1500); return; }
   size_t rd = f.readBytes(buf, sz);
   buf[rd] = '\0';
   f.close();
@@ -10291,7 +10397,7 @@ static void fmOpenEditor(const char* name) {
   styleButton(save);
   lv_obj_set_style_bg_color(save, lv_color_hex(COLOR_STATUS_OK), LV_PART_MAIN);
   lv_obj_add_event_cb(save, fmEditorSaveCb, LV_EVENT_CLICKED, nullptr);
-  lv_obj_t* sl = lv_label_create(save); lv_label_set_text(sl, "Save");
+  lv_obj_t* sl = lv_label_create(save); lv_label_set_text(sl, TR("Save"));
   lv_obj_set_style_text_font(sl, &g_font_12, LV_PART_MAIN); lv_obj_center(sl);
 
   lv_obj_t* cancel = lv_btn_create(s_editor_root);
@@ -10421,16 +10527,16 @@ static void fmOpenImage(const char* name) {
   char path[200];
   fmFullPath(name, path, sizeof path);
   File f = s_fm_fs->open(path, "r");
-  if (!f) { if (g_lv.task) g_lv.task->showAlert("Cannot open file", 1500); return; }
+  if (!f) { if (g_lv.task) g_lv.task->showAlert(TR("Cannot open file"), 1500); return; }
   size_t sz = f.size();
   if (sz == 0 || sz > FM_IMG_MAX) {
     f.close();
-    if (g_lv.task) g_lv.task->showAlert(sz ? "Image too large (>4 MB)" : "Empty file", 2000);
+    if (g_lv.task) g_lv.task->showAlert(sz ? TR("Image too large (>4 MB)") : TR("Empty file"), 2000);
     return;
   }
   uint8_t* enc = (uint8_t*)heap_caps_malloc(sz, MALLOC_CAP_SPIRAM);
   if (!enc) enc = (uint8_t*)malloc(sz);
-  if (!enc) { f.close(); if (g_lv.task) g_lv.task->showAlert("Out of memory", 1500); return; }
+  if (!enc) { f.close(); if (g_lv.task) g_lv.task->showAlert(TR("Out of memory"), 1500); return; }
   size_t rd = f.readBytes((char*)enc, sz);
   f.close();
 
@@ -10438,7 +10544,7 @@ static void fmOpenImage(const char* name) {
   // Detect the PNG signature and say so instead of rendering garbage.
   if (rd >= 4 && enc[0] == 0x89 && enc[1] == 'P' && enc[2] == 'N' && enc[3] == 'G') {
     free(enc);
-    if (g_lv.task) g_lv.task->showAlert("PNG isn't supported here\nUse a JPEG", 2600);
+    if (g_lv.task) g_lv.task->showAlert(TR("PNG isn't supported here\nUse a JPEG"), 2600);
     return;
   }
 
@@ -10451,7 +10557,7 @@ static void fmOpenImage(const char* name) {
   free(enc);             // encoded bytes no longer needed once decoded
   if (!rgb || dw <= 0 || dh <= 0) {
     if (rgb) lvglPsramFree(rgb);
-    if (g_lv.task) g_lv.task->showAlert("Can't display image\n(JPEG only, <= 1024 px)", 2600);
+    if (g_lv.task) g_lv.task->showAlert(TR("Can't display image\n(JPEG only, <= 1024 px)"), 2600);
     return;
   }
 
@@ -10513,12 +10619,12 @@ static void fmOpenImage(const char* name) {
   styleButton(full);
   lv_obj_set_style_bg_color(full, lv_color_hex(0x3A4A5C), LV_PART_MAIN);
   lv_obj_add_event_cb(full, fmImageFullCb, LV_EVENT_CLICKED, nullptr);
-  lv_obj_t* fll = lv_label_create(full); lv_label_set_text(fll, "Full");
+  lv_obj_t* fll = lv_label_create(full); lv_label_set_text(fll, TR("Full"));
   lv_obj_set_style_text_font(fll, &g_font_12, LV_PART_MAIN); lv_obj_center(fll);
 
   // "tap to exit" hint, shown only in full-screen mode.
   lv_obj_t* hint = lv_label_create(s_fm_img_root);
-  lv_label_set_text(hint, "tap to exit full screen");
+  lv_label_set_text(hint, TR("tap to exit full screen"));
   lv_obj_set_style_text_font(hint, &g_font_12, LV_PART_MAIN);
   lv_obj_set_style_text_color(hint, lv_color_white(), LV_PART_MAIN);
   lv_obj_set_style_bg_color(hint, lv_color_black(), LV_PART_MAIN);
@@ -10719,12 +10825,12 @@ static void fmShowRoots() {
   s_fm_count = 0;
   if (!s_fm_list) return;
   lv_obj_clean(s_fm_list);
-  if (s_fm_path_lbl) lv_label_set_text(s_fm_path_lbl, "Storage");
+  if (s_fm_path_lbl) lv_label_set_text(s_fm_path_lbl, TR("Storage"));
 
   char sub[48], us[16], ts[16];
   fmFmtSize(SPIFFS.usedBytes(),  us, sizeof us);
   fmFmtSize(SPIFFS.totalBytes(), ts, sizeof ts);
-  snprintf(sub, sizeof sub, "Internal storage   %s / %s", us, ts);
+  snprintf(sub, sizeof sub, TR("Internal storage   %s / %s"), us, ts);
   lv_obj_t* b = lv_list_add_btn(s_fm_list, LV_SYMBOL_DRIVE, sub);
   fmStyleRow(b, COLOR_TEXT);
   lv_obj_add_event_cb(b, fmInternalClickCb, LV_EVENT_CLICKED, nullptr);
@@ -10735,7 +10841,7 @@ static void fmShowRoots() {
   if ((s_sd_mounted || millis() >= s_sd_retry_after_ms) && fmSdTryMount()) {
     char sdl[48], cs[16];
     fmFmtSize64(s_sd_size, cs, sizeof cs);
-    snprintf(sdl, sizeof sdl, "SD card   %s   (hold: format)", cs);
+    snprintf(sdl, sizeof sdl, TR("SD card   %s   (hold: format)"), cs);
     lv_obj_t* sd = lv_list_add_btn(s_fm_list, LV_SYMBOL_SD_CARD, sdl);
     fmStyleRow(sd, COLOR_TEXT);
     lv_obj_add_event_cb(sd, fmSdClickCb, LV_EVENT_SHORT_CLICKED, nullptr);   // tap = open
@@ -10785,7 +10891,7 @@ static void fmToggleSearch() {
   lv_obj_set_size(s_fm_search_ta, w, 26);
   styleCard(s_fm_search_ta);
   lv_textarea_set_one_line(s_fm_search_ta, true);
-  lv_textarea_set_placeholder_text(s_fm_search_ta, "search");
+  lv_textarea_set_placeholder_text(s_fm_search_ta, TR("search"));
   lv_textarea_set_max_length(s_fm_search_ta, sizeof(s_fm_filter) - 1);
   lv_obj_set_style_text_font(s_fm_search_ta, &g_font_12, LV_PART_MAIN);
   lv_obj_set_style_text_color(s_fm_search_ta, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
@@ -10880,7 +10986,7 @@ static void buildFileManager(lv_obj_t* body) {
   lv_obj_set_style_pad_all(find, 0, LV_PART_MAIN);
   lv_obj_add_event_cb(find, fmSearchBtnCb, LV_EVENT_CLICKED, nullptr);
   lv_obj_t* findl = lv_label_create(find);
-  lv_label_set_text(findl, "Find");
+  lv_label_set_text(findl, TR("Find"));
   lv_obj_set_style_text_font(findl, &g_font_12, LV_PART_MAIN);
   lv_obj_center(findl);
 
@@ -10914,7 +11020,7 @@ static void buildFileManager(lv_obj_t* body) {
   lv_obj_set_style_radius(s_fm_path_lbl, 5, LV_PART_MAIN);
   lv_obj_set_style_pad_hor(s_fm_path_lbl, 6, LV_PART_MAIN);
   lv_obj_set_style_pad_ver(s_fm_path_lbl, 3, LV_PART_MAIN);
-  lv_label_set_text(s_fm_path_lbl, "Storage");
+  lv_label_set_text(s_fm_path_lbl, TR("Storage"));
 
   // Entry list fills the rest.
   s_fm_list = lv_list_create(body);
@@ -10966,12 +11072,12 @@ static void makeHome(lv_obj_t* tab) {
   s_home_batt_icon  = nullptr;
 
   g_lv.home_state = lv_label_create(tab);
-  lv_label_set_text(g_lv.home_state, "Connecting...");
+  lv_label_set_text(g_lv.home_state, TR("Connecting..."));
   lv_obj_set_style_text_color(g_lv.home_state, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
   lv_obj_align(g_lv.home_state, LV_ALIGN_TOP_LEFT, 0, 4);
 
   g_lv.home_stats = lv_label_create(tab);
-  lv_label_set_text(g_lv.home_stats, "");
+  lv_label_set_text(g_lv.home_stats, TR(""));
   lv_obj_set_style_text_color(g_lv.home_stats, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
   // Use the extras-fallback font so the "·" separator renders (the default font
   // lacks U+00B7 and drew it as a tofu box).
@@ -10997,7 +11103,7 @@ static void makeHome(lv_obj_t* tab) {
   // when the title/clock/battery row lived inside the tab.
   constexpr int chart_y = 60;
   s_home_chart_legend = lv_label_create(tab);
-  lv_label_set_text(s_home_chart_legend, "TX 0  /  RX 0");
+  lv_label_set_text(s_home_chart_legend, TR("TX 0  /  RX 0"));
   lv_obj_set_style_text_color(s_home_chart_legend, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
   lv_obj_set_style_text_font(s_home_chart_legend, &g_font_12, LV_PART_MAIN);
   lv_obj_align(s_home_chart_legend, LV_ALIGN_TOP_LEFT, 0, chart_y);
@@ -11080,7 +11186,7 @@ static void makeHome(lv_obj_t* tab) {
       lv_obj_align(b, LV_ALIGN_TOP_LEFT, cw - 100, ly);
       lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, nullptr);
       lv_obj_t* l = lv_label_create(b);
-      lv_label_set_text(l, label);
+      lv_label_set_text(l, TR(label));
       lv_obj_set_style_text_font(l, &g_font_12, LV_PART_MAIN);
       lv_obj_set_style_text_color(l, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
       lv_obj_center(l);
@@ -11280,7 +11386,7 @@ static void openContactsOverflowSheetCb(lv_event_t* e) {
   lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
 
   lv_obj_t* title = lv_label_create(card);
-  lv_label_set_text(title, "Contacts");
+  lv_label_set_text(title, TR("Contacts"));
   lv_obj_set_style_text_color(title, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
   lv_obj_set_style_text_font(title, &g_font_12, LV_PART_MAIN);
   lv_obj_set_pos(title, 0, 0);
@@ -11296,7 +11402,7 @@ static void openContactsOverflowSheetCb(lv_event_t* e) {
     if (bg) lv_obj_set_style_bg_color(b, lv_color_hex(bg), LV_PART_MAIN);
     lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, nullptr);
     lv_obj_t* l = lv_label_create(b);
-    lv_label_set_text(l, label);
+    lv_label_set_text(l, TR(label));
     lv_obj_set_style_text_font(l, &g_font_14, LV_PART_MAIN);
     lv_obj_align(l, LV_ALIGN_LEFT_MID, 0, 0);
     y += btn_h + btn_gap;
@@ -11372,7 +11478,7 @@ static void makeContactsTab(lv_obj_t* tab) {
     void* ud = reinterpret_cast<void*>(static_cast<uintptr_t>(k_contacts_seg_filter[idx]));
     lv_obj_add_event_cb(b, contactsSegmentCb, LV_EVENT_CLICKED, ud);
     lv_obj_t* l = lv_label_create(b);
-    lv_label_set_text(l, label);
+    lv_label_set_text(l, TR(label));
     if (star) {
       lv_obj_set_style_text_font(l, &star_font_14, LV_PART_MAIN);
       lv_obj_set_style_text_color(l, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
@@ -12200,6 +12306,10 @@ static bool loadTileJpeg(uint8_t z, int32_t x, int32_t y,
     char ppath[56];
     snprintf(ppath, sizeof(ppath), "/maps/osm/%u/%ld/%ld.png", (unsigned)z, (long)x, (long)y);
     File fsd = SD.open(ppath, FILE_READ);
+    if (!fsd) {   // some tile packs name the extension upper-case (.PNG)
+      snprintf(ppath, sizeof(ppath), "/maps/osm/%u/%ld/%ld.PNG", (unsigned)z, (long)x, (long)y);
+      fsd = SD.open(ppath, FILE_READ);
+    }
     if (!fsd) fsd = SD.open(path, FILE_READ);
     if (!fsd) return false;
     const size_t szsd = fsd.size();
@@ -12258,6 +12368,8 @@ static bool tileExistsAt(uint8_t z, long x, long y) {
     char p[56];
     snprintf(p, sizeof p, "/maps/osm/%u/%ld/%ld.png", (unsigned)z, x, y);
     if (SD.exists(p)) return true;
+    snprintf(p, sizeof p, "/maps/osm/%u/%ld/%ld.PNG", (unsigned)z, x, y);   // upper-case packs
+    if (SD.exists(p)) return true;
     snprintf(p, sizeof p, "/tiles/%u/%ld/%ld.jpg", (unsigned)z, x, y);
     return SD.exists(p);
   }
@@ -12303,7 +12415,7 @@ static void renderMapTiles() {
     s_map_has_pack = false;
     if (s_map_status_lbl) {
       lv_label_set_text(s_map_status_lbl,
-          "Map — set your location\nin Settings \xe2\x86\x92 Profile to\nshow the map here.");
+          TR("Map — set your location\nin Settings \xe2\x86\x92 Profile to\nshow the map here."));
       lv_obj_clear_flag(s_map_status_lbl, LV_OBJ_FLAG_HIDDEN);
     }
     return;
@@ -12481,13 +12593,13 @@ static void renderMapTiles() {
 #if defined(HAS_TDECK_GT911)
     if (SD.cardType() != CARD_NONE)
       lv_label_set_text(s_map_status_lbl,
-          "Map storage error.\n\nSD card detected but the\ntile cache didn't mount.\nReboot to retry.");
+          TR("Map storage error.\n\nSD card detected but the\ntile cache didn't mount.\nReboot to retry."));
     else
       lv_label_set_text(s_map_status_lbl,
-          "No map storage.\n\nInsert an SD card to cache\nWi-Fi tiles (or reflash to\nrestore the tiles partition).");
+          TR("No map storage.\n\nInsert an SD card to cache\nWi-Fi tiles (or reflash to\nrestore the tiles partition)."));
 #else
     lv_label_set_text(s_map_status_lbl,
-        "Map storage error.\nReflash the tiles partition.");
+        TR("Map storage error.\nReflash the tiles partition."));
 #endif
   } else if (wifi_up) {
     // Wi-Fi up: the missing tiles were just queued for download. Reassure
@@ -12506,7 +12618,7 @@ static void renderMapTiles() {
         "Saved tiles stay available offline.");
   }
 #else
-  lv_label_set_text(s_map_status_lbl, "No tiles (non-ESP32)");
+  lv_label_set_text(s_map_status_lbl, TR("No tiles (non-ESP32)"));
 #endif
   lv_obj_clear_flag(s_map_status_lbl, LV_OBJ_FLAG_HIDDEN);
 }
@@ -12714,7 +12826,7 @@ static void mapOptTilesSdCb(lv_event_t* e) {
   if (on) fmSdTryMount();        // mount now so the reload below can read from the card
   freeMapTiles();                // drop stale tile widgets → reload from the new source
   renderMapTiles();
-  if (g_lv.task) g_lv.task->showAlert(on ? "Map tiles: microSD" : "Map tiles: server", 1400);
+  if (g_lv.task) g_lv.task->showAlert(on ? TR("Map tiles: microSD") : TR("Map tiles: server"), 1400);
 }
 #endif
 
@@ -12725,11 +12837,11 @@ static void mapOptTilesSdCb(lv_event_t* e) {
 #if defined(ESP32) && defined(MULTI_TRANSPORT_COMPANION)
 static void mapReloadVisibleTiles() {
   if (s_map_center_lat == 0.0 && s_map_center_lon == 0.0) {
-    if (g_lv.task) g_lv.task->showAlert("Set your location first", 1600);
+    if (g_lv.task) g_lv.task->showAlert(TR("Set your location first"), 1600);
     return;
   }
   if (WiFi.status() != WL_CONNECTED) {
-    if (g_lv.task) g_lv.task->showAlert("Connect Wi-Fi to reload tiles", 2000);
+    if (g_lv.task) g_lv.task->showAlert(TR("Connect Wi-Fi to reload tiles"), 2000);
     return;
   }
   double cwx, cwy;
@@ -12769,7 +12881,7 @@ static void mapOptReloadCb(lv_event_t* e) {
 #if defined(ESP32) && defined(MULTI_TRANSPORT_COMPANION)
   mapReloadVisibleTiles();
 #else
-  if (g_lv.task) g_lv.task->showAlert("Tile reload needs Wi-Fi build", 1800);
+  if (g_lv.task) g_lv.task->showAlert(TR("Tile reload needs Wi-Fi build"), 1800);
 #endif
 }
 
@@ -12802,7 +12914,7 @@ static void mapOptInfoCb(lv_event_t* e) {
   addCloseXBadge(card, mapOptionsDismissCb);
 
   lv_obj_t* title = lv_label_create(card);
-  lv_label_set_text(title, "About the map");
+  lv_label_set_text(title, TR("About the map"));
   lv_obj_set_style_text_font(title, &g_font_14, LV_PART_MAIN);
   lv_obj_set_style_text_color(title, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
   lv_obj_set_pos(title, 0, 2);
@@ -12856,7 +12968,7 @@ static void openMapOptions() {
   lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
 
   lv_obj_t* title = lv_label_create(card);
-  lv_label_set_text(title, "Map options");
+  lv_label_set_text(title, TR("Map options"));
   lv_obj_set_style_text_font(title, &g_font_14, LV_PART_MAIN);
   lv_obj_set_style_text_color(title, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
   lv_obj_set_pos(title, 0, 0);
@@ -12864,7 +12976,7 @@ static void openMapOptions() {
 
   // Row: Lines toggle.
   lv_obj_t* ll = lv_label_create(card);
-  lv_label_set_text(ll, "Show link lines");
+  lv_label_set_text(ll, TR("Show link lines"));
   lv_obj_set_style_text_color(ll, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
   lv_obj_set_style_text_font(ll, &g_font_14, LV_PART_MAIN);
   lv_obj_set_pos(ll, 2, y + 4);
@@ -12878,7 +12990,7 @@ static void openMapOptions() {
   // Row: tile source — microSD (offline) vs the tile server.
   {
     lv_obj_t* tl = lv_label_create(card);
-    lv_label_set_text(tl, "Tiles from SD card");
+    lv_label_set_text(tl, TR("Tiles from SD card"));
     lv_obj_set_style_text_color(tl, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
     lv_obj_set_style_text_font(tl, &g_font_14, LV_PART_MAIN);
     lv_obj_set_pos(tl, 2, y + 4);
@@ -12897,7 +13009,7 @@ static void openMapOptions() {
     styleButton(b);
     lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, nullptr);
     lv_obj_t* l = lv_label_create(b);
-    lv_label_set_text(l, txt);
+    lv_label_set_text(l, TR(txt));
     lv_obj_set_style_text_font(l, &g_font_14, LV_PART_MAIN);
     lv_obj_set_style_text_color(l, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
     lv_obj_align(l, LV_ALIGN_LEFT_MID, 8, 0);
@@ -13008,7 +13120,7 @@ static void openMapPicker(const int* idxs, int n) {
   addCloseXBadge(card, mapPickerBackdropCb);
 
   lv_obj_t* title = lv_label_create(card);
-  lv_label_set_text(title, "Nearby on map");
+  lv_label_set_text(title, TR("Nearby on map"));
   lv_obj_set_style_text_color(title, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
   lv_obj_set_style_text_font(title, &g_font_14, LV_PART_MAIN);
   lv_label_set_long_mode(title, LV_LABEL_LONG_DOT);
@@ -13091,7 +13203,7 @@ static void mapContactsRowCb(lv_event_t* e) {
     char nm[24];
     copyUtf8ReplacingMissingGlyphs(&g_font_14, nm, sizeof(nm), c.name);
     char msg[40];
-    snprintf(msg, sizeof(msg), "Centered on %s", nm[0] ? nm : "contact");
+    snprintf(msg, sizeof(msg), TR("Centered on %s"), nm[0] ? nm : "contact");
     g_lv.task->showAlert(msg, 1200);
   }
 }
@@ -13161,7 +13273,7 @@ static void mapContactsFillList() {
 
   if (n == 0) {
     lv_obj_t* empty = lv_label_create(s_map_contacts_list);
-    lv_label_set_text(empty, "No contacts have shared\na GPS location yet.");
+    lv_label_set_text(empty, TR("No contacts have shared\na GPS location yet."));
     lv_obj_set_style_text_color(empty, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
     lv_obj_set_style_text_font(empty, &g_font_14, LV_PART_MAIN);
     return;
@@ -13436,7 +13548,7 @@ static void mapZoomInCb(lv_event_t* e) {
     if (mapZoomReachable(z)) { want = z; break; }
   }
   if (!want) {
-    if (g_lv.task) g_lv.task->showAlert("Max zoom for this pack", 1200);
+    if (g_lv.task) g_lv.task->showAlert(TR("Max zoom for this pack"), 1200);
     return;
   }
 #else
@@ -13457,7 +13569,7 @@ static void mapZoomOutCb(lv_event_t* e) {
     if (z == k_map_zoom_min) break;   // guard: z is unsigned, don't wrap below min
   }
   if (!want) {
-    if (g_lv.task) g_lv.task->showAlert("Min zoom for this pack", 1200);
+    if (g_lv.task) g_lv.task->showAlert(TR("Min zoom for this pack"), 1200);
     return;
   }
 #else
@@ -13501,7 +13613,7 @@ static void onMapTabActivated() {
   // visible "loading" hint and force an LVGL render pass BEFORE we block on
   // the actual tile reads, so the user doesn't think the device froze.
   if (s_map_status_lbl) {
-    lv_label_set_text(s_map_status_lbl, "Loading map\xe2\x80\xa6");
+    lv_label_set_text(s_map_status_lbl, TR("Loading map\xe2\x80\xa6"));
     lv_obj_clear_flag(s_map_status_lbl, LV_OBJ_FLAG_HIDDEN);
   }
   lv_refr_now(NULL);   // drain one frame so the label paints before we block
@@ -13626,11 +13738,11 @@ static void makeMapTab(lv_obj_t* tab) {
   };
   s_map_info_lbl = lv_label_create(tab);   // coords (bottom-left)
   style_corner(s_map_info_lbl);
-  lv_label_set_text(s_map_info_lbl, "—");
+  lv_label_set_text(s_map_info_lbl, TR("—"));
   lv_obj_align(s_map_info_lbl, LV_ALIGN_BOTTOM_LEFT, 2, -2);
   s_map_count_lbl = lv_label_create(tab);  // marker / status count (bottom-right)
   style_corner(s_map_count_lbl);
-  lv_label_set_text(s_map_count_lbl, "");
+  lv_label_set_text(s_map_count_lbl, TR(""));
   lv_obj_align(s_map_count_lbl, LV_ALIGN_BOTTOM_RIGHT, -2, -2);
   (void)kMapInfoH;
 
@@ -13711,14 +13823,14 @@ static void refreshMapInfoLabel() {
   } else if (s_map_last_missing > 0 && !wifi_up) {
     snprintf(tail, sizeof(tail), "Wi-Fi off \xe2\x80\x94 gaps");
   } else {
-    snprintf(tail, sizeof(tail), "%d on map", with_gps);
+    snprintf(tail, sizeof(tail), TR("%d on map"), with_gps);
   }
 #else
-  snprintf(tail, sizeof(tail), "%d on map", with_gps);
+  snprintf(tail, sizeof(tail), TR("%d on map"), with_gps);
 #endif
   // Coords → bottom-left corner; count/status → bottom-right corner.
   char buf[40];
-  if (lat == 0.0 && lon == 0.0) snprintf(buf, sizeof(buf), "GPS unset");
+  if (lat == 0.0 && lon == 0.0) snprintf(buf, sizeof(buf), TR("GPS unset"));
   else                          snprintf(buf, sizeof(buf), "%.4f, %.4f", lat, lon);
   lv_label_set_text(s_map_info_lbl, buf);
   if (s_map_count_lbl) lv_label_set_text(s_map_count_lbl, tail);
@@ -13844,7 +13956,7 @@ static void makeChatDetail(LvChatPanel& p) {
   lv_obj_set_style_bg_color(emoji_btn, lv_color_hex(0x1A1B1C), LV_PART_MAIN);
   lv_obj_add_event_cb(emoji_btn, openEmojiPickerCb, LV_EVENT_CLICKED, &p);
   lv_obj_t* el = lv_label_create(emoji_btn);
-  lv_label_set_text(el, "\xF0\x9F\x98\x8A");   // 😊
+  lv_label_set_text(el, TR("\xF0\x9F\x98\x8A"));   // 😊
   lv_obj_set_style_text_font(el, &g_font_16, LV_PART_MAIN);
   lv_obj_center(el);
 
@@ -13865,7 +13977,7 @@ static void makeChatDetail(LvChatPanel& p) {
   // newline can be inserted, so the composer never actually holds a '\n'.
   lv_textarea_set_one_line(p.composer_ta, false);
   lv_obj_set_scrollbar_mode(p.composer_ta, LV_SCROLLBAR_MODE_OFF);
-  lv_textarea_set_placeholder_text(p.composer_ta, "Type a message...");
+  lv_textarea_set_placeholder_text(p.composer_ta, TR("Type a message..."));
   lv_obj_set_style_text_color(p.composer_ta, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
   lv_obj_set_style_text_font(p.composer_ta, &g_font_14, LV_PART_MAIN);
   // Readable selection highlight: the label draws selected text using its OWN
@@ -13940,7 +14052,7 @@ static int append_settings_section(lv_obj_t* tab, int y, const char* title, lv_e
   lv_obj_set_style_text_color(sub, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
   lv_obj_set_style_anim_speed(sub, 28, LV_PART_MAIN);
   lv_obj_align(sub, LV_ALIGN_TOP_LEFT, 14, 29);
-  lv_label_set_text(sub, "…");
+  lv_label_set_text(sub, TR("…"));
 
   lv_obj_t* chev = lv_label_create(row);
   lv_label_set_text(chev, LV_SYMBOL_RIGHT);
@@ -13952,50 +14064,96 @@ static int append_settings_section(lv_obj_t* tab, int y, const char* title, lv_e
   return y + k_settings_row_h + k_settings_row_gap;
 }
 
-// Configure one sub-tab page: small padding, vertical flex (sections stack),
-// vertical scroll for overflow.
+// Always-on, accent-coloured scrollbar so it's obvious a settings list scrolls.
+static void styleSettingsScrollbar(lv_obj_t* p) {
+  lv_obj_set_scrollbar_mode(p, LV_SCROLLBAR_MODE_ON);
+  lv_obj_set_style_width(p, 6, LV_PART_SCROLLBAR);
+  lv_obj_set_style_pad_right(p, 2, LV_PART_SCROLLBAR);
+  lv_obj_set_style_radius(p, 3, LV_PART_SCROLLBAR);
+  lv_obj_set_style_bg_color(p, lv_color_hex(COLOR_ACCENT), LV_PART_SCROLLBAR);
+  lv_obj_set_style_bg_opa(p, LV_OPA_80, LV_PART_SCROLLBAR);
+}
+
+// Configure one settings page: small padding, vertical flex (sections stack),
+// vertical scroll for overflow with a clearly-visible scrollbar.
 static void prepSettingsPage(lv_obj_t* p) {
   styleSurface(p, COLOR_BG, 0);
   lv_obj_set_style_pad_all(p, 8, LV_PART_MAIN);
   lv_obj_set_style_pad_row(p, 2, LV_PART_MAIN);
   lv_obj_set_flex_flow(p, LV_FLEX_FLOW_COLUMN);
   lv_obj_set_scroll_dir(p, LV_DIR_VER);
-  lv_obj_set_scrollbar_mode(p, LV_SCROLLBAR_MODE_AUTO);
+  styleSettingsScrollbar(p);
 }
 
-// Build one sub-tab's controls on demand, tearing down the page we left, so only
-// the visible sub-tab's widgets are allocated at once. The inline settings
-// otherwise keep ALL sections' widgets alive — many small LVGL allocations that
-// fall back to scarce internal DRAM (the regression that bloated DRAM usage).
-static void settingsBuildPage(int idx) {
-  if (idx < 0 || idx >= kSettingsSubtabCount || !s_settings_pages[idx]) return;
-  if (idx == s_settings_built_page) return;
-  if (s_settings_built_page >= 0 && s_settings_pages[s_settings_built_page]) {
-    if (s_settings_built_page == 4) {   // About: drop the live-label pointers first
-      s_sysinfo_lbl = nullptr; s_update_about_lbl = nullptr; s_ota_status_lbl = nullptr;
-      s_ota_btn = nullptr; s_ota_btn_lbl = nullptr;
-      g_lv.settings_status = nullptr; g_lv.diag_id_label = nullptr; g_lv.diag_label = nullptr;
-    }
-    lv_obj_clean(s_settings_pages[s_settings_built_page]);
+// UI language picker (the Language category). Lists native language names; a tap
+// persists the choice and reboots so the whole UI re-renders in that language.
+static void langChosenCb(lv_event_t* e) {
+  if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+  uint8_t lang = (uint8_t)(intptr_t)lv_event_get_user_data(e);
+#if defined(ESP32)
+  touchPrefsSetUiLang(lang);
+#endif
+  i18nSetLang(lang);
+  if (g_lv.task) g_lv.task->rebootDevice();
+}
+
+static void buildLanguageSettings() {
+  lv_obj_t* body = createSettingsModal("", SettingsModalKind::Device);
+  int y = 0;
+
+  lv_obj_t* hint = lv_label_create(body);
+  lv_label_set_long_mode(hint, LV_LABEL_LONG_WRAP);
+  lv_obj_set_width(hint, lv_pct(100));
+  lv_label_set_text(hint, TR("Tap a language; the device reboots to apply."));
+  lv_obj_set_style_text_color(hint, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
+  lv_obj_set_style_text_font(hint, &g_font_12, LV_PART_MAIN);
+  lv_obj_set_pos(hint, 2, y);
+  y += 30;
+
+  const uint8_t cur = i18nGetLang();
+  for (uint8_t l = 0; l < LANG_COUNT; ++l) {
+    lv_obj_t* b = lv_btn_create(body);
+    lv_obj_set_size(b, lv_pct(100), 34);
+    lv_obj_set_pos(b, 2, y);
+    styleButton(b);
+    if (l == cur) lv_obj_set_style_bg_color(b, lv_color_hex(COLOR_ACCENT), LV_PART_MAIN);
+    lv_obj_add_event_cb(b, langChosenCb, LV_EVENT_CLICKED, (void*)(intptr_t)l);
+    lv_obj_t* lb = lv_label_create(b);
+    lv_label_set_text(lb, kUiLangNames[l]);   // native name (renders via the font fallback chain)
+    lv_obj_set_style_text_font(lb, &g_font_14, LV_PART_MAIN);
+    lv_obj_center(lb);
+    y += 38;
   }
-  s_settings_built_page = idx;
-  lv_obj_t* page = s_settings_pages[idx];
+}
+
+// Build one category's controls into the current inline parent (the open detail
+// sheet's scroll page). Only one category is ever built at a time (the sheet is
+// destroyed on close), keeping DRAM low. About builds its live status labels as
+// direct children of the page, toggling the inline parent like the old sub-tab.
+static void settingsCatBuild(int cat) {
+  lv_obj_t* page = s_settings_inline_parent;
   const lv_coord_t lblw = lv_disp_get_hor_res(nullptr) - 16;
-  resetSettingsModalState();
-  s_settings_inline_parent = page;
-  switch (idx) {
-    case 0: buildProfileSettings(); break;
-    case 1: buildRadioSettings(); buildAutoAddSettings(); buildExperimentalSettings(); break;
-    case 2: buildWifiSettings(); buildBluetoothSettings(); break;
-    case 3: buildDeviceSettings(); buildQuickReplySettings(); break;
-    case 4: {
+  switch (cat) {
+    case CAT_PROFILE:      buildProfileSettings(); break;
+    case CAT_RADIO:        buildRadioSettings(); buildAutoAddSettings(); buildExperimentalSettings(); break;
+    case CAT_WIFI:         buildWifiSettings(); break;
+    case CAT_BLUETOOTH:    buildBluetoothSettings(); break;
+    case CAT_DISPLAY:      buildDeviceSettings(DSEC_DISPLAY); break;
+    case CAT_KEYBOARD:     buildDeviceSettings(DSEC_KEYBOARD); break;
+    case CAT_QUICKREPLIES: buildQuickReplySettings(); break;
+    case CAT_SOUND:        buildDeviceSettings(DSEC_SOUND); break;
+    case CAT_LOCK:         buildDeviceSettings(DSEC_LOCK); break;
+    case CAT_SYSTEM:       buildDeviceSettings(DSEC_SYSTEM); break;
+    case CAT_BACKUPS:      buildBackupsSettings(); break;
+    case CAT_LANGUAGE:     buildLanguageSettings(); break;
+    case CAT_ABOUT: {
       s_settings_inline_parent = nullptr;
       s_update_about_lbl = lv_label_create(page);   // update/firmware status (top)
       lv_label_set_long_mode(s_update_about_lbl, LV_LABEL_LONG_WRAP);
       lv_obj_set_width(s_update_about_lbl, lblw);
       lv_obj_set_style_text_font(s_update_about_lbl, &g_font_12, LV_PART_MAIN);
       lv_obj_set_style_text_color(s_update_about_lbl, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
-      lv_label_set_text(s_update_about_lbl, "");
+      lv_label_set_text(s_update_about_lbl, TR(""));
 
       // "Install update" button — over-the-air update to the latest release.
       // Only meaningful on a tagged build with OTA support; the callback
@@ -14020,7 +14178,7 @@ static void settingsBuildPage(int idx) {
         lv_obj_set_width(s_ota_status_lbl, lblw);
         lv_obj_set_style_text_font(s_ota_status_lbl, &g_font_12, LV_PART_MAIN);
         lv_obj_set_style_text_color(s_ota_status_lbl, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
-        lv_label_set_text(s_ota_status_lbl, "");
+        lv_label_set_text(s_ota_status_lbl, TR(""));
       }
 #endif
 
@@ -14031,7 +14189,7 @@ static void settingsBuildPage(int idx) {
       lv_obj_set_width(g_lv.settings_status, lblw);
       lv_obj_set_style_text_color(g_lv.settings_status, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
       lv_obj_set_style_text_font(g_lv.settings_status, &g_font_12, LV_PART_MAIN);
-      lv_label_set_text(g_lv.settings_status, "");
+      lv_label_set_text(g_lv.settings_status, TR(""));
       g_lv.diag_id_label = lv_label_create(page);
       lv_label_set_long_mode(g_lv.diag_id_label, LV_LABEL_LONG_WRAP);
       lv_obj_set_width(g_lv.diag_id_label, lblw);
@@ -14043,7 +14201,7 @@ static void settingsBuildPage(int idx) {
       lv_obj_set_width(g_lv.diag_label, lblw);
       lv_obj_set_style_text_color(g_lv.diag_label, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
       lv_obj_set_style_text_font(g_lv.diag_label, &g_font_12, LV_PART_MAIN);
-      lv_label_set_text(g_lv.diag_label, "Diagnostics");
+      lv_label_set_text(g_lv.diag_label, TR("Diagnostics"));
       versionCheckUpdateUi();
       break;
     }
@@ -14051,9 +14209,62 @@ static void settingsBuildPage(int idx) {
   s_settings_inline_parent = nullptr;
 }
 
-static void settingsSubtabChangedCb(lv_event_t* e) {
-  if (lv_event_get_code(e) != LV_EVENT_VALUE_CHANGED || !s_settings_subtab) return;
-  settingsBuildPage((int)lv_tabview_get_tab_act(s_settings_subtab));
+// Tear down the open category detail sheet and return to the landing. Safe to
+// call when nothing is open (tab change / key dismiss call it unconditionally).
+static void closeSettingsCategory() {
+  if (!s_settings_sheet && s_settings_open_cat < 0) return;
+  hideKb();
+  if (s_settings_open_cat == CAT_ABOUT) {   // null the live-label ptrs (freed with the sheet)
+    s_sysinfo_lbl = nullptr; s_update_about_lbl = nullptr; s_ota_status_lbl = nullptr;
+    s_ota_btn = nullptr; s_ota_btn_lbl = nullptr;
+    g_lv.settings_status = nullptr; g_lv.diag_id_label = nullptr; g_lv.diag_label = nullptr;
+  }
+  s_settings_inline_parent = nullptr;
+  if (s_settings_sheet) { lv_obj_del(s_settings_sheet); s_settings_sheet = nullptr; }
+  s_settings_open_cat = -1;
+  resetSettingsModalState();
+  updateGlobalStatusBar();   // restore the normal status-bar left zone (drop Back/title)
+}
+
+// Open a category as a detail sheet (on layer_top, below the status bar). The
+// status bar itself carries the Back chevron + the page title (tapping the bar =
+// Back), so the sheet needs no header and the page uses the full height.
+static void openSettingsCategory(int cat) {
+  if (cat < 0 || cat >= CAT_COUNT) return;
+  if (settingsModalIsOpen()) closeSettingsModal();
+  closeSettingsCategory();   // close any prior sheet first
+
+  const lv_coord_t sw = lv_disp_get_hor_res(nullptr);
+  const lv_coord_t sh = lv_disp_get_ver_res(nullptr);
+
+  lv_obj_t* root = lv_obj_create(lv_layer_top());
+  lv_obj_remove_style_all(root);
+  // Sit below the global status bar (always-on-top on lv_layer_sys).
+  lv_obj_set_size(root, sw, sh - STATUSBAR_H);
+  lv_obj_set_pos(root, 0, STATUSBAR_H);
+  styleSurface(root, COLOR_BG, 0);
+  lv_obj_set_style_pad_all(root, 0, LV_PART_MAIN);
+  lv_obj_clear_flag(root, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_move_foreground(root);
+  s_settings_sheet    = root;
+  s_settings_open_cat = cat;
+
+  lv_obj_t* page = lv_obj_create(root);
+  lv_obj_set_pos(page, 0, 0);
+  lv_obj_set_size(page, sw, sh - STATUSBAR_H);
+  prepSettingsPage(page);
+
+  resetSettingsModalState();
+  s_settings_inline_parent = page;
+  settingsCatBuild(cat);
+  s_settings_inline_parent = nullptr;
+
+  updateGlobalStatusBar();   // show the Back chevron + title in the bar immediately
+}
+
+static void settingsCatOpenCb(lv_event_t* e) {
+  if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+  openSettingsCategory((int)(intptr_t)lv_event_get_user_data(e));
 }
 
 static void makeSettings(lv_obj_t* tab) {
@@ -14061,70 +14272,85 @@ static void makeSettings(lv_obj_t* tab) {
   lv_obj_set_style_pad_all(tab, 0, LV_PART_MAIN);
   lv_obj_clear_flag(tab, LV_OBJ_FLAG_SCROLLABLE);
 
-  for (int i = 0; i < SEC_COUNT; ++i) g_set_sec_sub[i] = nullptr;   // legacy subtitles retired
-  // Pages SHARE the g_set_modal widget-pointer struct: reset once, then each
-  // inline builder writes its own (distinct) fields. The save callbacks read
-  // those same pointers, so they keep working with no modal open.
+  // Builders SHARE the g_set_modal widget-pointer struct: reset once; each inline
+  // builder writes its own (distinct) fields and the save callbacks read them.
   resetSettingsModalState();
+  s_settings_sheet    = nullptr;
+  s_settings_open_cat = -1;
 
-  // A top sub-tab bar groups the settings into categories. The Set page holds
-  // just this one tabview (far under the bottom-tabview direct-child limit);
-  // each category page is a scrollable flex column of inline control sections.
-  lv_obj_t* sub = lv_tabview_create(tab, LV_DIR_TOP, 32);
-  lv_obj_set_size(sub, lv_pct(100), lv_pct(100));
-  styleSurface(sub, COLOR_BG, 0);
-  // The tabview's content container defaults to a light theme bg — force dark.
-  lv_obj_t* sub_content = lv_tabview_get_content(sub);
-  if (sub_content) styleSurface(sub_content, COLOR_BG, 0);
-  lv_obj_t* sub_btns = lv_tabview_get_tab_btns(sub);
-  // Dark button bar (the btnmatrix MAIN bg is light by default = the "white").
-  lv_obj_set_style_bg_color(sub_btns, lv_color_hex(COLOR_BG), LV_PART_MAIN);
-  lv_obj_set_style_bg_opa(sub_btns, LV_OPA_COVER, LV_PART_MAIN);
-  lv_obj_set_style_border_side(sub_btns, LV_BORDER_SIDE_BOTTOM, LV_PART_MAIN);
-  lv_obj_set_style_border_color(sub_btns, lv_color_hex(0x18191A), LV_PART_MAIN);
-  lv_obj_set_style_border_width(sub_btns, 1, LV_PART_MAIN);
-  lv_obj_set_style_text_font(sub_btns, &g_font_12, LV_PART_ITEMS);
-  lv_obj_set_style_bg_opa(sub_btns, LV_OPA_TRANSP, LV_PART_ITEMS);
-  lv_obj_set_style_border_width(sub_btns, 0, LV_PART_ITEMS);
-  lv_obj_set_style_bg_color(sub_btns, lv_color_hex(COLOR_ACCENT), LV_PART_ITEMS | LV_STATE_CHECKED);
-  lv_obj_set_style_bg_opa(sub_btns, LV_OPA_40, LV_PART_ITEMS | LV_STATE_CHECKED);
-  lv_obj_set_style_text_color(sub_btns, lv_color_hex(COLOR_SUB), LV_PART_ITEMS);
-  lv_obj_set_style_text_color(sub_btns, lv_color_hex(COLOR_TEXT), LV_PART_ITEMS | LV_STATE_CHECKED);
-  // Gap between the 5 tab cells + a touch of inner padding so adjacent labels
-  // ("Profile"/"Radio"/"Network"…) don't run edge-to-edge and visually touch in
-  // the narrow portrait (240 px) width. pad_column spaces the cells; the small
-  // text padding keeps each label centered with breathing room.
-  lv_obj_set_style_pad_column(sub_btns, 2, LV_PART_MAIN);
-  lv_obj_set_style_pad_left(sub_btns, 1, LV_PART_ITEMS);
-  lv_obj_set_style_pad_right(sub_btns, 1, LV_PART_ITEMS);
-  s_settings_subtab = sub;
-  // Red dot over the "About" sub-tab button (rightmost) — the update info lives
-  // there, so flag it when the gear badge is showing. Child of the Set page so
-  // it floats above the sub-tab bar; only visible while on the Settings tab.
-  s_update_subtab_badge = lv_obj_create(tab);
-  lv_obj_remove_style_all(s_update_subtab_badge);
-  lv_obj_set_size(s_update_subtab_badge, 9, 9);
-  lv_obj_set_style_radius(s_update_subtab_badge, LV_RADIUS_CIRCLE, LV_PART_MAIN);
-  lv_obj_set_style_bg_color(s_update_subtab_badge, lv_color_hex(0xE2403A), LV_PART_MAIN);
-  lv_obj_set_style_bg_opa(s_update_subtab_badge, LV_OPA_COVER, LV_PART_MAIN);
-  lv_obj_align(s_update_subtab_badge, LV_ALIGN_TOP_RIGHT, -6, 4);
-  lv_obj_add_flag(s_update_subtab_badge, LV_OBJ_FLAG_HIDDEN);
+  // Category landing: a single-column list in portrait, a 2-column grid in
+  // landscape (uses the extra width). Each card opens a focused detail sheet.
+  const bool landscape = lv_disp_get_hor_res(nullptr) > lv_disp_get_ver_res(nullptr);
+  const lv_coord_t hor = lv_disp_get_hor_res(nullptr);
 
-  // Short labels: the 5 cells split the (narrow, 240 px in V4 portrait) bar
-  // evenly, so "Network"/"Profile" would fill a cell edge-to-edge and the last
-  // letter touched the next tab's first letter ("…k" / "D…"). Trimmed to fit.
-  s_settings_pages[0] = lv_tabview_add_tab(sub, "Profile");
-  s_settings_pages[1] = lv_tabview_add_tab(sub, "Radio");
-  s_settings_pages[2] = lv_tabview_add_tab(sub, "Net");
-  s_settings_pages[3] = lv_tabview_add_tab(sub, "Device");
-  s_settings_pages[4] = lv_tabview_add_tab(sub, "About");
-  for (int i = 0; i < kSettingsSubtabCount; ++i) prepSettingsPage(s_settings_pages[i]);
+  lv_obj_t* land = lv_obj_create(tab);
+  s_settings_landing = land;
+  lv_obj_remove_style_all(land);
+  lv_obj_set_size(land, lv_pct(100), lv_pct(100));
+  styleSurface(land, COLOR_BG, 0);
+  lv_obj_set_style_pad_all(land, 8, LV_PART_MAIN);
+  lv_obj_set_style_pad_row(land, 8, LV_PART_MAIN);
+  lv_obj_set_style_pad_column(land, 8, LV_PART_MAIN);
+  lv_obj_set_scroll_dir(land, LV_DIR_VER);
+  styleSettingsScrollbar(land);
+  lv_obj_set_flex_flow(land, landscape ? LV_FLEX_FLOW_ROW_WRAP : LV_FLEX_FLOW_COLUMN);
 
-  // Lazy: build only the visible sub-tab's controls; switching pages tears down
-  // the old one and builds the new (keeps DRAM low — see settingsBuildPage).
-  lv_obj_add_event_cb(sub, settingsSubtabChangedCb, LV_EVENT_VALUE_CHANGED, nullptr);
-  s_settings_built_page = -1;
-  settingsBuildPage((int)lv_tabview_get_tab_act(sub));   // populate the initially-active page
+  const lv_coord_t card_w = landscape ? (lv_coord_t)((hor - 16 - 8) / 2) : (lv_coord_t)(hor - 16);
+  const lv_coord_t card_h = landscape ? 54 : 46;
+
+  for (int c = 0; c < CAT_COUNT; ++c) {
+#if !defined(HAS_TDECK_GT911)
+    if (c == CAT_LOCK) continue;   // lock screen is a T-Deck-only feature
+#endif
+    lv_obj_t* card = lv_btn_create(land);
+    lv_obj_remove_style_all(card);
+    lv_obj_set_size(card, card_w, card_h);
+    lv_obj_set_style_bg_color(card, lv_color_hex(0x121417), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(card, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(card, lv_color_hex(COLOR_ACCENT), LV_PART_MAIN | LV_STATE_PRESSED);
+    lv_obj_set_style_radius(card, 10, LV_PART_MAIN);
+    lv_obj_set_style_border_width(card, 1, LV_PART_MAIN);
+    lv_obj_set_style_border_color(card, lv_color_hex(0x2A2E34), LV_PART_MAIN);
+    lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_event_cb(card, settingsCatOpenCb, LV_EVENT_CLICKED, (void*)(intptr_t)c);
+
+    lv_obj_t* icon = lv_label_create(card);
+    lv_label_set_text(icon, kSettingsCats[c].icon);
+    lv_obj_set_style_text_font(icon, &g_font_16, LV_PART_MAIN);
+    lv_obj_set_style_text_color(icon, lv_color_hex(COLOR_ACCENT), LV_PART_MAIN);
+    lv_obj_align(icon, LV_ALIGN_LEFT_MID, 12, 0);
+
+    lv_obj_t* lbl = lv_label_create(card);
+    lv_label_set_text(lbl, TR(kSettingsCats[c].label));
+    lv_obj_set_style_text_font(lbl, &g_font_14, LV_PART_MAIN);
+    lv_obj_set_style_text_color(lbl, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
+    // Constrain + wrap so a long translated name (e.g. "Πληκτρολόγιο",
+    // "Schnellantworten") stays inside the card instead of running under the
+    // chevron / off the edge — tightest in landscape's narrow 2-column cards.
+    lv_obj_set_width(lbl, card_w - 40 - (landscape ? 14 : 30));
+    lv_label_set_long_mode(lbl, LV_LABEL_LONG_WRAP);
+    lv_obj_align(lbl, LV_ALIGN_LEFT_MID, 40, 0);
+
+    if (!landscape) {
+      lv_obj_t* chev = lv_label_create(card);
+      lv_label_set_text(chev, LV_SYMBOL_RIGHT);
+      lv_obj_set_style_text_font(chev, &g_font_14, LV_PART_MAIN);
+      lv_obj_set_style_text_color(chev, lv_color_hex(0x4A5D70), LV_PART_MAIN);
+      lv_obj_align(chev, LV_ALIGN_RIGHT_MID, -12, 0);
+    }
+
+    if (c == CAT_ABOUT) {   // update-available dot rides on the About card
+      s_update_subtab_badge = lv_obj_create(card);
+      lv_obj_remove_style_all(s_update_subtab_badge);
+      lv_obj_set_size(s_update_subtab_badge, 9, 9);
+      lv_obj_set_style_radius(s_update_subtab_badge, LV_RADIUS_CIRCLE, LV_PART_MAIN);
+      lv_obj_set_style_bg_color(s_update_subtab_badge, lv_color_hex(0xE2403A), LV_PART_MAIN);
+      lv_obj_set_style_bg_opa(s_update_subtab_badge, LV_OPA_COVER, LV_PART_MAIN);
+      lv_obj_align(s_update_subtab_badge, LV_ALIGN_RIGHT_MID, landscape ? -12 : -32, 0);
+      lv_obj_add_flag(s_update_subtab_badge, LV_OBJ_FLAG_HIDDEN);
+    }
+  }
+
   versionCheckUpdateUi();   // reflect any completed check in the gear/About badges
 }
 
@@ -14153,7 +14379,7 @@ static void formatBubbleHhMm(uint32_t ts, char* out, int cap) {
 static void formatFullTimestamp(uint32_t ts, char* out, int cap) {
   if (cap <= 0 || !out) return;
   if (ts < k_ts_epoch_min) {
-    snprintf(out, cap, "(RTC unset)");
+    snprintf(out, cap, TR("(RTC unset)"));
     return;
   }
   time_t t = (time_t)ts;
@@ -14330,7 +14556,7 @@ static void msgMenuBlockCb(lv_event_t* e) {
   if (lv_event_get_code(e) != LV_EVENT_CLICKED || !g_lv.task) return;
   const bool ok = g_lv.task->ignoreSenderInActiveThread(s_msg_menu_sender);
   closeMsgActionMenu();
-  g_lv.task->showAlert(ok ? "Sender blocked" : "Can't block \xe2\x80\x94 not a contact", 1500);
+  g_lv.task->showAlert(ok ? TR("Sender blocked") : TR("Can't block \xe2\x80\x94 not a contact"), 1500);
 }
 
 static void openMessageActionMenu(int msg_idx) {
@@ -14392,7 +14618,7 @@ static void openMessageActionMenu(int msg_idx) {
     styleButton(b);
     lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, nullptr);
     lv_obj_t* lbl = lv_label_create(b);
-    lv_label_set_text(lbl, text);
+    lv_label_set_text(lbl, TR(text));
     lv_obj_set_style_text_font(lbl, &g_font_14, LV_PART_MAIN);
     lv_obj_set_style_text_color(lbl, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
     lv_obj_center(lbl);
@@ -14416,7 +14642,7 @@ static void msgInfoTraceCb(lv_event_t* e) {
   if (lv_event_get_code(e) != LV_EVENT_CLICKED || !g_lv.task) return;
   ContactInfo c;
   if (!g_lv.task->lookupActiveContact(c)) {
-    g_lv.task->showAlert("No contact to trace", 1500);
+    g_lv.task->showAlert(TR("No contact to trace"), 1500);
     return;
   }
   closeMsgInfoPopup();
@@ -14424,9 +14650,9 @@ static void msgInfoTraceCb(lv_event_t* e) {
   uint32_t tag = the_mesh.uiSendTraceRoute(c);
   if (tag == 0) {
     s_trace_route_pending = false;
-    g_lv.task->showAlert("Trace failed", 1400);
+    g_lv.task->showAlert(TR("Trace failed"), 1400);
   } else {
-    g_lv.task->showAlert("Tracing route\xe2\x80\xa6", 1600);
+    g_lv.task->showAlert(TR("Tracing route\xe2\x80\xa6"), 1600);
   }
 }
 
@@ -14482,7 +14708,7 @@ static void openMessageInfoPopup(int msg_idx) {
   // Time
   char tbuf[40];
   formatFullTimestamp(m.ts, tbuf, sizeof(tbuf));
-  blen += snprintf(body + blen, sizeof(body) - blen, "Time   %s", tbuf);
+  blen += snprintf(body + blen, sizeof(body) - blen, TR("Time   %s"), tbuf);
   // From (incoming only — outgoing is obviously us)
   if (!m.outgoing && m.sender[0]) {
     blen += snprintf(body + blen, sizeof(body) - blen, "\nFrom   %s", m.sender);
@@ -14551,7 +14777,7 @@ static void openMessageInfoPopup(int msg_idx) {
 
   // Title row at top-left, sized to clear the close-X (top-right 32 px).
   lv_obj_t* title = lv_label_create(card);
-  lv_label_set_text(title, "Message info");
+  lv_label_set_text(title, TR("Message info"));
   lv_obj_set_style_text_color(title, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
   lv_obj_set_style_text_font(title, &g_font_14, LV_PART_MAIN);
   lv_label_set_long_mode(title, LV_LABEL_LONG_DOT);
@@ -14605,7 +14831,7 @@ static void chatDetailShowPlaceholder(LvChatPanel& p, const char* msg) {
   lv_obj_t* lbl = lv_label_create(p.msgs);
   lv_label_set_long_mode(lbl, LV_LABEL_LONG_WRAP);
   lv_obj_set_width(lbl, 200);
-  lv_label_set_text(lbl, msg);
+  lv_label_set_text(lbl, TR(msg));
   lv_obj_set_style_text_color(lbl, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
   lv_obj_set_style_text_align(lbl, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
   lv_obj_center(lbl);
@@ -14692,7 +14918,7 @@ static void refreshChatDetail(LvChatPanel& p) {
       lv_obj_set_style_bg_color(dline, lv_color_hex(0xE0533D), LV_PART_MAIN);   // Discord-ish red
       lv_obj_set_style_bg_opa(dline, LV_OPA_COVER, LV_PART_MAIN);
       lv_obj_t* dlbl = lv_label_create(div);
-      lv_label_set_text(dlbl, "New");
+      lv_label_set_text(dlbl, TR("New"));
       lv_obj_set_style_text_font(dlbl, &g_font_12, LV_PART_MAIN);
       lv_obj_set_style_text_color(dlbl, lv_color_hex(0xE0533D), LV_PART_MAIN);
       lv_obj_set_style_bg_color(dlbl, lv_color_hex(COLOR_BG), LV_PART_MAIN);
@@ -14958,7 +15184,7 @@ static void refreshChatList(LvChatPanel& p) {
     if (g_lv.task->threadHasMention(idxs[i])) {
       lv_obj_t* at = lv_label_create(btn);
       lv_obj_add_flag(at, LV_OBJ_FLAG_IGNORE_LAYOUT);
-      lv_label_set_text(at, "@");
+      lv_label_set_text(at, TR("@"));
       lv_obj_set_style_text_font(at, &g_font_14, LV_PART_MAIN);
       lv_obj_set_style_text_color(at, lv_color_hex(COLOR_MENTION), LV_PART_MAIN);
       lv_obj_align(at, LV_ALIGN_RIGHT_MID, unread > 0 ? -48 : -10, 0);
@@ -14999,7 +15225,7 @@ static lv_obj_t* makeContactChip(lv_obj_t* parent, const char* text,
   lv_obj_set_style_pad_all(chip, 0, LV_PART_MAIN);
   lv_obj_clear_flag(chip, LV_OBJ_FLAG_SCROLLABLE);
   lv_obj_t* lbl = lv_label_create(chip);
-  lv_label_set_text(lbl, text);
+  lv_label_set_text(lbl, TR(text));
   lv_obj_set_style_text_color(lbl, lv_color_hex(fg), LV_PART_MAIN);
   lv_obj_set_style_text_font(lbl, &g_font_12, LV_PART_MAIN);
   lv_obj_center(lbl);
@@ -15579,6 +15805,7 @@ static bool hwKeyDismissTopPopup() {
   if (s_share_my_root)          { closeShareMyContact();        return true; }
   if (s_los_root)               { closeLosModal();              return true; }
   if (s_admin_root)             { closeAdminConsole();          return true; }
+  if (s_settings_sheet)         { closeSettingsCategory();                      return true; }
   if (settingsModalIsOpen())    { closeSettingsModal();         return true; }
   if (s_power_menu)             { closePowerMenu();             return true; }
   if (s_cc_root)                { closeControlCenter();         return true; }
@@ -15605,7 +15832,7 @@ static bool anyPopupOpen() {
          s_admin_picker_root || s_admin_pw_root || s_addch_sheet || s_qr_sheet ||
          s_channel_long_sheet || s_action_sheet_root || s_contacts_search_sheet ||
          s_contacts_overflow_root || s_share_my_root || s_los_root || s_admin_root ||
-         s_meminfo_root || settingsModalIsOpen() || s_cc_root
+         s_meminfo_root || settingsModalIsOpen() || s_settings_sheet || s_cc_root
 #if defined(HAS_TDECK_GT911)
          || s_fullscreen_view || s_term_picker_root || s_fm_prompt || s_fm_actions || s_editor_root || s_fm_img_root
 #endif
@@ -15712,7 +15939,7 @@ static void lockscreenUnlockProgress(unsigned long remaining_ms) {
     lv_obj_clear_flag(s_unlock_popup, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t* t = lv_label_create(s_unlock_popup);
-    lv_label_set_text(t, "Unlocking\xE2\x80\xA6");
+    lv_label_set_text(t, TR("Unlocking\xE2\x80\xA6"));
     lv_obj_set_style_text_color(t, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
     lv_obj_set_style_text_font(t, &g_font_16, LV_PART_MAIN);
     lv_obj_align(t, LV_ALIGN_TOP_MID, 0, 8);
@@ -15723,7 +15950,7 @@ static void lockscreenUnlockProgress(unsigned long remaining_ms) {
     lv_obj_align(s_unlock_count, LV_ALIGN_CENTER, 0, 6);
 
     lv_obj_t* h = lv_label_create(s_unlock_popup);
-    lv_label_set_text(h, "keep holding");
+    lv_label_set_text(h, TR("keep holding"));
     lv_obj_set_style_text_color(h, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
     lv_obj_set_style_text_font(h, &g_font_12, LV_PART_MAIN);
     lv_obj_align(h, LV_ALIGN_BOTTOM_MID, 0, -8);
@@ -15796,7 +16023,7 @@ static void lockscreenShow() {
   const lv_color_t col = lv_color_hex(touchPrefsGetLockTextColor());
 
   s_lock_clock = lv_label_create(s_lock_root);
-  lv_label_set_text(s_lock_clock, "--:--");
+  lv_label_set_text(s_lock_clock, TR("--:--"));
   lv_obj_set_style_text_font(s_lock_clock, &lv_font_montserrat_28, LV_PART_MAIN);
   lv_obj_set_style_text_color(s_lock_clock, col, LV_PART_MAIN);
   lv_obj_align(s_lock_clock, LV_ALIGN_TOP_MID, 0, 30);   // below the 22 px status bar
@@ -15804,13 +16031,13 @@ static void lockscreenShow() {
   lockscreenUpdateClock();
 
   lv_obj_t* st = lv_label_create(s_lock_root);
-  lv_label_set_text(st, "Screen locked");
+  lv_label_set_text(st, TR("Screen locked"));
   lv_obj_set_style_text_font(st, &g_font_16, LV_PART_MAIN);
   lv_obj_set_style_text_color(st, col, LV_PART_MAIN);
   lv_obj_align(st, LV_ALIGN_TOP_MID, 0, 190);
 
   lv_obj_t* hint = lv_label_create(s_lock_root);
-  lv_label_set_text(hint, "hold the trackball to unlock");
+  lv_label_set_text(hint, TR("hold the trackball to unlock"));
   lv_obj_set_style_text_font(hint, &g_font_12, LV_PART_MAIN);
   lv_obj_set_style_text_color(hint, col, LV_PART_MAIN);
   lv_obj_set_style_text_opa(hint, LV_OPA_70, LV_PART_MAIN);
@@ -15914,7 +16141,7 @@ static void lockwallChosenCb(lv_event_t* e) {
     lv_label_set_text(s_lockwall_btn_lbl, disp);
   }
   lockwallPickerClose();
-  if (g_lv.task) g_lv.task->showAlert("Lock wallpaper set", 1100);
+  if (g_lv.task) g_lv.task->showAlert(TR("Lock wallpaper set"), 1100);
 }
 static void openLockWallPicker() {
   lockwallScan();
@@ -15930,7 +16157,7 @@ static void openLockWallPicker() {
   lv_obj_clear_flag(s_lockwall_picker, LV_OBJ_FLAG_SCROLLABLE);
 
   lv_obj_t* title = lv_label_create(s_lockwall_picker);
-  lv_label_set_text(title, "Lock wallpaper");
+  lv_label_set_text(title, TR("Lock wallpaper"));
   lv_obj_set_style_text_font(title, &g_font_16, LV_PART_MAIN);
   lv_obj_set_style_text_color(title, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
   lv_obj_set_pos(title, 8, 8);
@@ -15953,7 +16180,7 @@ static void openLockWallPicker() {
 
   if (s_lockwall_count == 0) {
     lv_obj_t* empty = lv_label_create(list);
-    lv_label_set_text(empty, "No JPEGs found in /lock/.\nAdd images via the file\nmanager or an SD card.");
+    lv_label_set_text(empty, TR("No JPEGs found in /lock/.\nAdd images via the file\nmanager or an SD card."));
     lv_obj_set_style_text_color(empty, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
     lv_obj_set_style_text_font(empty, &g_font_12, LV_PART_MAIN);
   }
@@ -15978,7 +16205,7 @@ static void lockColorChosenCb(lv_event_t* e) {
   if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
   const uint32_t rgb = (uint32_t)(uintptr_t)lv_event_get_user_data(e);
   touchPrefsSetLockTextColor(rgb);
-  if (g_lv.task) g_lv.task->showAlert("Lock text colour set", 1000);
+  if (g_lv.task) g_lv.task->showAlert(TR("Lock text colour set"), 1000);
 }
 #endif  // HAS_TDECK_GT911
 // The settings-backup import picker below must link on BOTH touch boards (its
@@ -16091,7 +16318,7 @@ static void doBackupImportChosen() {
 #if defined(HAS_TDECK_GT911)
   else if (!strncmp(path, "sd:", 3)) { fsp = &SD; path += 3; }
 #endif
-  if (!fsp) { g_lv.task->showAlert("Import: storage unavailable", 2000); return; }
+  if (!fsp) { g_lv.task->showAlert(TR("Import: storage unavailable"), 2000); return; }
   // "Importing…" overlay, painted before the blocking parse + apply.
   lv_obj_t* ov = lv_obj_create(lv_layer_top());
   lv_obj_remove_style_all(ov);
@@ -16099,7 +16326,7 @@ static void doBackupImportChosen() {
   lv_obj_set_style_bg_color(ov, lv_color_black(), LV_PART_MAIN);
   lv_obj_set_style_bg_opa(ov, LV_OPA_70, LV_PART_MAIN);
   lv_obj_clear_flag(ov, LV_OBJ_FLAG_SCROLLABLE);
-  { lv_obj_t* ol = lv_label_create(ov); lv_label_set_text(ol, "Importing settings\xe2\x80\xa6");
+  { lv_obj_t* ol = lv_label_create(ov); lv_label_set_text(ol, TR("Importing settings\xe2\x80\xa6"));
     lv_obj_set_style_text_color(ol, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
     lv_obj_set_style_text_font(ol, &g_font_16, LV_PART_MAIN); lv_obj_center(ol); }
   lv_refr_now(nullptr);
@@ -16118,7 +16345,7 @@ static void doBackupImportChosen() {
   if (!ok) {
     wdtHeavyEnd();
     lv_obj_del(ov);
-    g_lv.task->showAlert("Import failed (bad/unreadable JSON)", 2400);
+    g_lv.task->showAlert(TR("Import failed (bad/unreadable JSON)"), 2400);
     return;
   }
   g_lv.task->persistHistoryNow();   // nests under the guard above (ref-counted)
@@ -16157,7 +16384,7 @@ static void openBackupPicker() {
   lv_obj_clear_flag(s_backup_picker, LV_OBJ_FLAG_SCROLLABLE);
 
   lv_obj_t* title = lv_label_create(s_backup_picker);
-  lv_label_set_text(title, "Import settings");
+  lv_label_set_text(title, TR("Import settings"));
   lv_obj_set_style_text_font(title, &g_font_16, LV_PART_MAIN);
   lv_obj_set_style_text_color(title, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
   lv_obj_set_pos(title, 8, 8);
@@ -16180,7 +16407,7 @@ static void openBackupPicker() {
 
   if (s_backup_count == 0) {
     lv_obj_t* empty = lv_label_create(list);
-    lv_label_set_text(empty, "No .json backups found.\nExport one first, or copy a\nmeshcore-backup.json to the\nSD card or internal flash.");
+    lv_label_set_text(empty, TR("No .json backups found.\nExport one first, or copy a\nmeshcore-backup.json to the\nSD card or internal flash."));
     lv_obj_set_style_text_color(empty, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
     lv_obj_set_style_text_font(empty, &g_font_12, LV_PART_MAIN);
   }
@@ -16196,6 +16423,235 @@ static void openBackupPicker() {
     lv_obj_set_width(l, lv_pct(94));
     lv_obj_align(l, LV_ALIGN_LEFT_MID, 4, 0);
   }
+}
+
+// ---- Backups manager (Settings -> Backups) ----------------------------------
+// Lists every .json backup (internal flash + SD, reusing backupScan above), each
+// with a Delete button, plus a Factory-reset action. The detail page is rebuilt
+// after a delete so the list stays accurate.
+static char s_backup_del_path[160] = {0};
+
+// Rebuild the Backups detail page (after an export/delete). Deferred via
+// lv_async_call so we never tear the sheet down from inside one of its own
+// button callbacks (the export button would otherwise delete itself mid-event).
+static void backupsRebuildAsyncCb(void* /*p*/) {
+  if (s_settings_open_cat == CAT_BACKUPS) openSettingsCategory(CAT_BACKUPS);
+}
+
+// Unique backup filename from the device clock (local time) when it's set, else a
+// uptime fallback. e.g. "meshcore-20260612-143205.json".
+static void backupMakeFilename(char* out, size_t cap) {
+  uint32_t t = 0;
+  if (mesh::RTCClock* rtc = the_mesh.getRTCClock()) t = rtc->getCurrentTime();
+  if (t > 1700000000UL) {
+    time_t tt = (time_t)t; struct tm v; localtime_r(&tt, &v);
+    snprintf(out, cap, "meshcore-%04d%02d%02d-%02d%02d%02d.json",
+             v.tm_year + 1900, v.tm_mon + 1, v.tm_mday, v.tm_hour, v.tm_min, v.tm_sec);
+  } else {
+    snprintf(out, cap, "meshcore-backup-%lu.json", (unsigned long)(millis() / 1000));
+  }
+}
+
+// Write a settings backup to `/<fname>` — SD if a card mounts (so it's removable
+// AND shows up as an "SD:" item in the list), else internal SPIFFS. Paints a brief
+// "Exporting…" overlay and toasts the saved path. Shared by the Profile "Export
+// settings" button (fixed app-compatible name) and the Backups page (timestamped).
+static void doExportBackupFile(const char* fname) {
+  if (!g_lv.task) return;
+  lv_obj_t* ov = lv_obj_create(lv_layer_top());
+  lv_obj_remove_style_all(ov);
+  lv_obj_set_size(ov, lv_disp_get_hor_res(nullptr), lv_disp_get_ver_res(nullptr));
+  lv_obj_set_style_bg_color(ov, lv_color_black(), LV_PART_MAIN);
+  lv_obj_set_style_bg_opa(ov, LV_OPA_70, LV_PART_MAIN);
+  lv_obj_clear_flag(ov, LV_OBJ_FLAG_SCROLLABLE);
+  { lv_obj_t* ol = lv_label_create(ov);
+    lv_label_set_text(ol, TR("Exporting settings\xe2\x80\xa6"));
+    lv_obj_set_style_text_color(ol, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
+    lv_obj_set_style_text_font(ol, &g_font_16, LV_PART_MAIN);
+    lv_obj_center(ol); }
+  lv_refr_now(nullptr);
+
+  char path[96]; snprintf(path, sizeof path, "/%s", fname);
+  File f; const char* where = "internal";
+#if defined(HAS_TDECK_GT911)
+  // Actually mount the card (SD.cardType alone reads CARD_NONE until something
+  // mounts it) so a backup truly lands on — and lists from — the SD card.
+  if (fmSdTryMount()) { f = SD.open(path, FILE_WRITE); if (f) where = "SD"; }
+#endif
+  if (!f) { SPIFFS.begin(false); f = SPIFFS.open(path, FILE_WRITE); }
+  if (!f) { lv_obj_del(ov); g_lv.task->showAlert(TR("Export failed (can't open file)"), 1800); return; }
+  { WdtHeavyGuard _wg;   // a 60 KB backup write to internal flash can trigger a SPIFFS GC
+    { FileBufWriter bw(f);
+      the_mesh.uiExportBackup(bw, g_lv.task->getNodeLat(), g_lv.task->getNodeLon());
+      bw.flushBuf(); }
+    f.close(); }
+  lv_obj_del(ov);
+  char msg[120]; snprintf(msg, sizeof msg, "Saved %s:%s", where, path);
+  g_lv.task->showAlert(msg, 2600);
+}
+
+static void doDeleteBackup() {
+  if (!s_backup_del_path[0]) return;
+  const char* path = s_backup_del_path;
+  bool ok = false;
+  if (!strncmp(path, "int:", 4)) { SPIFFS.begin(false); ok = SPIFFS.remove(path + 4); }
+#if defined(HAS_TDECK_GT911)
+  else if (!strncmp(path, "sd:", 3)) { if (fmSdTryMount()) ok = SD.remove(path + 3); }
+#endif
+  s_backup_del_path[0] = '\0';
+  if (g_lv.task && !ok) g_lv.task->showAlert(TR("Delete failed"), 1500);
+  if (s_settings_open_cat == CAT_BACKUPS) lv_async_call(backupsRebuildAsyncCb, nullptr);   // deferred rebuild
+}
+static void backupDeleteCb(lv_event_t* e) {
+  if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+  const char* path = (const char*)lv_event_get_user_data(e);
+  if (!path) return;
+  strncpy(s_backup_del_path, path, sizeof s_backup_del_path - 1);
+  s_backup_del_path[sizeof s_backup_del_path - 1] = '\0';
+  showConfirm("Delete this backup file?\nThis cannot be undone.", "Delete", doDeleteBackup);
+}
+
+#if defined(HAS_TDECK_GT911)
+// Wipe the SD data folder (/meshcomod/*) but KEEP /meshcomod/tiles — the cached
+// Wi-Fi map tiles. Offline packs at /maps/osm are outside /meshcomod, untouched.
+static void factoryWipeSdData() {
+  if (!fmSdTryMount()) return;
+  File d = SD.open("/meshcomod");
+  if (!d || !d.isDirectory()) { if (d) d.close(); return; }
+  File e = d.openNextFile();
+  while (e) {
+    const char* full = e.name();
+    const char* base = strrchr(full, '/'); base = base ? base + 1 : full;
+    const bool isdir = e.isDirectory();
+    const bool keep  = (base[0] == '\0') || !strcasecmp(base, "tiles");
+    char child[200];
+    if (!keep) snprintf(child, sizeof child, "/meshcomod/%s", base);
+    e.close();
+    if (!keep) { if (isdir) fmRmRecursive(&SD, child); else SD.remove(child); }
+    e = d.openNextFile();
+  }
+  d.close();
+}
+#endif
+
+static void doFactoryReset() {
+#if defined(ESP32)
+  // Full-screen "erasing" overlay, painted before the blocking format/erase.
+  lv_obj_t* ov = lv_obj_create(lv_layer_top());
+  lv_obj_remove_style_all(ov);
+  lv_obj_set_size(ov, lv_disp_get_hor_res(nullptr), lv_disp_get_ver_res(nullptr));
+  lv_obj_set_style_bg_color(ov, lv_color_black(), LV_PART_MAIN);
+  lv_obj_set_style_bg_opa(ov, LV_OPA_COVER, LV_PART_MAIN);
+  lv_obj_clear_flag(ov, LV_OBJ_FLAG_SCROLLABLE);
+  { lv_obj_t* ol = lv_label_create(ov);
+    lv_label_set_text(ol, TR("Erasing everything\xe2\x80\xa6"));
+    lv_obj_set_style_text_color(ol, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
+    lv_obj_set_style_text_font(ol, &g_font_16, LV_PART_MAIN);
+    lv_obj_center(ol); }
+  lv_refr_now(nullptr);
+  delay(150);                      // let the overlay actually hit the panel
+  wdtHeavyBegin();                 // SPIFFS format is a long flash burst
+#if defined(HAS_TDECK_GT911)
+  factoryWipeSdData();             // SD /meshcomod data (keep tiles)
+#endif
+  the_mesh.uiFactoryReset();       // SPIFFS.format() + nvs_flash_erase()
+  ESP.restart();                   // fresh boot: new identity + first-boot wizard
+#endif
+}
+static void backupFactoryResetCb(lv_event_t* e) {
+  if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+  showConfirm("Factory reset?\n\nErases identity, contacts,\nchannels, messages, Wi-Fi\nand every setting. This\ncannot be undone.",
+              "Erase all", doFactoryReset);
+}
+
+static void buildBackupsSettings() {
+  lv_obj_t* body = createSettingsModal("", SettingsModalKind::Device);
+  const lv_coord_t cw = s_settings_content_w;
+  int y = 0;
+
+  // Create a fresh backup right here (goes to the SD card if one is in, else
+  // internal flash) and re-list so the new file shows up immediately.
+  {
+    lv_obj_t* eb = lv_btn_create(body);
+    lv_obj_set_size(eb, cw, 40);
+    lv_obj_set_pos(eb, 0, y);
+    styleButton(eb);
+    lv_obj_set_style_bg_color(eb, lv_color_hex(COLOR_STATUS_OK), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(eb, lv_color_hex(0x3B7039), LV_PART_MAIN | LV_STATE_PRESSED);
+    lv_obj_add_event_cb(eb, +[](lv_event_t* e) {
+      if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+      char fn[48]; backupMakeFilename(fn, sizeof fn);
+      doExportBackupFile(fn);
+      lv_async_call(backupsRebuildAsyncCb, nullptr);   // re-list once the event unwinds
+    }, LV_EVENT_CLICKED, nullptr);
+    lv_obj_t* el = lv_label_create(eb);
+    char eblbl[56]; snprintf(eblbl, sizeof eblbl, LV_SYMBOL_SAVE "  %s", TR("Export new backup"));
+    lv_label_set_text(el, eblbl);
+    lv_obj_set_style_text_font(el, &g_font_14, LV_PART_MAIN);
+    lv_obj_set_style_text_color(el, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
+    lv_obj_center(el);
+    y += 48;
+  }
+
+  y += settingsRowLabel(body, y, 0, "Saved backups", COLOR_SUB, &g_font_12, 0) + 4;
+
+  backupScan();
+  if (s_backup_count == 0) {
+    y += settingsRowLabel(body, y, 0,
+            "No backups yet. Tap Export new backup above to create one.",
+            COLOR_SUB, &g_font_12, 0) + 6;
+  }
+  for (int i = 0; i < s_backup_count; ++i) {
+    lv_obj_t* row = lv_obj_create(body);
+    lv_obj_remove_style_all(row);
+    lv_obj_set_size(row, cw, 38);
+    lv_obj_set_pos(row, 0, y);
+    lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t* nm = lv_label_create(row);
+    lv_label_set_text(nm, s_backup_disp[i]);
+    lv_label_set_long_mode(nm, LV_LABEL_LONG_DOT);
+    lv_obj_set_width(nm, cw - 48);
+    lv_obj_set_style_text_color(nm, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
+    lv_obj_set_style_text_font(nm, &g_font_12, LV_PART_MAIN);
+    lv_obj_align(nm, LV_ALIGN_LEFT_MID, 2, 0);
+
+    lv_obj_t* del = lv_btn_create(row);
+    lv_obj_set_size(del, 40, 32);
+    lv_obj_align(del, LV_ALIGN_RIGHT_MID, 0, 0);
+    styleButton(del);
+    lv_obj_set_style_bg_color(del, lv_color_hex(0x7A2A2A), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(del, lv_color_hex(0x5E2020), LV_PART_MAIN | LV_STATE_PRESSED);
+    lv_obj_add_event_cb(del, backupDeleteCb, LV_EVENT_CLICKED, s_backup_paths[i]);
+    lv_obj_t* dl = lv_label_create(del);
+    lv_label_set_text(dl, LV_SYMBOL_TRASH);
+    lv_obj_set_style_text_font(dl, &g_font_14, LV_PART_MAIN);
+    lv_obj_set_style_text_color(dl, lv_color_hex(0xFFD8D8), LV_PART_MAIN);
+    lv_obj_center(dl);
+
+    y += 42;
+  }
+
+  y += 12;
+  y += settingsRowLabel(body, y, 0, "Danger zone", COLOR_SUB, &g_font_12, 0) + 2;
+  lv_obj_t* fr = lv_btn_create(body);
+  lv_obj_set_size(fr, cw, 40);
+  lv_obj_set_pos(fr, 0, y);
+  styleButton(fr);
+  lv_obj_set_style_bg_color(fr, lv_color_hex(0x8B1E1E), LV_PART_MAIN);
+  lv_obj_set_style_bg_color(fr, lv_color_hex(0x6A1616), LV_PART_MAIN | LV_STATE_PRESSED);
+  lv_obj_add_event_cb(fr, backupFactoryResetCb, LV_EVENT_CLICKED, nullptr);
+  lv_obj_t* frl = lv_label_create(fr);
+  char frlbl[48]; snprintf(frlbl, sizeof frlbl, LV_SYMBOL_TRASH "  %s", TR("Factory reset"));
+  lv_label_set_text(frl, frlbl);
+  lv_obj_set_style_text_font(frl, &g_font_14, LV_PART_MAIN);
+  lv_obj_set_style_text_color(frl, lv_color_hex(0xFFE2E2), LV_PART_MAIN);
+  lv_obj_center(frl);
+  y += 46;
+
+  y += settingsRowLabel(body, y, 0,
+          "Erases identity, contacts, channels, messages, Wi-Fi and all settings, then reboots.",
+          COLOR_SUB, &g_font_12, 0) + 4;
 }
 
 // Reopen the HAS_TDECK_KEYBOARD region paused above for the backup picker; it
@@ -16245,19 +16701,19 @@ static void startLockingCountdown() {
   lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
 
   lv_obj_t* t = lv_label_create(card);
-  lv_label_set_text(t, "Locking\xE2\x80\xA6");          // Locking…
+  lv_label_set_text(t, TR("Locking\xE2\x80\xA6"));          // Locking…
   lv_obj_set_style_text_color(t, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
   lv_obj_set_style_text_font(t, &g_font_16, LV_PART_MAIN);
   lv_obj_align(t, LV_ALIGN_TOP_MID, 0, 8);
 
   s_locking_count = lv_label_create(card);
-  lv_label_set_text(s_locking_count, "1");
+  lv_label_set_text(s_locking_count, TR("1"));
   lv_obj_set_style_text_color(s_locking_count, lv_color_hex(COLOR_STATUS_OK), LV_PART_MAIN);
   lv_obj_set_style_text_font(s_locking_count, &g_font_16, LV_PART_MAIN);
   lv_obj_align(s_locking_count, LV_ALIGN_CENTER, 0, 6);
 
   lv_obj_t* hint = lv_label_create(card);
-  lv_label_set_text(hint, "tap to cancel");
+  lv_label_set_text(hint, TR("tap to cancel"));
   lv_obj_set_style_text_color(hint, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
   lv_obj_set_style_text_font(hint, &g_font_12, LV_PART_MAIN);
   lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, -8);
@@ -16533,11 +16989,11 @@ static void refreshSettingsSectionSubtitles() {
   }
 
   if (g_set_sec_sub[SEC_RADIO] && prefs) {
-    lv_label_set_text_fmt(g_set_sec_sub[SEC_RADIO], "%.3f MHz · SF%u · TX %+ddBm",
+    lv_label_set_text_fmt(g_set_sec_sub[SEC_RADIO], TR("%.3f MHz · SF%u · TX %+ddBm"),
                           static_cast<double>(prefs->freq), static_cast<unsigned>(prefs->sf),
                           static_cast<int>(prefs->tx_power_dbm));
   } else if (g_set_sec_sub[SEC_RADIO]) {
-    lv_label_set_text(g_set_sec_sub[SEC_RADIO], "—");
+    lv_label_set_text(g_set_sec_sub[SEC_RADIO], TR("—"));
   }
 
   if (g_set_sec_sub[SEC_AUTOADD] && prefs) {
@@ -16546,24 +17002,24 @@ static void refreshSettingsSectionSubtitles() {
     if (prefs->autoadd_config & AUTO_ADD_REPEATER) ++bits;
     if (prefs->autoadd_config & AUTO_ADD_ROOM_SERVER) ++bits;
     if (prefs->autoadd_config & AUTO_ADD_SENSOR) ++bits;
-    lv_label_set_text_fmt(g_set_sec_sub[SEC_AUTOADD], "%u types · hops %u · manual %s",
+    lv_label_set_text_fmt(g_set_sec_sub[SEC_AUTOADD], TR("%u types · hops %u · manual %s"),
                           bits, static_cast<unsigned>(prefs->autoadd_max_hops),
                           prefs->manual_add_contacts ? "on" : "off");
   } else if (g_set_sec_sub[SEC_AUTOADD]) {
-    lv_label_set_text(g_set_sec_sub[SEC_AUTOADD], "—");
+    lv_label_set_text(g_set_sec_sub[SEC_AUTOADD], TR("—"));
   }
 
   if (g_set_sec_sub[SEC_BLUETOOTH]) {
     // BLE coexists with Wi-Fi now, so it's simply Active when enabled.
     if (g_lv.task->hasBleCapability() && g_lv.task->isBleEnabled()) {
-      lv_label_set_text(g_set_sec_sub[SEC_BLUETOOTH], "Active");
+      lv_label_set_text(g_set_sec_sub[SEC_BLUETOOTH], TR("Active"));
     } else {
 #if defined(ESP32) && defined(MULTI_TRANSPORT_COMPANION)
       lv_label_set_text(g_set_sec_sub[SEC_BLUETOOTH],
                         (g_lv.task->hasBleCapability() && wifiConfigGetBleEnabled())
                           ? "Starting…" : "Off");
 #else
-      lv_label_set_text(g_set_sec_sub[SEC_BLUETOOTH], "Inactive");
+      lv_label_set_text(g_set_sec_sub[SEC_BLUETOOTH], TR("Inactive"));
 #endif
     }
   }
@@ -16575,18 +17031,18 @@ static void refreshSettingsSectionSubtitles() {
     wifiConfigGetSsid(ssid, sizeof(ssid));
     const int re = wifiConfigGetRadioEnabled() ? 1 : 0;
     if (!re) {
-      lv_label_set_text(g_set_sec_sub[SEC_WIFI], "Radio off");
+      lv_label_set_text(g_set_sec_sub[SEC_WIFI], TR("Radio off"));
     } else if (WiFi.status() == WL_CONNECTED) {
       IPAddress ip = WiFi.localIP();
-      lv_label_set_text_fmt(g_set_sec_sub[SEC_WIFI], "%s · %d.%d.%d.%d",
+      lv_label_set_text_fmt(g_set_sec_sub[SEC_WIFI], TR("%s · %d.%d.%d.%d"),
                             ssid[0] ? ssid : "(none)", ip[0], ip[1], ip[2], ip[3]);
     } else {
-      lv_label_set_text_fmt(g_set_sec_sub[SEC_WIFI], "%s · %s",
+      lv_label_set_text_fmt(g_set_sec_sub[SEC_WIFI], TR("%s · %s"),
                             ssid[0] ? ssid : "(none)",
                             wifiStaStatusBrief(static_cast<int>(WiFi.status())));
     }
 #else
-    lv_label_set_text(g_set_sec_sub[SEC_WIFI], "n/a in this build");
+    lv_label_set_text(g_set_sec_sub[SEC_WIFI], TR("n/a in this build"));
 #endif
   }
 
@@ -16599,7 +17055,7 @@ static void refreshSettingsSectionSubtitles() {
   if (g_set_modal.wifi_sta_status_l) {
     const int re2 = wifiConfigGetRadioEnabled() ? 1 : 0;
     if (!re2) {
-      lv_label_set_text(g_set_modal.wifi_sta_status_l, "Radio: off");
+      lv_label_set_text(g_set_modal.wifi_sta_status_l, TR("Radio: off"));
     } else {
       char line[160];
       const int st = static_cast<int>(WiFi.status());
@@ -16627,7 +17083,7 @@ static void refreshSettingsSectionSubtitles() {
 #endif
 
   if (g_set_sec_sub[SEC_DEVICE]) {
-    lv_label_set_text_fmt(g_set_sec_sub[SEC_DEVICE], "GPS %s · Buzzer %s",
+    lv_label_set_text_fmt(g_set_sec_sub[SEC_DEVICE], TR("GPS %s · Buzzer %s"),
                           onOff(g_lv.task->getGPSState()),
                           g_lv.task->isBuzzerQuiet() ? "quiet" : "on");
   }
@@ -16642,15 +17098,15 @@ static void refreshSettingsSectionSubtitles() {
 
   if (g_set_sec_sub[SEC_EXPERIMENTAL] && prefs) {
     lv_label_set_text_fmt(g_set_sec_sub[SEC_EXPERIMENTAL],
-                          "Multi-ack %s · Repeat %s · RX boost %s",
+                          TR("Multi-ack %s · Repeat %s · RX boost %s"),
                           onOff(prefs->multi_acks != 0), onOff(prefs->client_repeat != 0),
                           onOff(prefs->rx_boosted_gain != 0));
   } else if (g_set_sec_sub[SEC_EXPERIMENTAL]) {
-    lv_label_set_text(g_set_sec_sub[SEC_EXPERIMENTAL], "—");
+    lv_label_set_text(g_set_sec_sub[SEC_EXPERIMENTAL], TR("—"));
   }
 
   if (g_set_sec_sub[SEC_LOG]) {
-    lv_label_set_text_fmt(g_set_sec_sub[SEC_LOG], "RX %d entries · Raw %d entries",
+    lv_label_set_text_fmt(g_set_sec_sub[SEC_LOG], TR("RX %d entries · Raw %d entries"),
                           s_rxlog_line < RXLOG_LINES ? s_rxlog_line : RXLOG_LINES,
                           s_rawlog_line < RXLOG_LINES ? s_rawlog_line : RXLOG_LINES);
   }
@@ -16704,7 +17160,7 @@ static void ccWifiCb(lv_event_t* e) {
   // in response to this pref — no reboot.
   const bool on = wifiConfigGetRadioEnabled();
   wifiConfigSetRadioEnabled(!on);
-  if (g_lv.task) g_lv.task->showAlert(on ? "Wi-Fi off" : "Wi-Fi on", 800);
+  if (g_lv.task) g_lv.task->showAlert(on ? TR("Wi-Fi off") : TR("Wi-Fi on"), 800);
   openControlCenter();
 #endif
 }
@@ -16716,14 +17172,14 @@ static void ccBleCb(lv_event_t* e) {
   // Live: enableBle() lazily brings NimBLE up if it wasn't started at boot.
   const bool on = g_lv.task->isBleEnabled();
   on ? g_lv.task->disableBle() : g_lv.task->enableBle();
-  g_lv.task->showAlert(on ? "Bluetooth off" : "Bluetooth on", 800);
+  g_lv.task->showAlert(on ? TR("Bluetooth off") : TR("Bluetooth on"), 800);
   openControlCenter();
 #endif
 }
 static void ccGpsCb(lv_event_t* e) {
   if (lv_event_get_code(e) != LV_EVENT_CLICKED || !g_lv.task) return;
   g_lv.task->toggleGPS();
-  g_lv.task->showAlert(g_lv.task->getGPSState() ? "GPS on" : "GPS off", 800);
+  g_lv.task->showAlert(g_lv.task->getGPSState() ? TR("GPS on") : TR("GPS off"), 800);
   openControlCenter();   // rebuild so the toggle reflects the new state
 }
 // Theme-colour chip (both boards): close the control center, open the accent picker.
@@ -16782,7 +17238,7 @@ static void powerCancelCb(lv_event_t* e) {
 static void powerRebootCb(lv_event_t* e) {
   if (lv_event_get_code(e) != LV_EVENT_CLICKED || !g_lv.task) return;
   closePowerMenu();
-  g_lv.task->showAlert("Rebooting\xE2\x80\xA6", 600);
+  g_lv.task->showAlert(TR("Rebooting\xE2\x80\xA6"), 600);
   g_lv.task->rebootDevice();   // flushes chat history, then reboots
 }
 static void powerOffCb(lv_event_t* e) {
@@ -16791,7 +17247,7 @@ static void powerOffCb(lv_event_t* e) {
 #if defined(ESP32)
   if (g_lv.task) {
     g_lv.task->persistHistoryNow();        // flush chat before we go down
-    g_lv.task->showAlert("Powering off\xE2\x80\xA6 click trackball to wake", 1500);
+    g_lv.task->showAlert(TR("Powering off\xE2\x80\xA6 click trackball to wake"), 1500);
   }
   // Let the toast paint, then enter deep sleep.
   lv_refr_now(NULL);
@@ -16858,7 +17314,7 @@ static void openPowerMenu() {
     }
     lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, nullptr);
     lv_obj_t* l = lv_label_create(b);
-    lv_label_set_text(l, txt);
+    lv_label_set_text(l, TR(txt));
     lv_obj_set_style_text_font(l, &g_font_14, LV_PART_MAIN);
     lv_obj_set_style_text_color(l, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
     lv_obj_center(l);
@@ -16893,7 +17349,7 @@ static void ccToggle(lv_obj_t* parent, const char* sym, const char* label,
   lv_obj_set_style_text_color(ic, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
   lv_obj_align(ic, LV_ALIGN_TOP_MID, 0, 4);
   lv_obj_t* l = lv_label_create(b);
-  lv_label_set_text(l, label);
+  lv_label_set_text(l, TR(label));
   lv_obj_set_style_text_font(l, &g_font_12, LV_PART_MAIN);
   lv_obj_set_style_text_color(l, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
   lv_obj_align(l, LV_ALIGN_BOTTOM_MID, 0, -3);
@@ -17149,6 +17605,9 @@ static void openControlCenter() {
 
 static void statusBarTapCb(lv_event_t* e) {
   if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+  // While a settings detail sheet is open the bar shows its Back chevron + title,
+  // so a tap means "go back" rather than opening the control center.
+  if (s_settings_sheet) { closeSettingsCategory(); return; }
   if (s_cc_root) closeControlCenter(); else openControlCenter();
 }
 
@@ -17176,7 +17635,7 @@ static void buildGlobalStatusBar() {
   // Left zone — dynamic per-tab. Default to "MESHCOMOD"; updateGlobal-
   // StatusBar() swaps to the envelope+count on non-home tabs.
   g_statusbar.left_label = lv_label_create(g_statusbar.root);
-  lv_label_set_text(g_statusbar.left_label, "MESHCOMOD");
+  lv_label_set_text(g_statusbar.left_label, TR("MESHCOMOD"));
   lv_obj_set_style_text_color(g_statusbar.left_label, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
   lv_obj_set_style_text_font(g_statusbar.left_label, &g_font_14, LV_PART_MAIN);
   lv_obj_align(g_statusbar.left_label, LV_ALIGN_LEFT_MID, 6, 0);
@@ -17204,26 +17663,26 @@ static void buildGlobalStatusBar() {
   lv_obj_align(g_statusbar.batt_icon, LV_ALIGN_RIGHT_MID, -2, 0);
 
   g_statusbar.batt_pct = lv_label_create(g_statusbar.root);
-  lv_label_set_text(g_statusbar.batt_pct, "?");
+  lv_label_set_text(g_statusbar.batt_pct, TR("?"));
   lv_obj_set_style_text_color(g_statusbar.batt_pct, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
   lv_obj_set_style_text_font(g_statusbar.batt_pct, &g_font_12, LV_PART_MAIN);
   lv_obj_align(g_statusbar.batt_pct, LV_ALIGN_RIGHT_MID, -22, 0);
 
   g_statusbar.clock = lv_label_create(g_statusbar.root);
-  lv_label_set_text(g_statusbar.clock, "--:--");
+  lv_label_set_text(g_statusbar.clock, TR("--:--"));
   lv_obj_set_style_text_color(g_statusbar.clock, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
   lv_obj_set_style_text_font(g_statusbar.clock, &g_font_12, LV_PART_MAIN);
   lv_obj_align(g_statusbar.clock, LV_ALIGN_RIGHT_MID, -64, 0);
 
   g_statusbar.conn_icon = lv_label_create(g_statusbar.root);
-  lv_label_set_text(g_statusbar.conn_icon, "");
+  lv_label_set_text(g_statusbar.conn_icon, TR(""));
   lv_obj_set_style_text_color(g_statusbar.conn_icon, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
   lv_obj_set_style_text_font(g_statusbar.conn_icon, &g_font_12, LV_PART_MAIN);
   lv_obj_align(g_statusbar.conn_icon, LV_ALIGN_RIGHT_MID, -104, 0);
 
   // Keyboard layout indicator — sits between conn_icon and clock.
   g_statusbar.layout_label = lv_label_create(g_statusbar.root);
-  lv_label_set_text(g_statusbar.layout_label, "");
+  lv_label_set_text(g_statusbar.layout_label, TR(""));
   lv_obj_set_style_text_color(g_statusbar.layout_label, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
   lv_obj_set_style_text_font(g_statusbar.layout_label, &g_font_12, LV_PART_MAIN);
   lv_obj_align(g_statusbar.layout_label, LV_ALIGN_RIGHT_MID, -130, 0);
@@ -17243,6 +17702,14 @@ static void updateGlobalStatusBar() {
   lv_obj_align(g_statusbar.left_label, LV_ALIGN_LEFT_MID, in_chan_chat ? 24 : 6, 0);
 
   // ---- Left zone ----
+  if (s_settings_open_cat >= 0) {
+    // A settings detail sheet is open: the bar carries its Back chevron + the page
+    // title (the sheet has no header of its own; tapping the bar goes Back).
+    lv_obj_set_style_text_font(g_statusbar.left_label, &g_font_14, LV_PART_MAIN);
+    char sbuf[40];
+    snprintf(sbuf, sizeof sbuf, LV_SYMBOL_LEFT "  %s", TR(kSettingsCats[s_settings_open_cat].label));
+    lv_label_set_text(g_statusbar.left_label, sbuf);
+  } else
   if (s_chat_title[0]) {
     // An open conversation surfaces its thread name here (the in-chat header bar
     // was removed to reclaim height). Keep the global unread badge as a prefix so
@@ -17275,9 +17742,9 @@ static void updateGlobalStatusBar() {
                                tab == MAP_TAB_INDEX ? &g_font_12 : &g_font_14, LV_PART_MAIN);
     if (tab == MAP_TAB_INDEX) {
       // On the immersive map the left zone carries the required OSM attribution.
-      lv_label_set_text(g_statusbar.left_label, "\xC2\xA9 OpenStreetMap");
+      lv_label_set_text(g_statusbar.left_label, TR("\xC2\xA9 OpenStreetMap"));
     } else if (tab == 0) {
-      lv_label_set_text(g_statusbar.left_label, "MESHCOMOD");
+      lv_label_set_text(g_statusbar.left_label, TR("MESHCOMOD"));
     } else {
       int total_unread = g_lv.task->getUnreadTotal();
       if (total_unread > 0) {
@@ -17288,7 +17755,7 @@ static void updateGlobalStatusBar() {
         // No unread → blank the left zone entirely. Operator complaint was
         // the envelope was always lit even with an empty inbox, which read
         // as "you have mail" 24/7.
-        lv_label_set_text(g_statusbar.left_label, "");
+        lv_label_set_text(g_statusbar.left_label, TR(""));
       }
     }
   }
@@ -17406,7 +17873,7 @@ static void refreshStatusLabels() {
     // Legend: total counts since boot, plus the current y-range peak.
     if (s_home_chart_legend) {
       lv_label_set_text_fmt(s_home_chart_legend,
-                            "TX %u  /  RX %u   (max %d/tick)",
+                            TR("TX %u  /  RX %u   (max %d/tick)"),
                             (unsigned)cur_tx, (unsigned)cur_rx, s_chart_max_y);
     }
   }
@@ -17454,7 +17921,7 @@ static void refreshStatusLabels() {
     } else if (ble_on) {
       lv_label_set_text(g_lv.home_state, LV_SYMBOL_BLUETOOTH);
     } else {
-      lv_label_set_text(g_lv.home_state, "Offline");
+      lv_label_set_text(g_lv.home_state, TR("Offline"));
     }
 #else
     lv_label_set_text(g_lv.home_state,
@@ -17472,21 +17939,19 @@ static void refreshStatusLabels() {
     const unsigned dram_pct = dram_tot ? (unsigned)(100 - (dram_free * 100 / dram_tot)) : 0;
     const unsigned ps_pct   = ps_tot   ? (unsigned)(100 - (ps_free   * 100 / ps_tot))   : 0;
     lv_label_set_text_fmt(g_lv.home_stats,
-                          "Unread %d  |  Bat %umV\nRAM %u%%  \xC2\xB7  PSRAM %u%%",
+                          TR("Unread %d\nRAM %u%%  \xC2\xB7  PSRAM %u%%"),
                           g_lv.task->getUnreadTotal(),
-                          static_cast<unsigned>(g_lv.task->getBattMilliVolts()),
                           dram_pct, ps_pct);
 #else
-    lv_label_set_text_fmt(g_lv.home_stats, "Unread %d  |  Bat %umV",
-                          g_lv.task->getUnreadTotal(),
-                          static_cast<unsigned>(g_lv.task->getBattMilliVolts()));
+    lv_label_set_text_fmt(g_lv.home_stats, TR("Unread %d"),
+                          g_lv.task->getUnreadTotal());
 #endif
   }
   if (g_lv.settings_status && settings_active) {
 #if defined(ESP32)
     lv_label_set_text_fmt(
         g_lv.settings_status,
-        "TCP %s  BLE %s\nWS clients %d  GPS %s  Buzzer %s",
+        TR("TCP %s  BLE %s\nWS clients %d  GPS %s  Buzzer %s"),
         onOff(g_lv.task->isTcpEnabled()),
         g_lv.task->hasBleCapability() ? onOff(g_lv.task->isBleEnabled()) : "n/a",
         g_lv.task->getWsConnectedCount(),
@@ -17494,7 +17959,7 @@ static void refreshStatusLabels() {
 #else
     lv_label_set_text_fmt(
         g_lv.settings_status,
-        "TCP %s  BLE %s\nWS clients %d  GPS %s  Buzzer %s",
+        TR("TCP %s  BLE %s\nWS clients %d  GPS %s  Buzzer %s"),
         onOff(g_lv.task->isTcpEnabled()),
         g_lv.task->hasBleCapability() ? onOff(g_lv.task->isBleEnabled()) : "n/a",
         g_lv.task->getWsConnectedCount(), onOff(g_lv.task->getGPSState()),
@@ -17579,7 +18044,7 @@ static void buildBootSplash() {
   // previous wordmark animation — feels like the next beat of the boot
   // sequence rather than a brand splash.
   lv_obj_t* title = lv_label_create(s_splash_root);
-  lv_label_set_text(title, "TOUCH BETA");
+  lv_label_set_text(title, TR("TOUCH BETA"));
   // UNSCII_16 is a 16-pixel-tall bitmap font — same pixelated style as
   // the bootloader's MESHCOMOD wordmark, so the splash reads as a
   // continuation of the boot screen instead of a re-styled "designed"
@@ -17603,7 +18068,7 @@ static void buildBootSplash() {
   // Matches the "ON-NET" title: announces the link is live. Spaced
   // letters keep it visually quiet under the bigger wordmark.
   lv_obj_t* sub = lv_label_create(s_splash_root);
-  lv_label_set_text(sub, "mesh  link  armed");
+  lv_label_set_text(sub, TR("mesh  link  armed"));
   // UNSCII_8 keeps the pixelated boot-screen feel; Montserrat would
   // break the visual continuity with the title.
   lv_obj_set_style_text_font(sub, &lv_font_unscii_8, LV_PART_MAIN);
@@ -17689,7 +18154,7 @@ static lv_obj_t* setupBtn(const char* txt, lv_event_cb_t cb, bool primary,
   }
   lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, nullptr);
   lv_obj_t* l = lv_label_create(b);
-  lv_label_set_text(l, txt);
+  lv_label_set_text(l, TR(txt));
   lv_obj_set_style_text_font(l, &g_font_14, LV_PART_MAIN);
   lv_obj_set_style_text_color(l, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
   lv_obj_center(l);
@@ -17701,7 +18166,7 @@ static lv_obj_t* setupBtn(const char* txt, lv_event_cb_t cb, bool primary,
 static int setupHeader(const char* title, const char* blurb, const char* step_tag) {
   const lv_coord_t sw = lv_disp_get_hor_res(nullptr);
   lv_obj_t* t = lv_label_create(s_setup_root);
-  lv_label_set_text(t, title);
+  lv_label_set_text(t, TR(title));
   lv_label_set_long_mode(t, LV_LABEL_LONG_WRAP);
   lv_obj_set_width(t, sw - 84);
   lv_obj_set_style_text_font(t, &g_font_16, LV_PART_MAIN);
@@ -17717,7 +18182,7 @@ static int setupHeader(const char* title, const char* blurb, const char* step_ta
   }
   if (blurb && blurb[0]) {
     lv_obj_t* b = lv_label_create(s_setup_root);
-    lv_label_set_text(b, blurb);
+    lv_label_set_text(b, TR(blurb));
     lv_label_set_long_mode(b, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(b, sw - 24);
     lv_obj_set_style_text_font(b, &g_font_14, LV_PART_MAIN);
@@ -17748,7 +18213,7 @@ static void setupSkipCb(lv_event_t* e) {
   if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
   touchPrefsSetSetupDone(true);             // don't show it again on next boot
   setupWizardClose();
-  if (g_lv.task) g_lv.task->showAlert("You can run setup later in Settings \xE2\x86\x92 Device", 2200);
+  if (g_lv.task) g_lv.task->showAlert(TR("You can run setup later in Settings \xE2\x86\x92 Device"), 2200);
 }
 
 static void setupGetStartedCb(lv_event_t* e) {
@@ -17766,7 +18231,7 @@ static void setupNameNextCb(lv_event_t* e) {
   if (s_setup_name_ta) {
     const char* name = lv_textarea_get_text(s_setup_name_ta);
     if (!name || !name[0]) {
-      if (g_lv.task) g_lv.task->showAlert("Enter a name", 1200);
+      if (g_lv.task) g_lv.task->showAlert(TR("Enter a name"), 1200);
       return;
     }
     if (g_lv.task) g_lv.task->setNodeName(name);
@@ -17813,7 +18278,7 @@ static void setupFinishCb(lv_event_t* e) {
   // apply request above — so nothing here needs a reboot. Just close the wizard
   // back to the main UI.
   setupWizardClose();
-  if (g_lv.task) g_lv.task->showAlert("Setup complete", 1400);
+  if (g_lv.task) g_lv.task->showAlert(TR("Setup complete"), 1400);
 }
 
 // Tap a region row: select it + recolour in place (keeps the scroll position).
@@ -17860,7 +18325,7 @@ static void setupWifiScanCb(lv_event_t* e) {
   // type the name (it connects after the finishing reboot) or re-enable Wi-Fi.
   if (!wifiConfigWantsWifi()) {
     if (g_lv.task)
-      g_lv.task->showAlert("Type your network name — or switch to Wi-Fi in Settings to scan", 3000);
+      g_lv.task->showAlert(TR("Type your network name — or switch to Wi-Fi in Settings to scan"), 3000);
     return;
   }
   wifiScanOpenAndKick();
@@ -17907,7 +18372,7 @@ static void setupShowStep(int step) {
     lv_obj_set_size(s_setup_name_ta, sw - 24, 36);
     lv_obj_set_pos(s_setup_name_ta, 12, y + 6);
     lv_textarea_set_one_line(s_setup_name_ta, true);
-    lv_textarea_set_placeholder_text(s_setup_name_ta, "Your name");
+    lv_textarea_set_placeholder_text(s_setup_name_ta, TR("Your name"));
     lv_textarea_set_max_length(s_setup_name_ta, 30);
     if (g_lv.task) {
       const char* cur = g_lv.task->getNodeNameCstr();
@@ -17945,7 +18410,7 @@ static void setupShowStep(int step) {
     lv_obj_set_size(s_setup_ssid_ta, can_scan ? (sw - 24 - scan_w - gap) : (sw - 24), 34);
     lv_obj_set_pos(s_setup_ssid_ta, 12, y + 6);
     lv_textarea_set_one_line(s_setup_ssid_ta, true);
-    lv_textarea_set_placeholder_text(s_setup_ssid_ta, "Network name (SSID)");
+    lv_textarea_set_placeholder_text(s_setup_ssid_ta, TR("Network name (SSID)"));
     lv_textarea_set_max_length(s_setup_ssid_ta, WIFI_CONFIG_SSID_MAX - 1);
     attachSettingsTaEvents(s_setup_ssid_ta);
     if (can_scan) {
@@ -17962,12 +18427,12 @@ static void setupShowStep(int step) {
     lv_obj_set_pos(s_setup_pwd_ta, 12, y + 6 + 42);
     lv_textarea_set_one_line(s_setup_pwd_ta, true);
     lv_textarea_set_password_mode(s_setup_pwd_ta, true);
-    lv_textarea_set_placeholder_text(s_setup_pwd_ta, "Password (empty = skip Wi-Fi)");
+    lv_textarea_set_placeholder_text(s_setup_pwd_ta, TR("Password (empty = skip Wi-Fi)"));
     lv_textarea_set_max_length(s_setup_pwd_ta, WIFI_CONFIG_PWD_MAX - 1);
     attachSettingsTaEvents(s_setup_pwd_ta);
     if (!can_scan) {
       lv_obj_t* hint = lv_label_create(s_setup_root);
-      lv_label_set_text(hint, "Tip: you can scan for networks in Settings \xE2\x86\x92 Network after setup.");
+      lv_label_set_text(hint, TR("Tip: you can scan for networks in Settings \xE2\x86\x92 Network after setup."));
       lv_label_set_long_mode(hint, LV_LABEL_LONG_WRAP);
       lv_obj_set_width(hint, sw - 24);
       lv_obj_set_style_text_font(hint, &g_font_12, LV_PART_MAIN);
@@ -17986,7 +18451,7 @@ static void setupShowStep(int step) {
     }
 #else
     lv_obj_t* na = lv_label_create(s_setup_root);
-    lv_label_set_text(na, "Wi-Fi isn't available on this build.");
+    lv_label_set_text(na, TR("Wi-Fi isn't available on this build."));
     lv_obj_set_style_text_color(na, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
     lv_obj_set_pos(na, 12, y + 8);
 #endif
@@ -18036,6 +18501,20 @@ static void applyAccent(uint32_t rgb) {
   // every widget adopts the colour at once. (A live re-style only ever caught
   // the always-on tab bar, which is what looked half-applied before.)
 }
+
+// Theme apply callback: runs for every object as it's created (chained after the
+// default theme via lv_theme_set_parent). The stock theme paints the switch
+// "on" indicator with its blue primary; recolour it to the user's accent so all
+// toggles follow the Theme colour instead of being hard-coded blue. Reads the
+// live COLOR_ACCENT (set by applyAccent at boot before any widget is built), and
+// a local style override beats the theme's shared style. Knob stays white.
+static void touchThemeApplyCb(lv_theme_t* /*th*/, lv_obj_t* obj) {
+  if (lv_obj_check_type(obj, &lv_switch_class)) {
+    lv_obj_set_style_bg_color(obj, lv_color_hex(COLOR_ACCENT),
+                              LV_PART_INDICATOR | LV_STATE_CHECKED);
+  }
+}
+static lv_theme_t s_touch_theme;   // our wrapper theme (parent = stock default)
 
 // Curated accent palette for the swatch grid: stock grey + a colour spread.
 static const uint32_t kThemeColors[] = {
@@ -18124,7 +18603,7 @@ static void openAccentPicker() {
   lv_obj_set_scroll_dir(s_accent_picker, LV_DIR_VER);
 
   lv_obj_t* title = lv_label_create(s_accent_picker);
-  lv_label_set_text(title, "Theme colour");
+  lv_label_set_text(title, TR("Theme colour"));
   lv_obj_set_style_text_font(title, &g_font_16, LV_PART_MAIN);
   lv_obj_set_style_text_color(title, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
 
@@ -18161,7 +18640,7 @@ static void openAccentPicker() {
   lv_obj_remove_style_all(hexrow);
   lv_obj_set_size(hexrow, 150, 30);
   lv_obj_t* hash = lv_label_create(hexrow);
-  lv_label_set_text(hash, "#");
+  lv_label_set_text(hash, TR("#"));
   lv_obj_set_style_text_color(hash, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
   lv_obj_align(hash, LV_ALIGN_LEFT_MID, 2, 0);
   s_accent_hex_ta = lv_textarea_create(hexrow);
@@ -18179,7 +18658,7 @@ static void openAccentPicker() {
   lv_obj_set_style_radius(s_accent_preview, 6, LV_PART_MAIN);
   lv_obj_set_style_bg_opa(s_accent_preview, LV_OPA_COVER, LV_PART_MAIN);
   lv_obj_t* pv = lv_label_create(s_accent_preview);
-  lv_label_set_text(pv, "Sample text");
+  lv_label_set_text(pv, TR("Sample text"));
   lv_obj_set_style_text_color(pv, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
   lv_obj_center(pv);
 
@@ -18190,13 +18669,13 @@ static void openAccentPicker() {
   lv_obj_set_size(save, 124, 30); lv_obj_align(save, LV_ALIGN_LEFT_MID, 0, 0);
   styleButton(save);
   lv_obj_add_event_cb(save, accentSaveCb, LV_EVENT_CLICKED, nullptr);
-  lv_obj_t* sl = lv_label_create(save); lv_label_set_text(sl, "Save & restart");
+  lv_obj_t* sl = lv_label_create(save); lv_label_set_text(sl, TR("Save & restart"));
   lv_obj_set_style_text_font(sl, &g_font_12, LV_PART_MAIN); lv_obj_center(sl);
   lv_obj_t* rst = lv_btn_create(btnrow);
   lv_obj_set_size(rst, 84, 30); lv_obj_align(rst, LV_ALIGN_RIGHT_MID, 0, 0);
   styleButton(rst);
   lv_obj_add_event_cb(rst, accentResetCb, LV_EVENT_CLICKED, nullptr);
-  lv_obj_t* rl = lv_label_create(rst); lv_label_set_text(rl, "Reset"); lv_obj_center(rl);
+  lv_obj_t* rl = lv_label_create(rst); lv_label_set_text(rl, TR("Reset")); lv_obj_center(rl);
 
   accentSetSelection(touchPrefsGetAccentColor(), true);
 }
@@ -18227,7 +18706,7 @@ static void chanScopeSaveCb(lv_event_t* e) {
 #endif
   }
   chanScopeClose();
-  if (g_lv.task) g_lv.task->showAlert("Channel scope saved", 1200);
+  if (g_lv.task) g_lv.task->showAlert(TR("Channel scope saved"), 1200);
 }
 // ---- Blocked-users (ignore-list) manager ----------------------------------
 static lv_obj_t* s_blocked_modal = nullptr;
@@ -18254,7 +18733,7 @@ static void openBlockedUsersModal() {
   lv_obj_clear_flag(s_blocked_modal, LV_OBJ_FLAG_SCROLLABLE);
 
   lv_obj_t* title = lv_label_create(s_blocked_modal);
-  lv_label_set_text(title, "Blocked users");
+  lv_label_set_text(title, TR("Blocked users"));
   lv_obj_set_style_text_font(title, &g_font_16, LV_PART_MAIN);
   lv_obj_set_style_text_color(title, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
   lv_obj_set_pos(title, 8, 8);
@@ -18270,7 +18749,7 @@ static void openBlockedUsersModal() {
   const int n = touchPrefsCopyIgnored(s_blocked_snap);
   if (n <= 0) {
     lv_obj_t* empty = lv_label_create(s_blocked_modal);
-    lv_label_set_text(empty, "No blocked users.\n\nLong-press a message and tap\nBlock to add one.");
+    lv_label_set_text(empty, TR("No blocked users.\n\nLong-press a message and tap\nBlock to add one."));
     lv_obj_set_style_text_color(empty, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
     lv_obj_set_style_text_font(empty, &g_font_12, LV_PART_MAIN);
     lv_obj_set_pos(empty, 8, 48);
@@ -18322,7 +18801,7 @@ static void openBlockedUsersModal() {
     styleButton(unb);
     lv_obj_add_event_cb(unb, blockedUnblockCb, LV_EVENT_CLICKED, (void*)(intptr_t)i);
     lv_obj_t* ul = lv_label_create(unb);
-    lv_label_set_text(ul, "Unblock");
+    lv_label_set_text(ul, TR("Unblock"));
     lv_obj_set_style_text_font(ul, &g_font_12, LV_PART_MAIN);
     lv_obj_center(ul);
   }
@@ -18347,7 +18826,7 @@ static void openChannelScopeModal(int slot, const char* name) {
   lv_obj_clear_flag(s_chanscope_modal, LV_OBJ_FLAG_SCROLLABLE);
 
   lv_obj_t* title = lv_label_create(s_chanscope_modal);
-  lv_label_set_text(title, "Channel settings");
+  lv_label_set_text(title, TR("Channel settings"));
   lv_obj_set_style_text_font(title, &g_font_16, LV_PART_MAIN);
   lv_obj_set_style_text_color(title, lv_color_hex(COLOR_TEXT), LV_PART_MAIN);
   lv_obj_set_pos(title, 8, 8);
@@ -18369,7 +18848,7 @@ static void openChannelScopeModal(int slot, const char* name) {
   lv_obj_set_pos(nm, 8, 36);
 
   lv_obj_t* hint = lv_label_create(s_chanscope_modal);
-  lv_label_set_text(hint, "Region scope (#tag) for this channel.\nBlank = use the default scope.");
+  lv_label_set_text(hint, TR("Region scope (#tag) for this channel.\nBlank = use the default scope."));
   lv_obj_set_style_text_color(hint, lv_color_hex(COLOR_SUB), LV_PART_MAIN);
   lv_obj_set_style_text_font(hint, &g_font_12, LV_PART_MAIN);
   lv_obj_set_pos(hint, 8, 56);
@@ -18377,7 +18856,7 @@ static void openChannelScopeModal(int slot, const char* name) {
   s_chanscope_ta = lv_textarea_create(s_chanscope_modal);
   lv_textarea_set_one_line(s_chanscope_ta, true);
   lv_textarea_set_max_length(s_chanscope_ta, TOUCH_REGION_SCOPE_MAXLEN - 1);
-  lv_textarea_set_placeholder_text(s_chanscope_ta, "#region");
+  lv_textarea_set_placeholder_text(s_chanscope_ta, TR("#region"));
   lv_obj_set_size(s_chanscope_ta, sw - 16, 36);
   lv_obj_set_pos(s_chanscope_ta, 8, 92);
 #if defined(ESP32)
@@ -18392,14 +18871,14 @@ static void openChannelScopeModal(int slot, const char* name) {
   lv_obj_set_pos(save, 8, 136);
   styleButton(save);
   lv_obj_add_event_cb(save, chanScopeSaveCb, LV_EVENT_CLICKED, nullptr);
-  lv_obj_t* sl = lv_label_create(save); lv_label_set_text(sl, "Save"); lv_obj_center(sl);
+  lv_obj_t* sl = lv_label_create(save); lv_label_set_text(sl, TR("Save")); lv_obj_center(sl);
 
   lv_obj_t* blk = lv_btn_create(s_chanscope_modal);
   lv_obj_set_size(blk, sw - 16, 34);
   lv_obj_set_pos(blk, 8, 182);
   styleButton(blk);
   lv_obj_add_event_cb(blk, chanScopeBlockedCb, LV_EVENT_CLICKED, nullptr);
-  lv_obj_t* bl = lv_label_create(blk); lv_label_set_text(bl, "Blocked users"); lv_obj_center(bl);
+  lv_obj_t* bl = lv_label_create(blk); lv_label_set_text(bl, TR("Blocked users")); lv_obj_center(bl);
 }
 static void channelGearCb(lv_event_t* e) {
   if (lv_event_get_code(e) != LV_EVENT_CLICKED || !g_lv.task) return;
@@ -18491,7 +18970,7 @@ static void buildUiTree() {
   // (240/5 = 48 px per icon).
   lv_obj_t* tab_home     = lv_tabview_add_tab(g_lv.tabview, LV_SYMBOL_HOME);
   lv_obj_t* tab_chats    = lv_tabview_add_tab(g_lv.tabview, LV_SYMBOL_ENVELOPE);
-  lv_obj_t* tab_contacts = lv_tabview_add_tab(g_lv.tabview, LV_SYMBOL_LIST);
+  lv_obj_t* tab_contacts = lv_tabview_add_tab(g_lv.tabview, TOUCH_SYM_PERSON);   // person icon (FA user)
   lv_obj_t* tab_map      = lv_tabview_add_tab(g_lv.tabview, LV_SYMBOL_GPS);
   lv_obj_t* tab_settings = lv_tabview_add_tab(g_lv.tabview, LV_SYMBOL_SETTINGS);
   // Slightly larger font for icons so they're easy to tap.
@@ -18520,7 +18999,7 @@ static void buildUiTree() {
   // the main tabs but is covered by full-screen overlays (chat detail, modals,
   // lock screen) that sit above it in the screen z-order.
   s_update_badge = lv_label_create(lv_scr_act());
-  lv_label_set_text(s_update_badge, "!");
+  lv_label_set_text(s_update_badge, TR("!"));
   lv_obj_set_size(s_update_badge, 15, 15);
   lv_obj_set_style_radius(s_update_badge, LV_RADIUS_CIRCLE, LV_PART_MAIN);
   lv_obj_set_style_bg_color(s_update_badge, lv_color_hex(0xE2403A), LV_PART_MAIN);
@@ -18656,7 +19135,7 @@ static void buildUiTree() {
   lv_obj_set_style_pad_hor(s_live_diag_label, 4, LV_PART_MAIN);
   lv_obj_set_style_pad_ver(s_live_diag_label, 2, LV_PART_MAIN);
   lv_obj_set_style_radius(s_live_diag_label, 4, LV_PART_MAIN);
-  lv_label_set_text(s_live_diag_label, "diag boot...");
+  lv_label_set_text(s_live_diag_label, TR("diag boot..."));
   if (!k_show_live_diag_overlay) lv_obj_add_flag(s_live_diag_label, LV_OBJ_FLAG_HIDDEN);
 
 #if defined(HAS_TDECK_TRACKBALL)
@@ -18986,7 +19465,7 @@ void UITask::onAdminLoginResult(const ContactInfo& contact, bool success, uint8_
       const int idx = s_room_join_idx;
       s_room_join_idx = -1;
       char msg[80];
-      snprintf(msg, sizeof(msg), "Joined %.40s", contact.name);
+      snprintf(msg, sizeof(msg), TR("Joined %.40s"), contact.name);
       showAlert(msg, 1400);
       openMeshContactDm((uint32_t)idx);
     } else {
@@ -18994,13 +19473,13 @@ void UITask::onAdminLoginResult(const ContactInfo& contact, bool success, uint8_
       s_room_join_idx = -1;
       openAdminConsole(contact);
       char msg[80];
-      snprintf(msg, sizeof(msg), "Login OK (perms %u)", (unsigned)perms);
+      snprintf(msg, sizeof(msg), TR("Login OK (perms %u)"), (unsigned)perms);
       showAlert(msg, 1200);
     }
   } else {
     s_room_join_idx = -1;
     closeAdminPwPrompt();
-    showAlert("Login failed", 2000);
+    showAlert(TR("Login failed"), 2000);
   }
 }
 
@@ -19748,7 +20227,7 @@ bool UITask::sendComposerToActiveThread() {
       slot = _ui_threads[_active_thread_idx].mesh_channel_slot;
     }
     if (slot < 0 || !the_mesh.getChannel(slot, cd) || !cd.name[0]) {
-      showAlert("Channel not found", 1500);
+      showAlert(TR("Channel not found"), 1500);
       return false;
     }
     uint32_t ts = the_mesh.getRTCClock()->getCurrentTimeUnique();
@@ -19769,13 +20248,13 @@ bool UITask::sendComposerToActiveThread() {
                               truncated, static_cast<int>(strlen(truncated)));
     if (scope_pushed) the_mesh.popChannelScope();
     if (!grp_sent) {
-      showAlert("Send failed", 1200);
+      showAlert(TR("Send failed"), 1200);
       return false;
     }
     appendMessage(_ui_threads[_active_thread_idx].name, sender, truncated, true, true, false,
                   0, DELIV_NONE, 0, 0, 0, 0, nullptr, 0, the_mesh.uiLastSentFp());
     resetComposer();
-    showAlert("Sent", 900);
+    showAlert(TR("Sent"), 900);
     return true;
   }
 
@@ -19812,13 +20291,13 @@ bool UITask::sendComposerToActiveThread() {
   }
   if (!have_target) {
     pushDiagLine("TX DM blocked: no locked pubkey");
-    showAlert("No DM key", 1500);
+    showAlert(TR("No DM key"), 1500);
     return false;
   }
   ContactInfo* by_pub = the_mesh.lookupContactByPubKey(target_pub, PUB_KEY_SIZE);
   if (!by_pub) {
     pushDiagLine("TX DM blocked: locked key missing");
-    showAlert("Contact missing", 1500);
+    showAlert(TR("Contact missing"), 1500);
     return false;
   }
   recipient = *by_pub;
@@ -19855,7 +20334,7 @@ bool UITask::sendComposerToActiveThread() {
     pushDiagLine(tx_line);
   }
   if (r == MSG_SEND_FAILED) {
-    showAlert("Send failed", 1200);
+    showAlert(TR("Send failed"), 1200);
     appendMessage(_ui_threads[_active_thread_idx].name, sender, truncated, false, true, false,
                   expected_ack, DELIV_FAILED);
     return false;
@@ -19866,7 +20345,7 @@ bool UITask::sendComposerToActiveThread() {
   appendMessage(_ui_threads[_active_thread_idx].name, sender, truncated, false, true, false,
                 expected_ack, DELIV_SENT, 0, 0, 0, 0, nullptr, 0, the_mesh.uiLastSentFp());
   resetComposer();
-  showAlert("Sent", 900);
+  showAlert(TR("Sent"), 900);
   return true;
 }
 
@@ -20078,7 +20557,7 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
     if (dirq) free(dirq);
     if (victims) free(victims);
     char su[56];
-    snprintf(su, sizeof(su), "SPIFFS %u/%u KB used",
+    snprintf(su, sizeof(su), TR("SPIFFS %u/%u KB used"),
              (unsigned)(SPIFFS.usedBytes() / 1024),
              (unsigned)(SPIFFS.totalBytes() / 1024));
     pushDiagLine(su);
@@ -20198,6 +20677,9 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
 #if defined(HAS_TDECK_KEYBOARD)
     s_kb_bl_mode = touchPrefsGetKbBacklight();
 #endif
+    // Accent-popup picker (both boards: on-screen + physical keyboard). Default on.
+    s_accent_popups = touchPrefsGetAccentPopups();
+    i18nSetLang(touchPrefsGetUiLang());   // active UI translation language (before the UI builds)
 #endif
     const bool ui_landscape = (s_ui_rotation == LV_DISP_ROT_90 ||
                                s_ui_rotation == LV_DISP_ROT_270);
@@ -20215,6 +20697,32 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
     // rotation is left at NONE so it never software-rotates on top of the panel.
     g_lv.disp_drv.sw_rotate = 1;
     lv_disp_drv_register(&g_lv.disp_drv);
+
+    // Make the full glyph set the INHERITED default font. The default theme sets
+    // no general text_font (only a checkbox marker), so any label without its own
+    // font falls through to LV_FONT_DEFAULT (montserrat, no fallback) and renders
+    // non-Latin text as tofu boxes. text_font is an inheritable style, so setting
+    // it on the active screen + the top/sys layers cascades to every child (modals
+    // live on lv_layer_top, the status bar on lv_layer_sys). g_font_14 = montserrat
+    // + the extras_* Cyrillic/Greek/Arabic fallback; labels with an explicit font
+    // still override this. (g_font_* are set up in initTouchFontFallbacks above.)
+    lv_obj_set_style_text_font(lv_scr_act(),   &g_font_14, LV_PART_MAIN);
+    lv_obj_set_style_text_font(lv_layer_top(), &g_font_14, LV_PART_MAIN);
+    lv_obj_set_style_text_font(lv_layer_sys(), &g_font_14, LV_PART_MAIN);
+
+    // Chain a tiny wrapper theme onto the active default theme so every switch's
+    // "on" colour follows the accent (touchThemeApplyCb), instead of the stock
+    // blue. Parent = the current theme, so all default styling still applies; our
+    // apply_cb only recolours switches. Must run before buildUiTree so it catches
+    // every widget built below.
+    if (lv_disp_t* _thd = lv_disp_get_default()) {
+      if (lv_theme_t* _base = lv_disp_get_theme(_thd)) {
+        s_touch_theme = *_base;                       // inherit fonts/colours/flags
+        lv_theme_set_parent(&s_touch_theme, _base);   // apply base first, then ours
+        lv_theme_set_apply_cb(&s_touch_theme, touchThemeApplyCb);
+        lv_disp_set_theme(_thd, &s_touch_theme);
+      }
+    }
 
     if (ui_landscape) {
       applyHardwarePanelRotation(s_ui_rotation);       // rotate the ST7789
@@ -20478,15 +20986,15 @@ void UITask::openMeshContactDm(uint32_t mesh_contact_index) {
 void UITask::resetActiveDmPath() {
   ContactInfo c;
   if (!hasActiveThread() || activeThreadIsChannel()) {
-    showAlert("Select a DM thread", 1200);
+    showAlert(TR("Select a DM thread"), 1200);
     return;
   }
   if (!lookupActiveContact(c)) {
-    showAlert("No contact for thread", 1200);
+    showAlert(TR("No contact for thread"), 1200);
     return;
   }
   the_mesh.resetPathTo(c);
-  showAlert("Path reset", 900);
+  showAlert(TR("Path reset"), 900);
 }
 
 void UITask::onLvTabChanged(int tab_index) {
@@ -20938,11 +21446,11 @@ void UITask::newMsg(uint8_t path_len, const char* from_name, const char* text, i
 void UITask::notify(UIEventType t) {
   g_last_event = t;
   switch (t) {
-    case UIEventType::contactMessage:    showAlert("New DM",          1200); break;
-    case UIEventType::channelMessage:    showAlert("New channel msg",  1200); break;
-    case UIEventType::roomMessage:       showAlert("New room msg",     1200); break;
-    case UIEventType::newContactMessage: showAlert("New contact",      1200); break;
-    case UIEventType::ack:               showAlert("Delivered",         900); break;
+    case UIEventType::contactMessage:    showAlert(TR("New DM"),          1200); break;
+    case UIEventType::channelMessage:    showAlert(TR("New channel msg"),  1200); break;
+    case UIEventType::roomMessage:       showAlert(TR("New room msg"),     1200); break;
+    case UIEventType::newContactMessage: showAlert(TR("New contact"),      1200); break;
+    case UIEventType::ack:               showAlert(TR("Delivered"),         900); break;
     default: break;
   }
 }
@@ -20966,7 +21474,7 @@ void UITask::loop() {
     s_ui_ping_deadline_ms = 0;
     the_mesh.cancelUIPingPending();
     char msg[64];
-    snprintf(msg, sizeof(msg), "No reply from %s", s_ui_ping_target_name);
+    snprintf(msg, sizeof(msg), TR("No reply from %s"), s_ui_ping_target_name);
     showAlert(msg, 3500);
   }
 
@@ -21167,12 +21675,12 @@ void UITask::loop() {
         // Only re-probe after the backoff window — repeatedly re-initing an
         // unmountable card spikes current / churns the bus and can reset the board.
         if (now >= s_sd_retry_after_ms && fmSdTryMount()) {
-          showAlert("SD card inserted", 1500);
+          showAlert(TR("SD card inserted"), 1500);
           if (!s_fm_fs) fmShowRoots();          // refresh roots so it appears
         }
       } else if (SD.cardType() == CARD_NONE) {
         fmSdUnmount();
-        showAlert("SD card removed", 1500);
+        showAlert(TR("SD card removed"), 1500);
         if (s_fm_fs == &SD || !s_fm_fs) fmShowRoots();
       }
     }
@@ -21287,11 +21795,11 @@ void UITask::loop() {
       sdEnsureMeshcomodFolders();                        // BINS / RECBCK / SETTINGS / MAPS / LOGS
       char done[56], cs[16];
       fmFmtSize64(s_sd_size, cs, sizeof cs);
-      snprintf(done, sizeof done, "SD formatted - %s (MESHCOMOD)", cs);
+      snprintf(done, sizeof done, TR("SD formatted - %s (MESHCOMOD)"), cs);
       showAlert(done, 3500);
     } else {
       s_sd_mounted = false;
-      showAlert("Format failed (no card / SD error)", 3500);
+      showAlert(TR("Format failed (no card / SD error)"), 3500);
     }
     if (s_fm_list) fmShowRoots();
   }
@@ -21301,7 +21809,7 @@ void UITask::loop() {
     bool ok = fmDoPaste();
     enableLoopWDT();
     fmHideFormatOverlay();
-    showAlert(ok ? "Pasted" : "Paste failed", ok ? 1500 : 2400);
+    showAlert(ok ? TR("Pasted") : TR("Paste failed"), ok ? 1500 : 2400);
     if (s_fm_list) fmRefresh();
   }
 #endif

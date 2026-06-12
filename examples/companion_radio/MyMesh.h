@@ -179,6 +179,12 @@ public:
   bool uiImportBackup(Stream& in, uint8_t sections,
                       bool replace_channels, bool replace_contacts,
                       int* out_channels, int* out_contacts);
+  /** Factory reset: wipe ALL persistent data — formats the internal filesystem
+   *  (identity, contacts, channels, saved messages, exported backups) and erases
+   *  NVS (Wi-Fi credentials + every setting). The caller MUST reboot immediately
+   *  after; a fresh identity is generated on the next boot. Returns false if the
+   *  format/erase failed. */
+  bool uiFactoryReset() { return _store->formatFileSystem(); }
   bool advert();
   /** Send advert with explicit routing: true = flood (multi-hop), false = zero-hop.
    *  `advert()` (zero-hop) is kept for backward compatibility. */

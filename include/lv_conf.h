@@ -96,6 +96,12 @@
  * cache also means less state to keep coherent across slot reuse. */
 #define LV_IMG_CACHE_DEF_SIZE 8
 
+/* Image-as-font (lv_imgfont): maps Unicode codepoints to colour images so we can
+ * render full-colour emoji inline with text. The emoji set is pre-baked to
+ * RGB565+alpha lv_img_dsc_t C-arrays (emoji_data.c) and wired as the tail of the
+ * font fallback chain in UITask (montserrat -> extras -> emoji). */
+#define LV_USE_IMGFONT 1
+
 /* Bi-directional text + Arabic/Persian contextual shaping. Lets Arabic (and
  * other RTL scripts) render right-to-left with correctly joined letter forms.
  * No-op for LTR text (Latin/Cyrillic/Greek auto-detect as LTR). The fallback

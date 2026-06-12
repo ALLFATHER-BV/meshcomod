@@ -40,6 +40,15 @@ bool    touchPrefsSetSecondaryKeyboard(uint8_t secondary);
 uint16_t touchPrefsGetEnabledLayouts();
 bool     touchPrefsSetEnabledLayouts(uint16_t mask);
 
+/** Keyboard accent-popup picker. When ON (default), typing a Latin letter that
+ *  has accented variants pops up a tap-to-pick box; OFF means plain typing. */
+bool touchPrefsGetAccentPopups();
+bool touchPrefsSetAccentPopups(bool on);
+
+/** UI language index (UiLang enum in i18n.h; 0 = English). Read at boot. */
+uint8_t touchPrefsGetUiLang();
+bool    touchPrefsSetUiLang(uint8_t lang);
+
 /** User-configurable quick-reply macros: up to 6 short strings the user can
  *  drop into the composer with a single tap (e.g. "ok", "on the way",
  *  "stuck — wait"). idx is 0..5; max length 31 chars + null. Returns the

@@ -333,6 +333,24 @@ bool touchPrefsSetColorfulBubbles(bool on) {
   return ok;
 }
 
+// Keyboard accent-popup picker: when a typed Latin letter has accented variants,
+// a tap-to-pick box appears. Default ON. (getBool is log_v on a miss, so no
+// NOT_FOUND console spam.) Key is distinct from KEY_ACCENT (the theme colour).
+static const char* KEY_KB_ACCENT = "kb_accent";
+bool touchPrefsGetAccentPopups() {
+  if (!s_begun) touchPrefsBegin();
+  return s_prefs.getBool(KEY_KB_ACCENT, true);
+}
+bool touchPrefsSetAccentPopups(bool on) {
+  if (!s_begun) touchPrefsBegin();
+  s_prefs.end();
+  if (!s_prefs.begin(TOUCH_NS, false)) return false;
+  bool ok = s_prefs.putBool(KEY_KB_ACCENT, on) > 0;
+  s_prefs.end();
+  s_begun = s_prefs.begin(TOUCH_NS, true);
+  return ok;
+}
+
 // UI accent colour (buttons, active tab, keyboard, highlights) as 0xRRGGBB.
 // Default = the stock neutral gray. The picker clamps it dark enough that the
 // off-white button text stays readable on any hue.
@@ -454,6 +472,23 @@ bool touchPrefsSetUseSdStorage(bool use_sd) {
   s_prefs.end();
   if (!s_prefs.begin(TOUCH_NS, false)) return false;
   bool ok = s_prefs.putBool(KEY_USE_SD_STORAGE, use_sd);
+  s_prefs.end();
+  s_begun = s_prefs.begin(TOUCH_NS, true);
+  return ok;
+}
+
+// UI language index (UiLang enum in i18n.h; 0 = English). Read at boot to pick
+// the active translation language. Key "ui_lang" in the "touch" namespace.
+static const char* KEY_UI_LANG = "ui_lang";
+uint8_t touchPrefsGetUiLang() {
+  if (!s_begun) touchPrefsBegin();
+  return s_prefs.getUChar(KEY_UI_LANG, 0);   // default = English
+}
+bool touchPrefsSetUiLang(uint8_t lang) {
+  if (!s_begun) touchPrefsBegin();
+  s_prefs.end();
+  if (!s_prefs.begin(TOUCH_NS, false)) return false;
+  bool ok = s_prefs.putUChar(KEY_UI_LANG, lang) > 0;
   s_prefs.end();
   s_begun = s_prefs.begin(TOUCH_NS, true);
   return ok;
