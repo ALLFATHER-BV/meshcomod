@@ -32,11 +32,21 @@ jobs:
           name: companion-firmwares
           path: out
 
+      # Published (not draft): GitHub Releases are the distribution source of
+      # truth — the web flasher reads the release assets directly.
       - name: Create Release
         uses: softprops/action-gh-release@v3
         if: startsWith(github.ref, 'refs/tags/')
         with:
           name: Companion Firmware ${{ env.GIT_TAG_VERSION }}
           body: ""
-          draft: true
+          draft: false
           files: out/*
+
+      # Rolling retention: keep the newest 5 companion releases, prune older
+      # ones (release + tag + assets).
+      - name: Prune old releases (keep last 5)
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: /usr/bin/env bash scripts/ci/prune-releases.sh "companion-" 5
