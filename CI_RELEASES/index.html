@@ -10,13 +10,13 @@
       
       
       
-        <link rel="canonical" href="https://meshcore-dev.github.io/meshcore/WEBCLIENT_TOUCH_PARITY/">
+        <link rel="canonical" href="https://meshcore-dev.github.io/meshcore/CI_RELEASES/">
       
       
-        <link rel="prev" href="../V3_BOOT_DEBUG/">
+        <link rel="prev" href="..">
       
       
-        <link rel="next" href="../cli_commands/">
+        <link rel="next" href="../COMPANION_OTA_MEMORY_ROOT_CAUSE/">
       
       
         
@@ -27,7 +27,7 @@
     
     
       
-        <title>Web client ↔ Heltec V4 touch UI — functionality parity matrix - MeshCore Docs</title>
+        <title>CI releases (GitHub Actions + GitHub Releases) - MeshCore Docs</title>
       
     
     
@@ -70,7 +70,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#web-client-heltec-v4-touch-ui-functionality-parity-matrix" class="md-skip">
+        <a href="#ci-releases-github-actions-github-releases" class="md-skip">
           Skip to content
         </a>
       
@@ -105,7 +105,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Web client ↔ Heltec V4 touch UI — functionality parity matrix
+              CI releases (GitHub Actions + GitHub Releases)
             
           </span>
         </div>
@@ -250,10 +250,37 @@
       
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../CI_RELEASES/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CI releases (GitHub Actions + GitHub Releases)
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -269,6 +296,59 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#how-to-cut-a-release" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How to cut a release
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#rolling-retention" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rolling retention
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#migration-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Migration notes
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -493,37 +573,10 @@
       
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Web client ↔ Heltec V4 touch UI — functionality parity matrix
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../WEBCLIENT_TOUCH_PARITY/" class="md-nav__link">
         
   
   
@@ -539,59 +592,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#command-quick-reference-firmware-mymeshcpp" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Command quick reference (firmware MyMesh.cpp)
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#parity-gaps-acceptable-backlog" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Parity gaps (acceptable / backlog)
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#related-docs" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Related docs
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -974,10 +974,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#command-quick-reference-firmware-mymeshcpp" class="md-nav__link">
+  <a href="#how-to-cut-a-release" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Command quick reference (firmware MyMesh.cpp)
+        How to cut a release
       
     </span>
   </a>
@@ -985,10 +985,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#parity-gaps-acceptable-backlog" class="md-nav__link">
+  <a href="#rolling-retention" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Parity gaps (acceptable / backlog)
+        Rolling retention
       
     </span>
   </a>
@@ -996,10 +996,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#related-docs" class="md-nav__link">
+  <a href="#migration-notes" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Related docs
+        Migration notes
       
     </span>
   </a>
@@ -1023,7 +1023,7 @@
 
 
   
-    <a href="https://github.com/meshcore-dev/meshcore/edit/main/docs/WEBCLIENT_TOUCH_PARITY.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+    <a href="https://github.com/meshcore-dev/meshcore/edit/main/docs/CI_RELEASES.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
       
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
     </a>
@@ -1031,187 +1031,80 @@
   
 
 
-<h1 id="web-client-heltec-v4-touch-ui-functionality-parity-matrix">Web client ↔ Heltec V4 touch UI — functionality parity matrix</h1>
-<p>This document maps <strong>Meshcomod web client</strong> capabilities (companion protocol + UI) to the <strong>on-device touch UI</strong> (<code>examples/companion_radio/ui-new/UITask.*</code>) and the <strong>serial/WebSocket command/response</strong> codes implemented in firmware (<code>examples/companion_radio/MyMesh.cpp</code>).</p>
-<p><strong>Rule:</strong> Touch UI must use the same <strong>companion framing</strong> and <strong>mesh send/receive paths</strong> as the web client; it does not introduce alternate on-air semantics.</p>
+<h1 id="ci-releases-github-actions-github-releases">CI releases (GitHub Actions + GitHub Releases)</h1>
+<p>Firmware binaries are built by GitHub Actions and published as <strong>GitHub Release
+assets</strong>. GitHub Releases are the <strong>source of truth</strong> for distribution (the web
+flasher reads the release assets), so new bins are <strong>not</strong> committed into
+<code>prebuilt/</code> anymore.</p>
+<h2 id="how-to-cut-a-release">How to cut a release</h2>
+<p>Push a tag on the track you want. The matching workflow builds the firmwares,
+publishes a GitHub Release with the <code>.bin</code> files attached, and prunes old
+releases on that track (keeping the newest 5).</p>
 <table>
 <thead>
 <tr>
-<th>Web client area</th>
-<th>Web client surface (reference)</th>
-<th>Touch UI surface (Heltec V4)</th>
-<th>Companion / mesh mapping</th>
+<th>Track</th>
+<th>Tag prefix</th>
+<th>Example tag</th>
+<th>Workflow</th>
+<th>Builds</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>Connect / session</strong></td>
-<td>USB / BLE / Wi‑Fi transports, session replay</td>
-<td><strong>Home:</strong> connection summary. <strong>Net:</strong> contacts + connection text. <strong>Set → Transports:</strong> TCP / BLE / Wi‑Fi (STA radio) toggles + WS hint + <strong>Reset path</strong></td>
-<td>Same node; <code>_serial-&gt;isConnected()</code>, transport flags via <code>BaseSerialInterface</code>; Wi‑Fi uses <code>MyMesh::meshcomodSetWifiRadio</code> → same path as meshcomod <code>wifi on</code> / <code>wifi off</code></td>
+<td>Companion</td>
+<td><code>companion-</code></td>
+<td><code>companion-v1.16.0.1</code></td>
+<td>build-companion-firmwares</td>
+<td><code>*_companion_radio_usb</code> / <code>_ble</code></td>
 </tr>
 <tr>
-<td><strong>DM chat</strong></td>
-<td>Thread list + timeline + composer</td>
-<td>Chat tab: thread list, timeline, composer</td>
-<td><strong>Send:</strong> <code>CMD_SEND_TXT_MSG</code> path in <code>MyMesh::handleCmdFrame</code> → <code>sendMessage()</code>; <strong>Touch:</strong> calls <code>the_mesh.sendMessage()</code> directly (equivalent payload path)</td>
+<td>Room server</td>
+<td><code>room-server-</code></td>
+<td><code>room-server-v1.16.0.1</code></td>
+<td>build-room-server-firmwares</td>
+<td><code>*_room_server</code></td>
 </tr>
 <tr>
-<td><strong>Channel chat</strong></td>
-<td>Channel threads + composer</td>
-<td>Chan tab</td>
-<td><strong>Send:</strong> <code>CMD_SEND_CHANNEL_TXT_MSG</code> → <code>sendGroupMessage()</code>; <strong>Touch:</strong> <code>the_mesh.sendGroupMessage()</code> with <code>getChannel(slot)</code></td>
-</tr>
-<tr>
-<td><strong>Receive / sync</strong></td>
-<td><code>PUSH_MSG_WAITING</code>, <code>CMD_SYNC_NEXT_MESSAGE</code>, history</td>
-<td>Timeline fed by <code>AbstractUITask::newMsg</code> / <code>notify</code> from <code>MyMesh</code> (<code>queueMessage</code>, <code>onChannelMessageRecv</code>)</td>
-<td>Same push/history ring; touch does not reimplement sync client</td>
-</tr>
-<tr>
-<td><strong>Optimistic / status</strong></td>
-<td>Optimistic rows + ack UI</td>
-<td>Outgoing line appended locally; alerts for send result / delivery</td>
-<td>ACK path still pushes <code>PUSH_CODE_SEND_CONFIRMED</code> to serial clients; touch shows send result via alerts</td>
-</tr>
-<tr>
-<td><strong>Contacts list</strong></td>
-<td>Full CRUD, filters, favorites</td>
-<td><strong>Net tab:</strong> scrollable contact list → opens DM thread</td>
-<td><strong>Data:</strong> <code>getNumContacts</code> / <code>getContactByIdx</code>; <strong>Commands:</strong> <code>CMD_GET_CONTACTS</code>, <code>CMD_ADD_UPDATE_CONTACT</code>, <code>CMD_REMOVE_CONTACT</code>, etc. (from web/serial)</td>
-</tr>
-<tr>
-<td><strong>Channels list</strong></td>
-<td>Load/set slots, secrets</td>
-<td><strong>Chan tab</strong> + threads seeded from <code>getChannel(i)</code></td>
-<td><code>CMD_GET_CHANNEL</code> / <code>CMD_SET_CHANNEL</code></td>
-</tr>
-<tr>
-<td><strong>Room server</strong></td>
-<td>Login, ACL, posts</td>
-<td>Not a dedicated touch flow</td>
-<td><code>CMD_SEND_LOGIN</code>, <code>CMD_LOGOUT</code>, room frames — parity <strong>partial</strong> until dedicated UI</td>
-</tr>
-<tr>
-<td><strong>Settings / device</strong></td>
-<td>Tabs: profile, radio, auto-add, transports, device, experimental (+ OTA/backup/map in web)</td>
-<td><strong>Set tab:</strong> WhatsApp-style <strong>category list</strong> (6 rows). Each opens a full-screen overlay: <strong>Profile</strong> (name, lat/lon, share position), <strong>Radio</strong> (freq/mod/TX/airtime + reboot prompt), <strong>Auto-add</strong>, <strong>Transports</strong>, <strong>Device</strong> (identity/stats, time/advert/reboot, GPS/buzzer, <strong>diagnostics log</strong>), <strong>Experimental</strong>. <strong>Out of scope on touch:</strong> backup import/export, OTA catalog, map/preset pickers — use web/serial.</td>
-<td>Writes go through <code>NodePrefs</code> / <code>the_mesh.savePrefs()</code>, <code>applyRadioFromPrefs()</code>, <code>advert()</code>, RTC, <code>_board-&gt;reboot()</code> — same persistence as companion; no new packet/storage formats</td>
-</tr>
-<tr>
-<td><strong>Repeater / transport</strong></td>
-<td>Wi‑Fi / repeater tools</td>
-<td><strong>Set → Transports</strong> (toggles + reset path); provisioning flow unchanged</td>
-<td>Path: <code>CMD_RESET_PATH</code> (serial); touch: <code>resetActiveDmPath</code> when contact resolved</td>
-</tr>
-<tr>
-<td><strong>Diagnostics</strong></td>
-<td>Rx log, CLI, dashboard</td>
-<td><strong>Set → Device</strong> footer: compact rolling log; <strong>Home</strong> stats unchanged</td>
-<td><code>CMD_GET_STATS</code>, trace/telemetry — touch shows <strong>local</strong> UI/diag lines; deep CLI remains serial/web</td>
-</tr>
-<tr>
-<td><strong>Persistence</strong></td>
-<td>IndexedDB + localStorage</td>
-<td><code>Preferences</code> namespace <code>meshTouch</code> (active tab); <code>NodePrefs</code> / <code>DataStore</code> for node prefs</td>
-<td>Same store files as companion build</td>
+<td>Repeater</td>
+<td>—</td>
+<td>(manual <code>workflow_dispatch</code>)</td>
+<td>build-repeater-firmwares</td>
+<td><code>*_repeater_tcp</code></td>
 </tr>
 </tbody>
 </table>
-<h2 id="command-quick-reference-firmware-mymeshcpp">Command quick reference (firmware <code>MyMesh.cpp</code>)</h2>
-<table>
-<thead>
-<tr>
-<th>ID</th>
-<th>Symbol</th>
-<th>Role</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>1</td>
-<td><code>CMD_APP_START</code></td>
-<td>Session start / self info</td>
-</tr>
-<tr>
-<td>2</td>
-<td><code>CMD_SEND_TXT_MSG</code></td>
-<td>DM plain text</td>
-</tr>
-<tr>
-<td>3</td>
-<td><code>CMD_SEND_CHANNEL_TXT_MSG</code></td>
-<td>Channel plain text</td>
-</tr>
-<tr>
-<td>4</td>
-<td><code>CMD_GET_CONTACTS</code></td>
-<td>Contact dump / sync</td>
-</tr>
-<tr>
-<td>10</td>
-<td><code>CMD_SYNC_NEXT_MESSAGE</code></td>
-<td>Pull next history message</td>
-</tr>
-<tr>
-<td>31 / 32</td>
-<td><code>CMD_GET_CHANNEL</code> / <code>CMD_SET_CHANNEL</code></td>
-<td>Channel slots</td>
-</tr>
-<tr>
-<td>13</td>
-<td><code>CMD_RESET_PATH</code></td>
-<td>Clear stored route</td>
-</tr>
-<tr>
-<td>20</td>
-<td><code>CMD_GET_BATT_AND_STORAGE</code></td>
-<td>Battery / storage</td>
-</tr>
-<tr>
-<td>56</td>
-<td><code>CMD_GET_STATS</code></td>
-<td>Stats subtypes (v8+)</td>
-</tr>
-</tbody>
-</table>
-<p>Push codes include <code>PUSH_CODE_MSG_WAITING</code> (1) and <code>PUSH_CODE_SEND_CONFIRMED</code> for ACK delivery to <strong>connected</strong> clients.</p>
-<h2 id="parity-gaps-acceptable-backlog">Parity gaps (acceptable / backlog)</h2>
-<table>
-<thead>
-<tr>
-<th>Item</th>
-<th>Status</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Full room-server UX</td>
-<td>Backlog — protocol exists</td>
-</tr>
-<tr>
-<td>MeshCore backup import/export on device</td>
-<td><strong>Intentionally not in touch UI</strong> — storage constrained; use web client</td>
-</tr>
-<tr>
-<td>OTA catalog / map picker / preset search on device</td>
-<td><strong>Intentionally not in touch UI</strong> — use web client</td>
-</tr>
-<tr>
-<td>Full Rx log + export</td>
-<td>Partial — compact on-device log only</td>
-</tr>
-<tr>
-<td>Trace / path / binary helpers from bubbles</td>
-<td>Backlog — use web client or serial for deep tools</td>
-</tr>
-</tbody>
-</table>
-<h2 id="related-docs">Related docs</h2>
+<blockquote>
+<p>The <strong>touch</strong> UI firmware (Heltec V4 TFT, LilyGo T-Deck) is built and released
+from the <strong>wadamesh</strong> repo, not here. This repo is core / companion only.</p>
+</blockquote>
+<pre><code class="language-bash"># example: cut the companion v1.16.0.1 release
+git tag companion-v1.16.0.1
+git push origin companion-v1.16.0.1
+</code></pre>
+<p>The tag suffix becomes <code>FIRMWARE_VERSION</code> (e.g. <code>companion-v1.16.0.1</code> →
+<code>v1.16.0.1</code>), so the in-firmware version string and the release name match the
+tag.</p>
+<h2 id="rolling-retention">Rolling retention</h2>
+<p>After each release the workflow runs <code>scripts/ci/prune-releases.sh &lt;prefix&gt; 5</code>,
+which keeps the <strong>newest 5</strong> releases on that track and deletes the older ones —
+the GitHub Release, its git tag, and the attached assets. This keeps the release
+list and the tag namespace small while still allowing rollback to the last few
+versions.</p>
+<p>To preview what would be pruned without deleting anything, run the workflow via
+<strong>Actions → (workflow) → Run workflow</strong> after setting <code>DRY_RUN=1</code>, or locally:</p>
+<pre><code class="language-bash">DRY_RUN=1 scripts/ci/prune-releases.sh companion- 5
+</code></pre>
+<p>(Requires the GitHub CLI authenticated against the repo.)</p>
+<h2 id="migration-notes">Migration notes</h2>
 <ul>
-<li><code>docs/companion_protocol.md</code> — framing overview  </li>
-<li><code>docs/REPEATER_MESHCOMOD_CLIENT_INTEGRATION.md</code> — client integration  </li>
-<li><code>docs/HARDWARE_TOUCH_PARITY_CHECKLIST.md</code> — acceptance tests  </li>
+<li>The legacy flow committed bins to <code>prebuilt/</code> and <code>prebuilt/releases/&lt;track&gt;/&lt;version&gt;/</code>
+  and logged them in <code>RELEASES.md</code>. That flow is retired for new releases; the
+  large committed-bin tree can be cleaned up separately (its size lives in git
+  history, so shrinking the clone needs a history rewrite — out of scope here).</li>
+<li>The web flasher (meshcomod-client) must read release assets from the GitHub
+  Releases API (latest per track) instead of repo paths — tracked as the
+  flasher-side follow-up to this change.</li>
 </ul>
 
 
