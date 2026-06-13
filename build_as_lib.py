@@ -59,6 +59,23 @@ for item in menv.get("CPPDEFINES", []):
             break
         src_filter.append(f"+<../examples/{example_name}/{ui_flavor}/*.cpp>")
         
+# When the consumer vendors the touch-app source itself (the wadamesh touch app
+# builds meshcomod as its core lib_dep and ships these files in its own src/),
+# drop them from the library so they aren't compiled twice -> duplicate symbols.
+# This is opt-in (-DMC_VENDORED_TOUCH_APP); the monorepo's own builds are unaffected.
+_defs = [d if isinstance(d, str) else d[0] for d in menv.get("CPPDEFINES", [])]
+if "MC_VENDORED_TOUCH_APP" in _defs:
+    src_filter += [
+        '-<LvglPsramAlloc.cpp>',
+        '-<helpers/TouchDiagTrace.cpp>',
+        '-<helpers/esp32/MultiTransportCompanionInterface.cpp>',
+        '-<helpers/esp32/SdNvsPrefs.cpp>',
+        '-<helpers/esp32/TCPCompanionServer.cpp>',
+        '-<helpers/esp32/TouchPrefsStore.cpp>',
+        '-<helpers/esp32/WifiRuntimeStore.cpp>',
+        '-<helpers/esp32/WebSocketCompanionServer.cpp>',
+    ]
+
 menv.Replace(SRC_FILTER=src_filter)
 
 #print (menv.Dump())
