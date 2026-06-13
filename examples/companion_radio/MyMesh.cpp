@@ -1704,7 +1704,11 @@ void MyMesh::onDiscoveredContact(ContactInfo &contact, bool is_new, uint8_t path
     }
 
     memcpy(p->pubkey_prefix, contact.id.pub_key, sizeof(p->pubkey_prefix));
-    strcpy(p->name, contact.name);
+    // contact.name is from an over-the-air advert and may fill its 32-byte field
+    // with no NUL terminator; an unbounded strcpy would then run past p->name and
+    // corrupt the advert_paths table (garbled "recently heard" entries).
+    strncpy(p->name, contact.name, sizeof(p->name) - 1);
+    p->name[sizeof(p->name) - 1] = '\0';
     p->recv_timestamp = getRTCClock()->getCurrentTime();
     p->path_len = path_len;
     memcpy(p->path, path, p->path_len);
