@@ -390,6 +390,11 @@ void setup() {
     _np->node_name[sizeof(_np->node_name) - 1] = '\0'; }
   serial_interface.prepareBle(BLE_NAME_PREFIX, the_mesh.getNodePrefs()->node_name, the_mesh.getBLEPin());
   if (wifiConfigGetBleEnabled()) {
+#if defined(HAS_TOUCH_UI)
+    /* Touch (LVGL) builds only: the LVGL + TFT framebuffers already hold a big
+     * chunk of internal RAM, so co-initing the NimBLE controller on top of
+     * Wi-Fi can OOM. Gate BLE on comfortable free heap; if low, defer it and
+     * let the live toggle bring it up once memory frees. */
     const size_t BLE_COEXIST_MIN_FREE  = 50 * 1024;   // free heap after Wi-Fi to also start BLE
     const size_t BLE_COEXIST_MIN_BLOCK = 20 * 1024;   // largest contiguous block (NimBLE controller/host)
     const size_t freeh  = ESP.getFreeHeap();
@@ -398,8 +403,20 @@ void setup() {
       serial_interface.beginBle(BLE_NAME_PREFIX, the_mesh.getNodePrefs()->node_name, the_mesh.getBLEPin());
       Serial.printf("[boot] BLE co-init OK (wifi=%d free=%u maxblk=%u)\n", (int)want_wifi, (unsigned)freeh, (unsigned)maxblk);
     } else {
-      Serial.printf("[boot] BLE deferred: low heap (free=%u maxblk=%u) — Wi-Fi only\n", (unsigned)freeh, (unsigned)maxblk);
+      Serial.printf("[boot] BLE deferred: low heap (free=%u maxblk=%u) — toggle to retry\n", (unsigned)freeh, (unsigned)maxblk);
     }
+#else
+    /* OLED / e-ink multi-transport companion (no LVGL framebuffers): NimBLE and
+     * Wi-Fi coexist with plenty of internal-RAM headroom here, so co-init BLE
+     * at boot unconditionally — same as v1.15.x. Applying the touch heap-defer
+     * gate to these boards regressed BLE once Wi-Fi credentials were set: BLE
+     * got deferred at boot, and the runtime long-press toggle couldn't bring
+     * the BT controller up after Wi-Fi had already claimed memory, so BLE
+     * silently stayed off while the UI reported it enabled (issue #32). */
+    (void)want_wifi;
+    serial_interface.beginBle(BLE_NAME_PREFIX, the_mesh.getNodePrefs()->node_name, the_mesh.getBLEPin());
+    Serial.printf("[boot] BLE co-init (wifi=%d free=%u)\n", (int)want_wifi, (unsigned)ESP.getFreeHeap());
+#endif
   }
 #endif
 #elif defined(WIFI_SSID)
