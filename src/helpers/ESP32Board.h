@@ -162,14 +162,18 @@ class ESP32RTCClock : public mesh::RTCClock {
 public:
   ESP32RTCClock() { }
   void begin() {
-    esp_reset_reason_t reason = esp_reset_reason();
-    if (reason == ESP_RST_POWERON) {
-      // start with some date/time in the recent past
+    // Seed a sane floor (15 May 2024) whenever the clock is unset — NOT only on
+    // power-on. After a software reset / panic / brownout / OTA reboot the RTC is
+    // not reseeded by hardware, so without this it reads near-1970 until Wi-Fi/GPS
+    // sets it, and anything that ages or sorts by epoch then sees a bogus tiny time.
+    time_t now = 0;
+    time(&now);
+    if ((uint32_t)now < 1700000000UL) {   // < 2023-11-14 => clock was never set
       struct timeval tv;
       tv.tv_sec = 1715770351;  // 15 May 2024, 8:50pm
-    tv.tv_usec = 0;
-    settimeofday(&tv, NULL);
-  }
+      tv.tv_usec = 0;
+      settimeofday(&tv, NULL);
+    }
   }
   uint32_t getCurrentTime() override {
     time_t _now;
