@@ -13,7 +13,7 @@ releases on that track (keeping the newest 5).
 
 | Track | Tag prefix | Example tag | Workflow | Builds |
 |-------|-----------|-------------|----------|--------|
-| Companion | `companion-` | `companion-v1.16.0.1` | build-companion-firmwares | `*_companion_radio_usb` / `_ble` |
+| Companion | `companion-` | `companion-v1.16.0.1` | build-companion-firmwares | meshcomod boards only: V4, V3, Wireless Paper, Xiao (`*_companion_radio_usb_tcp`) |
 | Room server | `room-server-` | `room-server-v1.16.0.1` | build-room-server-firmwares | `*_room_server` |
 | Repeater | — | (manual `workflow_dispatch`) | build-repeater-firmwares | `*_repeater_tcp` |
 

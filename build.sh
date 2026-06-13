@@ -17,7 +17,8 @@ Commands:
   build-firmware <target>: Build the firmware for the given build target.
   build-firmwares: Build all firmwares for all targets.
   build-matching-firmwares <build-match-spec>: Build all firmwares for build targets containing the string given for <build-match-spec>.
-  build-companion-firmwares: Build all companion firmwares for all build targets.
+  build-companion-firmwares: Build all companion firmwares for all build targets (whole upstream board family).
+  build-meshcomod-companion-firmwares: Build only the meshcomod-shipped companion boards (V4, V3, Wireless Paper, Xiao — _usb_tcp).
   build-repeater-firmwares: Build all TCP repeater firmwares (env names ending in _repeater_tcp).
   build-room-server-firmwares: Build all chat room server firmwares for all build targets.
   build-room-multitransport-firmwares: Build meshcomod room multitransport firmwares (env names ending in _room_server_multitransport).
@@ -269,6 +270,23 @@ build_companion_firmwares() {
 
 }
 
+# meshcomod ships only a handful of companion boards, all multi-transport
+# (USB+BLE+TCP) `_companion_radio_usb_tcp` envs. The upstream
+# build_companion_firmwares() above builds the ENTIRE MeshCore board family
+# (60+ envs, the wrong `_usb`/`_ble` single-transport variants) — far too slow
+# and not what we release. The release pipeline uses THIS instead.
+MESHCOMOD_COMPANION_ENVS=(
+  "heltec_v4_companion_radio_usb_tcp"            # Heltec WiFi LoRa 32 V4 (OLED)
+  "Heltec_v3_companion_radio_usb_tcp"            # Heltec WiFi LoRa 32 V3 (OLED)
+  "Heltec_Wireless_Paper_companion_radio_usb_tcp" # Heltec Wireless Paper (E213)
+  "Xiao_S3_WIO_companion_radio_usb_tcp"          # Seeed Xiao S3 WIO (SX1262)
+)
+build_meshcomod_companion_firmwares() {
+  for env in "${MESHCOMOD_COMPANION_ENVS[@]}"; do
+    build_firmware "$env"
+  done
+}
+
 build_room_server_firmwares() {
 
 #  # build specific room server firmwares
@@ -319,6 +337,10 @@ elif [[ $1 == "build-companion-firmwares" ]]; then
   rm -rf out
   mkdir -p out
   build_companion_firmwares
+elif [[ $1 == "build-meshcomod-companion-firmwares" ]]; then
+  rm -rf out
+  mkdir -p out
+  build_meshcomod_companion_firmwares
 elif [[ $1 == "build-repeater-firmwares" ]]; then
   rm -rf out
   mkdir -p out

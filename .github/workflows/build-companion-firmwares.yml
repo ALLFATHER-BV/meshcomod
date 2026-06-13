@@ -24,7 +24,10 @@ jobs:
       - name: Build Firmwares
         env:
           FIRMWARE_VERSION: ${{ env.GIT_TAG_VERSION }}
-        run: /usr/bin/env bash build.sh build-companion-firmwares
+        # Only the meshcomod-shipped companion boards (V4, V3, Wireless Paper,
+        # Xiao — _usb_tcp). NOT build-companion-firmwares, which compiles the
+        # entire 60-env upstream MeshCore family (~1h, wrong _usb/_ble variants).
+        run: /usr/bin/env bash build.sh build-meshcomod-companion-firmwares
 
       - name: Upload Workflow Artifacts
         uses: actions/upload-artifact@v7
