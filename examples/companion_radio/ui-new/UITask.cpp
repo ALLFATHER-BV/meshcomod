@@ -300,7 +300,9 @@ public:
 
       } else if (the_mesh.getBLEPin() != 0) { // BT pin
         display.setColor(DisplayDriver::RED);
-        display.setTextSize(2);
+        // Size 1 (same as the IP line below) — size 2 was tall enough to
+        // overlap the IP at y=54 on the 128x64 OLED.
+        display.setTextSize(1);
         sprintf(tmp, "Pin:%d", the_mesh.getBLEPin());
         display.drawTextCentered(display.width() / 2, 43, tmp);
       }
