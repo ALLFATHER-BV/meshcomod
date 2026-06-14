@@ -41,6 +41,7 @@ jobs:
           name: Room Server Firmware ${{ env.GIT_TAG_VERSION }}
           body: ""
           draft: false
+          generate_release_notes: true
           files: out/*
 
       # Rolling retention: keep the newest 5 room-server releases, prune older
