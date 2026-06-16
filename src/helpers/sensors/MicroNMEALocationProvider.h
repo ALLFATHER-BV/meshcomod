@@ -150,7 +150,13 @@ public :
                 _time_sync_needed = true;
             }
             if (_time_sync_needed && time_valid > 2) {
-                if (_clock != NULL) {
+                // Only trust the GPS time once it carries a sane DATE. A position
+                // fix can arrive before the date is decoded (nmea.getYear()==0),
+                // and DateTime(0,...).unixtime() is ~1902-10-11 — pushing that into
+                // the RTC stamps our adverts as decades old so peers reject them as
+                // stale, and it clobbers a good NTP time (re-syncing every 30 min).
+                // Keep _time_sync_needed set so we retry once a real date lands.
+                if (_clock != NULL && nmea.getYear() >= 2020) {
                     _clock->setCurrentTime(getTimestamp());
                     _time_sync_needed = false;
                     _last_time_sync = millis();

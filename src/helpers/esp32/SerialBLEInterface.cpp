@@ -68,6 +68,12 @@ void SerialBLEInterface::begin(const char* prefix, char* name, uint32_t pin_code
 
   NimBLEAdvertising* adv = NimBLEDevice::getAdvertising();
   adv->addServiceUUID(SERVICE_UUID);
+  // Advertise under the device name ("<prefix><node name>"). Without this the
+  // NimBLE port left the adv/scan-response payload nameless, so scanners showed
+  // NimBLE's built-in default ("NimBLE") instead of the node name and the device
+  // was unidentifiable in a list of peers. The name rides the scan response when
+  // it doesn't fit beside the 128-bit service UUID in the 31-byte adv packet.
+  adv->setName(dev_name);
   adv->setScanResponse(true);
 }
 
