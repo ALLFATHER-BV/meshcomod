@@ -442,14 +442,13 @@ mesh::Packet* BaseChatMesh::composeMsgPacket(const ContactInfo& recipient, uint3
   // calc expected ACK reply
   mesh::Utils::sha256((uint8_t *)&expected_ack, 4, temp, 5 + text_len, self_id.pub_key, PUB_KEY_SIZE);
 
-  // Append null + raw millis() (4 bytes) as entropy. millis() is strictly monotonic on
-  // ESP32; if this still gives identical bytes between calls, the calls aren't happening.
-  // Also print the input bytes to serial UNCONDITIONALLY so we can see whether the path
-  // is being hit at all.
-  int len = 5 + text_len + 1;
+  // Payload ends at the text, like stock MeshCore: the NUL terminator and the old
+  // 4-byte uniqueness trailer are NOT folded into the encrypted region, so
+  // length-based receivers (third-party companions, stock radios) read clean text
+  // instead of 4 trailing garbage bytes (issue #13). AES zero-padding terminates
+  // the C-string on RX. The ACK reply nonce still derives from millis().
+  int len = 5 + text_len;
   uint32_t ms_now = (uint32_t)_ms->getMillis();
-  memcpy(&temp[len], &ms_now, sizeof(ms_now));
-  len += sizeof(ms_now);
   if (out_nonce) *out_nonce = (uint8_t)(ms_now & 0xFF);
   ++txt_send_seq;
 
@@ -565,17 +564,9 @@ int  BaseChatMesh::sendCommandData(const ContactInfo& recipient, uint32_t timest
   temp[4] = (attempt & 3) | (TXT_TYPE_CLI_DATA << 2);
   memcpy(&temp[5], text, text_len + 1);
 
-  // Same per-call RNG+millis entropy strategy as composeMsgPacket — bypass counter paths.
-  int len = 5 + text_len + 1;
-  uint8_t entropy[4];
-  getRNG()->random(entropy, sizeof(entropy));
-  uint32_t ms_now = (uint32_t)_ms->getMillis();
-  entropy[0] ^= (uint8_t)(ms_now & 0xFF);
-  entropy[1] ^= (uint8_t)((ms_now >> 8) & 0xFF);
-  entropy[2] ^= (uint8_t)((ms_now >> 16) & 0xFF);
-  entropy[3] ^= (uint8_t)((ms_now >> 24) & 0xFF);
-  memcpy(&temp[len], entropy, sizeof(entropy));
-  len += sizeof(entropy);
+  // Payload ends at the text (stock layout) — no NUL or uniqueness trailer in the
+  // encrypted region, so length-based receivers read clean text (issue #13).
+  int len = 5 + text_len;
   ++txt_send_seq;  // diagnostic only
 
   auto pkt = createDatagram(PAYLOAD_TYPE_TXT_MSG, recipient.id, recipient.getSharedSecret(self_id), temp, len);
@@ -633,19 +624,12 @@ bool BaseChatMesh::sendGroupMessage(uint32_t timestamp, mesh::GroupChannel& chan
 
   if (text_len + prefix_len > MAX_TEXT_LEN) text_len = MAX_TEXT_LEN - prefix_len;
   memcpy(ep, text, text_len);
-  ep[text_len] = 0;  // null terminator (now folded into encrypted region for hash uniqueness)
+  ep[text_len] = 0;  // C-string terminator in the buffer (NOT transmitted — payload_len excludes it)
 
-  // Same per-call RNG+millis entropy strategy as composeMsgPacket — bypass counter paths.
-  int payload_len = 5 + prefix_len + text_len + 1;
-  uint8_t entropy[4];
-  getRNG()->random(entropy, sizeof(entropy));
-  uint32_t ms_now = (uint32_t)_ms->getMillis();
-  entropy[0] ^= (uint8_t)(ms_now & 0xFF);
-  entropy[1] ^= (uint8_t)((ms_now >> 8) & 0xFF);
-  entropy[2] ^= (uint8_t)((ms_now >> 16) & 0xFF);
-  entropy[3] ^= (uint8_t)((ms_now >> 24) & 0xFF);
-  memcpy(&temp[payload_len], entropy, sizeof(entropy));
-  payload_len += sizeof(entropy);
+  // Payload ends at the text, like stock MeshCore: no NUL or uniqueness trailer in
+  // the encrypted region, so length-based receivers read clean text (issue #13).
+  // AES zero-padding terminates the C-string on RX.
+  int payload_len = 5 + prefix_len + text_len;
   ++txt_send_seq;  // diagnostic only
 
   auto pkt = createGroupDatagram(PAYLOAD_TYPE_GRP_TXT, channel, temp, payload_len);
