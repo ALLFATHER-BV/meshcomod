@@ -19,11 +19,21 @@ protected:
   virtual bool isReceivingPacket() =0;
   virtual void doResetAGC();
 
+  // Buffered-receive internals: one drained packet's link stats, returned by
+  // getLastSNR/getLastRSSI while a popped ring slot is current.
+  void rxqDrainOne();
+  float _q_last_snr = 0;
+  float _q_last_rssi = 0;
+  bool  _q_has_last = false;
+#if defined(ESP32)
+  friend void rlwRxqTask(void*);
+#endif
+
 public:
   RadioLibWrapper(PhysicalLayer& radio, mesh::MainBoard& board) : _radio(&radio), _board(&board), _preamble_sf(0) { n_recv = n_sent = 0; }
 
   void begin() override;
-  virtual void powerOff() { _radio->sleep(); }
+  virtual void powerOff();
   int recvRaw(uint8_t* bytes, int sz) override;
   uint32_t getEstAirtimeFor(int len_bytes) override;
   bool startSendRaw(const uint8_t* bytes, int len) override;
@@ -32,11 +42,7 @@ public:
   bool isInRecvMode() const override;
   bool isChannelActive();
 
-  bool isReceiving() override { 
-    if (isReceivingPacket()) return true;
-
-    return isChannelActive();
-  }
+  bool isReceiving() override;   // in .cpp — takes the radio mutex (SPI reads)
 
   virtual void setParams(float freq, float bw, uint8_t sf, uint8_t cr) = 0;
   uint32_t getRngSeed();
@@ -57,6 +63,30 @@ public:
   uint32_t getPacketsRecvErrors() const { return n_recv_errors; }
   uint32_t getPacketsSent() const { return n_sent; }
   void resetStats() { n_recv = n_sent = n_recv_errors = 0; }
+
+  // --- Buffered receive (experimental) ---------------------------------------
+  // The stock RX path only lifts a packet out of the radio when the main loop
+  // reaches recvRaw(); a loop stall (heavy UI frame, storage write) longer than
+  // the gap between two packets silently loses all but the last one — the SX126x
+  // buffers a single packet and DIO1 is a single flag. When enabled, a small
+  // high-priority task woken by DIO1 drains each packet into a DRAM ring within
+  // ~1 ms and re-arms RX; recvRaw() then pops from the ring. All radio SPI
+  // access is serialized with a recursive mutex that exists only once the
+  // feature has been enabled — disabled, the code path and timing are stock.
+  void rxQueueEnable(bool en);
+  bool rxQueueEnabled() const;
+  // Spectrum analyzer drives the raw radio directly: park the drain task first.
+  void rxQueueSuspend(bool s);
+  // Serialize out-of-band radio access (setParams from settings, spectrum
+  // enter/leave) against a possible in-flight drain. No-ops until first enable.
+  void radioAcquire();
+  void radioRelease();
+  // DIO1 RX-done events counted in the ISR (only while in RX state, so TX-done
+  // does not pollute it). events - packetsRecv - recvErrors ≈ packets lost to
+  // late reads (the missed-messages class); transiently high by the 1-2 packets
+  // currently queued/unread.
+  uint32_t getRxEvents() const;
+  uint32_t getRxQueueDrops() const;   // packets dropped because the ring was full
 
   virtual float getLastRSSI() const override;
   virtual float getLastSNR() const override;
