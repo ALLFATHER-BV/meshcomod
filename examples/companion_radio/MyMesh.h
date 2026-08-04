@@ -675,6 +675,9 @@ private:
   /** Get next history frame for client. If do_advance is false, does not advance last_delivered_seq (call commitHistoryForClient after successful write). */
   int getNextFromHistoryForClient(const char* client_id, uint8_t frame[], uint32_t* out_seq = nullptr, bool do_advance = true);
   void commitHistoryForClient(const char* client_id, uint32_t seq);
+  /** Advance sync cursors for exactly the clients a broadcast actually reached.
+   *  mask comes from BaseSerialInterface::writeFrameToAllMask(). */
+  void commitHistoryForClientsInMask(uint32_t mask, uint32_t seq);
   /** After a successful V3 live broadcast, bump sync watermarks for clients that understand V3 on the wire (target_ver >= 3 or unknown 0xFF).
    *  Legacy apps (CMD_DEVICE_QUERY second byte < 3) are skipped so CMD_SYNC_NEXT_MESSAGE can still deliver adapted 7/8 they never got from live 16/17. */
   void advanceHistoryClientsAfterV3Broadcast(uint32_t seq);

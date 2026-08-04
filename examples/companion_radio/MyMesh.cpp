@@ -1168,6 +1168,20 @@ void MyMesh::commitHistoryForClient(const char* client_id, uint32_t seq) {
   }
 }
 
+void MyMesh::commitHistoryForClientsInMask(uint32_t mask, uint32_t seq) {
+  if (mask == 0 || seq == 0) return;
+  int slots = _serial->getClientSlotCount();
+  if (slots > 32) slots = 32;
+  char cid[MAX_CLIENT_ID_LEN + 1];
+  for (int slot = 0; slot < slots; slot++) {
+    if ((mask & (1u << slot)) == 0) continue;
+    _serial->getClientIdForSlot(slot, cid, sizeof(cid));
+    if (cid[0] == 0) continue;
+    if (!shouldAdvanceClientAfterV3Broadcast(cid)) continue;  // legacy clients keep replay
+    commitHistoryForClient(cid, seq);
+  }
+}
+
 void MyMesh::advanceHistoryClientsAfterV3Broadcast(uint32_t seq) {
   for (int i = 0; i < history_num_clients; i++) {
     if (!shouldAdvanceClientAfterV3Broadcast(history_clients[i].client_id))
@@ -1803,9 +1817,9 @@ void MyMesh::queueMessage(const ContactInfo &from, uint8_t txt_type, mesh::Packe
   uint32_t hist_seq = addToHistoryRing(out_frame, i);
 
   if (_serial->isConnected()) {
-    if (_serial->writeFrameToAll(out_frame, i) == (size_t)i && hist_seq != 0 &&
-        _serial->companionUnsolicitedPushesBroadcastToAll()) {
-      advanceHistoryClientsAfterV3Broadcast(hist_seq);
+    uint32_t delivered = _serial->writeFrameToAllMask(out_frame, i);
+    if (delivered != 0 && hist_seq != 0) {
+      commitHistoryForClientsInMask(delivered, hist_seq);
     }
     uint8_t frame[1];
     frame[0] = PUSH_CODE_MSG_WAITING; // send push 'tickle'
@@ -1952,9 +1966,9 @@ void MyMesh::onChannelMessageRecv(const mesh::GroupChannel &channel, mesh::Packe
   i += tlen;
   uint32_t hist_seq = addToHistoryRing(out_frame, i);
   if (_serial->isConnected()) {
-    if (_serial->writeFrameToAll(out_frame, i) == (size_t)i && hist_seq != 0 &&
-        _serial->companionUnsolicitedPushesBroadcastToAll()) {
-      advanceHistoryClientsAfterV3Broadcast(hist_seq);
+    uint32_t delivered = _serial->writeFrameToAllMask(out_frame, i);
+    if (delivered != 0 && hist_seq != 0) {
+      commitHistoryForClientsInMask(delivered, hist_seq);
     }
     uint8_t frame[1];
     frame[0] = PUSH_CODE_MSG_WAITING; // send push 'tickle'

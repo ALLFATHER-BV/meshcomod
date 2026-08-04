@@ -362,10 +362,55 @@ void MultiTransportCompanionInterface::setCurrentClientId(const char* id) {
   }
 }
 
+int MultiTransportCompanionInterface::_tcpSlotBase() const {
+#ifdef BLE_PIN_CODE
+  return 2;   // usb, ble
+#else
+  return 1;   // usb
+#endif
+}
+
+uint32_t MultiTransportCompanionInterface::writeFrameToAllMask(const uint8_t src[], size_t len) {
+  if (len > MAX_FRAME_SIZE) return 0;
+  if (!_broadcast) {
+    // Not broadcasting: only the current reply target receives it.
+    if (writeFrame(src, len) != len) return 0;
+    int slot = _clientIdSlot();
+    return (slot >= 0 && slot < 32) ? (1u << slot) : 0u;
+  }
+  uint32_t mask = 0;
+  const int base = _tcpSlotBase();
+  if (_usb.isConnected() && _usb.writeFrame(src, len) == len)
+    mask |= (1u << 0);
+#ifdef BLE_PIN_CODE
+  if (_ble_begun && _ble_enabled && _ble.isConnected() && _ble.writeFrame(src, len) == len)
+    mask |= (1u << 1);
+#endif
+  if (_tcp_started && _tcp.connectedCount() > 0)
+    mask |= (_tcp.writeToAllClientsMask(src, len) << base);
+  if (_ws_started && _ws.connectedCount() > 0) {
+    // WebSocket server exposes no per-client result; treat it as all-or-nothing.
+    if (_ws.writeToAllClients(src, len) == len) {
+      for (int i = 0; i < WS_COMPANION_MAX_CLIENTS; i++) {
+        int slot = base + TCP_COMPANION_MAX_CLIENTS + i;
+        if (slot < 32) mask |= (1u << slot);
+      }
+    }
+  }
+  return mask;
+}
+
+void MultiTransportCompanionInterface::getClientIdForSlot(int slot, char* dest, size_t max_len) const {
+  _clientIdForSlot(slot, dest, max_len);
+}
+
 void MultiTransportCompanionInterface::getCurrentClientId(char* dest, size_t max_len) const {
+  _clientIdForSlot(_clientIdSlot(), dest, max_len);
+}
+
+void MultiTransportCompanionInterface::_clientIdForSlot(int slot, char* dest, size_t max_len) const {
   if (!dest || max_len == 0) return;
   dest[0] = '\0';
-  int slot = _clientIdSlot();
   if (slot < 0 || slot >= (int)(sizeof(_client_ids) / sizeof(_client_ids[0]))) return;
   // If app sent client_id in CMD_APP_START, use it; otherwise use connection-based id
   // so non-custom clients (HA, MeshCore app) still get per-connection history without sending anything.

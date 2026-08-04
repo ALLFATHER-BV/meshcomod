@@ -19,6 +19,19 @@ public:
   virtual size_t writeFrame(const uint8_t src[], size_t len) = 0;
   // Unsolicited push to all connections (multi-transport: USB + all TCP). Default: same as writeFrame.
   virtual size_t writeFrameToAll(const uint8_t src[], size_t len) { return writeFrame(src, len); }
+  /** Broadcast like writeFrameToAll(), but report WHICH client slots received the frame.
+   *  Bit N corresponds to slot N as used by getClientIdForSlot(). Returns 0 if nothing was written.
+   *  Lets callers advance per-client sync cursors only for clients that actually got the frame,
+   *  instead of gating every cursor on all clients succeeding. */
+  virtual uint32_t writeFrameToAllMask(const uint8_t src[], size_t len) {
+    return writeFrameToAll(src, len) == len ? 0x1u : 0u;
+  }
+  /** Client id for a slot reported by writeFrameToAllMask(). Default: the current client. */
+  virtual void getClientIdForSlot(int slot, char* dest, size_t max_len) const {
+    (void)slot; getCurrentClientId(dest, max_len);
+  }
+  /** Number of slots writeFrameToAllMask() can report. */
+  virtual int getClientSlotCount() const { return 1; }
   virtual size_t checkRecvFrame(uint8_t dest[]) = 0;
 
   // TCP only (multi-transport): enable/disable TCP server; no-op for single transport.

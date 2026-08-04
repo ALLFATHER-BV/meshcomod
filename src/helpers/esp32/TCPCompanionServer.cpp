@@ -167,6 +167,17 @@ size_t TCPCompanionServer::writeToClient(int client_index, const uint8_t src[], 
   return len;
 }
 
+uint32_t TCPCompanionServer::writeToAllClientsMask(const uint8_t src[], size_t len) {
+  if (len == 0 || len > MAX_FRAME_SIZE) return 0;
+  uint32_t mask = 0;
+  for (int i = 0; i < TCP_COMPANION_MAX_CLIENTS; i++) {
+    if (_clients[i].in_use && _clients[i].client.connected()) {
+      if (writeToClient(i, src, len) == len) mask |= (1u << i);
+    }
+  }
+  return mask;
+}
+
 size_t TCPCompanionServer::writeToAllClients(const uint8_t src[], size_t len) {
   if (len == 0 || len > MAX_FRAME_SIZE) return 0;
   int connected = 0;

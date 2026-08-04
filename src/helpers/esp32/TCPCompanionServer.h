@@ -38,6 +38,10 @@ public:
   // otherwise returns 0.
   size_t writeToAllClients(const uint8_t src[], size_t len);
 
+  // Like writeToAllClients(), but returns a bitmask of client indices that received the frame.
+  // Bit i is set when client i was written successfully. Returns 0 when none were.
+  uint32_t writeToAllClientsMask(const uint8_t src[], size_t len);
+
   bool isClientConnected(int client_index) const;
   int connectedCount() const;
   void disconnectClient(int client_index);

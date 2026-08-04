@@ -64,6 +64,11 @@ public:
   bool isWriteBusy() const override;
   size_t writeFrame(const uint8_t src[], size_t len) override;
   size_t writeFrameToAll(const uint8_t src[], size_t len) override;
+  uint32_t writeFrameToAllMask(const uint8_t src[], size_t len) override;
+  void getClientIdForSlot(int slot, char* dest, size_t max_len) const override;
+  int getClientSlotCount() const override {
+    return (int)(sizeof(_client_ids) / sizeof(_client_ids[0]));
+  }
   bool companionUnsolicitedPushesBroadcastToAll() const override { return _broadcast; }
   size_t checkRecvFrame(uint8_t dest[]) override;
 
@@ -75,6 +80,9 @@ public:
 
 private:
   int _clientIdSlot() const;
+  /** First mask bit belonging to the TCP client block (usb[, ble] come first). */
+  int _tcpSlotBase() const;
+  void _clientIdForSlot(int slot, char* dest, size_t max_len) const;
   static const size_t _max_client_id_len = 32;
 
   ArduinoSerialInterface _usb;
