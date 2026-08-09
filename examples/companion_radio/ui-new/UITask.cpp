@@ -685,7 +685,10 @@ public:
       if (_task->isSerialEnabled()) {
         _task->disableSerial();
       } else {
-        _task->enableBluetooth();
+        // No BLE capability on this board (see the guard above), so the BLUETOOTH
+        // page toggles the serial companion link. Upstream expresses this through
+        // its unified interface-manager (enableBluetooth); our transport API is explicit.
+        _task->enableSerial();
       }
       return true;
     }

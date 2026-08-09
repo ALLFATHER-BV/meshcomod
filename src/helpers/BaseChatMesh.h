@@ -27,9 +27,15 @@ public:
 
 class BaseChatMesh;
 
+#define MAX_ANON_CONTACTS  8
+
 class ContactsIterator {
   int next_idx;
 public:
+  // Default-constructible: MyMesh keeps one as a member and assigns it from
+  // startContactsIterator() before use. Default to the first REAL contact so a
+  // never-assigned iterator still skips the reserved anon slots.
+  ContactsIterator() { next_idx = MAX_ANON_CONTACTS; }
   ContactsIterator(int start) { next_idx = start; }
   bool hasNext(const BaseChatMesh* mesh, ContactInfo& dest);
 };
@@ -37,8 +43,6 @@ public:
 #ifndef MAX_CONTACTS
   #define MAX_CONTACTS  32
 #endif
-
-#define MAX_ANON_CONTACTS  8
 
 #ifndef MAX_CONNECTIONS
   #define MAX_CONNECTIONS  16
