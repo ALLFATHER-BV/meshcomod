@@ -9329,8 +9329,8 @@ static void termCmdTo(const char* arg) {
     return;
   }
   size_t alen = strlen(arg);
-  int nc = the_mesh.getNumContacts();
-  for (int i = 0; i < nc; ++i) {
+  int nc = the_mesh.getTotalContactSlots();
+  for (int i = MAX_ANON_CONTACTS; i < nc; ++i) {
     ContactInfo c{};
     if (the_mesh.getContactByIdx((uint32_t)i, c) && c.name[0] &&
         strncasecmp(c.name, arg, alen) == 0) {
@@ -12708,7 +12708,7 @@ static void renderMapMarkers() {
       return (lv_coord_t)v;
     };
     int link_n = 0;
-    for (uint32_t i = 0; i < the_mesh.getNumContacts() && link_n < k_map_markers_max; ++i) {
+    for (uint32_t i = MAX_ANON_CONTACTS; i < (uint32_t)the_mesh.getTotalContactSlots() && link_n < k_map_markers_max; ++i) {
       ContactInfo c;
       if (!the_mesh.getContactByIdx(i, c)) continue;
       if (c.gps_lat == 0 && c.gps_lon == 0) continue;
@@ -12754,7 +12754,7 @@ static void renderMapMarkers() {
   // ---- Contact markers — colored circles sized for taps (14×14 with a
   //      2-px black border so they read on any tile background).
   int slot = 1;   // slot 0 reserved for self
-  for (uint32_t i = 0; i < the_mesh.getNumContacts() && slot < k_map_markers_max; ++i) {
+  for (uint32_t i = MAX_ANON_CONTACTS; i < (uint32_t)the_mesh.getTotalContactSlots() && slot < k_map_markers_max; ++i) {
     ContactInfo c;
     if (!the_mesh.getContactByIdx(i, c)) continue;
     if (c.gps_lat == 0 && c.gps_lon == 0) continue;
@@ -13241,8 +13241,8 @@ static void mapContactsFillList() {
   const double self_lon = g_lv.task ? g_lv.task->getNodeLon() : 0.0;
   uint32_t now_secs = 0;
   { mesh::RTCClock* rtc = the_mesh.getRTCClock(); if (rtc) now_secs = rtc->getCurrentTime(); }
-  const uint32_t total = the_mesh.getNumContacts();
-  for (uint32_t i = 0; i < total && n < 64; ++i) {
+  const uint32_t total = the_mesh.getTotalContactSlots();
+  for (uint32_t i = MAX_ANON_CONTACTS; i < total && n < 64; ++i) {
     ContactInfo c;
     if (!the_mesh.getContactByIdx(i, c)) continue;
     if (c.gps_lat == 0 && c.gps_lon == 0) continue;
@@ -13814,7 +13814,7 @@ static void refreshMapInfoLabel() {
   // Count contacts with non-zero GPS — the actual map will plot these as
   // markers once tile rendering is in.
   int with_gps = 0;
-  for (uint32_t i = 0; i < the_mesh.getNumContacts(); ++i) {
+  for (uint32_t i = MAX_ANON_CONTACTS; i < (uint32_t)the_mesh.getTotalContactSlots(); ++i) {
     ContactInfo c;
     if (!the_mesh.getContactByIdx(i, c)) continue;
     if (c.gps_lat != 0 || c.gps_lon != 0) ++with_gps;
@@ -18811,8 +18811,8 @@ static void openBlockedUsersModal() {
     char nm[40];
     bool named = false;
     ContactInfo c;
-    const int nc = the_mesh.getNumContacts();
-    for (int j = 0; j < nc; ++j) {
+    const int nc = the_mesh.getTotalContactSlots();
+    for (int j = MAX_ANON_CONTACTS; j < nc; ++j) {
       if (the_mesh.getContactByIdx((uint32_t)j, c) &&
           memcmp(c.id.pub_key, pub6, TOUCH_IGNORE_KEY_BYTES) == 0) {
         snprintf(nm, sizeof nm, "%.24s", c.name); named = true; break;
@@ -19883,7 +19883,7 @@ void UITask::refreshThreadsFromMesh() {
   }
 
   ContactInfo c;
-  for (int i = 0; i < the_mesh.getNumContacts(); ++i) {
+  for (int i = MAX_ANON_CONTACTS; i < the_mesh.getTotalContactSlots(); ++i) {
     if (!the_mesh.getContactByIdx(static_cast<uint32_t>(i), c) || !c.name[0]) continue;
     int t = -1;
     for (int k = 0; k < MAX_UI_THREADS; ++k) {
@@ -19965,7 +19965,7 @@ void UITask::syncThreadMeshSlots(const char* thread_name, bool channel) {
     const bool thread_has_key = hasContactKey6(_ui_threads[t].mesh_contact_key6);
     ContactInfo c2;
     if (thread_has_pub) {
-      for (int i = 0; i < the_mesh.getNumContacts(); ++i) {
+      for (int i = MAX_ANON_CONTACTS; i < the_mesh.getTotalContactSlots(); ++i) {
         if (!the_mesh.getContactByIdx(static_cast<uint32_t>(i), c2)) continue;
         if (memcmp(c2.id.pub_key, _ui_threads[t].mesh_contact_pub, PUB_KEY_SIZE) == 0) {
           _ui_threads[t].mesh_contact_idx = static_cast<int16_t>(i);
@@ -19976,7 +19976,7 @@ void UITask::syncThreadMeshSlots(const char* thread_name, bool channel) {
       return;
     }
     if (thread_has_key) {
-      for (int i = 0; i < the_mesh.getNumContacts(); ++i) {
+      for (int i = MAX_ANON_CONTACTS; i < the_mesh.getTotalContactSlots(); ++i) {
         if (!the_mesh.getContactByIdx(static_cast<uint32_t>(i), c2)) continue;
         if (memcmp(c2.id.pub_key, _ui_threads[t].mesh_contact_key6, 6) == 0) {
           _ui_threads[t].mesh_contact_idx = static_cast<int16_t>(i);
@@ -19988,7 +19988,7 @@ void UITask::syncThreadMeshSlots(const char* thread_name, bool channel) {
       return;
     }
     memset(_ui_threads[t].mesh_contact_pub, 0, sizeof(_ui_threads[t].mesh_contact_pub));
-    for (int i = 0; i < the_mesh.getNumContacts(); ++i) {
+    for (int i = MAX_ANON_CONTACTS; i < the_mesh.getTotalContactSlots(); ++i) {
       if (the_mesh.getContactByIdx(static_cast<uint32_t>(i), c2) &&
           strncmp(c2.name, thread_name, MAX_THREAD_NAME) == 0) {
         _ui_threads[t].mesh_contact_idx = static_cast<int16_t>(i);
@@ -20003,7 +20003,7 @@ void UITask::syncThreadMeshSlots(const char* thread_name, bool channel) {
 bool UITask::lookupActiveContact(ContactInfo& out) const {
   if (_active_thread_idx < 0 || _active_thread_idx >= MAX_UI_THREADS) return false;
   if (_active_dm_contact_set) {
-    for (int i = 0; i < the_mesh.getNumContacts(); ++i) {
+    for (int i = MAX_ANON_CONTACTS; i < the_mesh.getTotalContactSlots(); ++i) {
       if (the_mesh.getContactByIdx(static_cast<uint32_t>(i), out) &&
           memcmp(out.id.pub_key, _active_dm_contact_pub, PUB_KEY_SIZE) == 0) return true;
     }
@@ -20017,13 +20017,13 @@ bool UITask::lookupActiveContact(ContactInfo& out) const {
         (!has_pub && (!has_key6 || memcmp(out.id.pub_key, th.mesh_contact_key6, 6) == 0))) return true;
   }
   if (has_pub) {
-    for (int i = 0; i < the_mesh.getNumContacts(); ++i) {
+    for (int i = MAX_ANON_CONTACTS; i < the_mesh.getTotalContactSlots(); ++i) {
       if (the_mesh.getContactByIdx(static_cast<uint32_t>(i), out) &&
           memcmp(out.id.pub_key, th.mesh_contact_pub, PUB_KEY_SIZE) == 0) return true;
     }
   }
   if (has_key6) {
-    for (int i = 0; i < the_mesh.getNumContacts(); ++i) {
+    for (int i = MAX_ANON_CONTACTS; i < the_mesh.getTotalContactSlots(); ++i) {
       if (the_mesh.getContactByIdx(static_cast<uint32_t>(i), out) &&
           memcmp(out.id.pub_key, th.mesh_contact_key6, 6) == 0) return true;
     }
@@ -20327,7 +20327,7 @@ bool UITask::sendComposerToActiveThread() {
     // Fallback: if the thread has no pub key (e.g., created from an incoming message
     // before the contact was indexed, or wiped during a save/load cycle), find a contact
     // by matching thread name. This avoids the "No DM key" dead-end after a reboot.
-    for (int i = 0; i < the_mesh.getNumContacts(); ++i) {
+    for (int i = MAX_ANON_CONTACTS; i < the_mesh.getTotalContactSlots(); ++i) {
       ContactInfo c{};
       if (the_mesh.getContactByIdx(static_cast<uint32_t>(i), c) &&
           strncmp(c.name, th.name, MAX_THREAD_NAME) == 0) {
@@ -20973,8 +20973,8 @@ bool UITask::ignoreSenderInActiveThread(const char* sender_name) {
   } else if (sender_name && sender_name[0]) {
     // Channel: resolve the sender display name -> a contact pubkey.
     ContactInfo c;
-    const int n = the_mesh.getNumContacts();
-    for (int i = 0; i < n; ++i) {
+    const int n = the_mesh.getTotalContactSlots();
+    for (int i = MAX_ANON_CONTACTS; i < n; ++i) {
       if (the_mesh.getContactByIdx((uint32_t)i, c) && strcmp(c.name, sender_name) == 0) {
         memcpy(pub, c.id.pub_key, sizeof(pub));
         have = true;

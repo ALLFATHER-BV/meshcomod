@@ -14,11 +14,11 @@
 #define FIRMWARE_VER_CODE 27
 
 #ifndef FIRMWARE_BUILD_DATE
-#define FIRMWARE_BUILD_DATE "16 Jun 2026"
+#define FIRMWARE_BUILD_DATE "9 Aug 2026"
 #endif
 
 #ifndef FIRMWARE_VERSION
-#define FIRMWARE_VERSION "v1.16.0-touch"
+#define FIRMWARE_VERSION "v1.17.0"
 #endif
 
 #if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
@@ -206,6 +206,7 @@ public:
 protected:
   float getAirtimeBudgetFactor() const override;
   int getInterferenceThreshold() const override;
+  bool getCADEnabled() const override;
   int calcRxDelay(float score, uint32_t air_time) const override;
   uint8_t getExtraAckTransmitCount() const override;
   uint8_t getAutoAddMaxHops() const override;

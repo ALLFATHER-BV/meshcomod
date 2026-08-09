@@ -69,7 +69,7 @@ public:
 
   int render(DisplayDriver& display) override {
     // meshcomod title (replaces MeshCore logo)
-    display.setColor(DisplayDriver::LIGHT);
+    display.setColor(UIColor::primary_txt);
     display.setTextSize(2);
     display.drawTextCentered(display.width() / 2, 4, "meshcomod");
 
@@ -77,6 +77,7 @@ public:
     display.setTextSize(2);
     display.drawTextCentered(display.width() / 2, 24, _version_info);
 
+    display.setColor(UIColor::secondary_txt);
     display.setTextSize(1);
     display.drawTextCentered(display.width() / 2, 44, FIRMWARE_BUILD_DATE);
 
@@ -147,16 +148,16 @@ class HomeScreen : public UIScreen {
     }
   }
 
-  DisplayDriver::Color pageAccent() const {
+  ColorVal pageAccent() const {
     switch (_page) {
-      case HomePage::RADIO: return DisplayDriver::ORANGE;
-      case HomePage::BLUETOOTH: return DisplayDriver::BLUE;
-      case HomePage::ADVERT: return DisplayDriver::YELLOW;
+      case HomePage::RADIO: return UIColor::warning_txt;
+      case HomePage::BLUETOOTH: return UIColor::corp_blue;
+      case HomePage::ADVERT: return UIColor::warning_txt;
 #if ENV_INCLUDE_GPS == 1
-      case HomePage::GPS: return DisplayDriver::GREEN;
+      case HomePage::GPS: return UIColor::primary_txt;
 #endif
-      case HomePage::SHUTDOWN: return DisplayDriver::RED;
-      default: return DisplayDriver::LIGHT;
+      case HomePage::SHUTDOWN: return UIColor::warning_txt;
+      default: return UIColor::primary_txt;
     }
   }
 
@@ -180,8 +181,8 @@ class HomeScreen : public UIScreen {
     int iconHeight = 4;
     int iconX = display.width() - iconWidth - 3;
     int iconY = 2;
-    display.setColor(batteryPercentage <= 20 ? DisplayDriver::RED :
-                     batteryPercentage <= 40 ? DisplayDriver::ORANGE : DisplayDriver::GREEN);
+    display.setColor(batteryPercentage <= 20 ? UIColor::warning_txt :
+                     batteryPercentage <= 40 ? UIColor::warning_txt : UIColor::primary_txt);
 
     // battery outline
     display.drawRect(iconX, iconY, iconWidth, iconHeight);
@@ -198,7 +199,7 @@ class HomeScreen : public UIScreen {
     // show muted icon if buzzer is muted
 #ifdef PIN_BUZZER
     if (_task->isBuzzerQuiet()) {
-      display.setColor(DisplayDriver::RED);
+      display.setColor(UIColor::warning_txt);
       display.drawXbm(iconX - 9, 0, muted_icon, 8, 8);
     }
 #endif
@@ -243,13 +244,15 @@ public:
   }
 
   int render(DisplayDriver& display) override {
+    display.setColor(UIColor::title_bkg);
+    display.fillRect(0, 0, display.width(), 12);
     char tmp[80];
     // node name
     display.setTextSize(1);
-    display.setColor(DisplayDriver::GREEN);
+    display.setColor(UIColor::title_txt);
     char filtered_name[sizeof(_node_prefs->node_name)];
     display.translateUTF8ToBlocks(filtered_name, _node_prefs->node_name, sizeof(filtered_name));
-    display.setCursor(0, 0);
+    display.setCursor(0, 2);
     display.print(filtered_name);
 
     // battery voltage
@@ -273,33 +276,33 @@ public:
     int x = display.width() / 2 - 5 * (HomePage::Count-1);
     for (uint8_t i = 0; i < HomePage::Count; i++, x += 10) {
       if (i == _page) {
-        display.fillRect(x-1, y-1, 3, 3);
+        display.fillRect(x-1, y-1, 4, 4);
       } else {
-        display.fillRect(x, y, 1, 1);
+        display.fillRect(x, y, 2, 2);
       }
     }
 #endif
 
     if (_page == HomePage::FIRST) {
-      display.setColor(DisplayDriver::YELLOW);
+      display.setColor(UIColor::primary_txt);
       display.setTextSize(2);
       sprintf(tmp, "MSG: %d", _task->getMsgCount());
-      display.drawTextCentered(display.width() / 2, 20, tmp);
+      display.drawTextCentered(display.width() / 2, 22, tmp);
 
       #ifdef WIFI_SSID
         IPAddress ip = WiFi.localIP();
         snprintf(tmp, sizeof(tmp), "IP: %d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
         display.setTextSize(1);
-        display.setColor(DisplayDriver::BLUE);
+        display.setColor(UIColor::corp_blue);
         display.drawTextCentered(display.width() / 2, 54, tmp);
       #endif
       if (_task->hasConnection()) {
-        display.setColor(DisplayDriver::GREEN);
+        display.setColor(UIColor::warning_txt);
         display.setTextSize(1);
         display.drawTextCentered(display.width() / 2, 43, "< Connected >");
 
       } else if (the_mesh.getBLEPin() != 0) { // BT pin
-        display.setColor(DisplayDriver::RED);
+        display.setColor(UIColor::warning_txt);
         // Size 1 (same as the IP line below) — size 2 was tall enough to
         // overlap the IP at y=54 on the 128x64 OLED.
         display.setTextSize(1);
@@ -308,7 +311,7 @@ public:
       }
     } else if (_page == HomePage::RECENT) {
       the_mesh.getRecentlyHeard(recent, UI_RECENT_LIST_SIZE);
-      display.setColor(DisplayDriver::GREEN);
+      display.setColor(UIColor::primary_txt);
       int y = 20;
       for (int i = 0; i < UI_RECENT_LIST_SIZE; i++, y += 11) {
         auto a = &recent[i];
@@ -332,7 +335,7 @@ public:
         display.print(tmp);
       }
     } else if (_page == HomePage::RADIO) {
-      display.setColor(DisplayDriver::ORANGE);
+      display.setColor(UIColor::warning_txt);
       display.setTextSize(1);
       // freq / sf
       display.setCursor(0, 20);
@@ -353,11 +356,11 @@ public:
     } else if (_page == HomePage::BLUETOOTH) {
       if (_task->hasBleCapability()) {
         // TCP-style layout: title, state, PIN when on, footer with long-press hint
-        display.setColor(DisplayDriver::BLUE);
+        display.setColor(UIColor::corp_blue);
         display.setTextSize(1);
         int y = 20;
         if (_task->isBleEnabled()) {
-          display.setColor(DisplayDriver::GREEN);
+          display.setColor(UIColor::primary_txt);
           snprintf(tmp, sizeof(tmp), "BLE Pin: %lu", (unsigned long)the_mesh.getBLEPin());
           display.drawTextCentered(display.width() / 2, y, tmp);
           y += 11;
@@ -372,11 +375,11 @@ public:
             display.drawTextCentered(display.width() / 2, y, "Waiting for device");
           }
         } else {
-          display.setColor(DisplayDriver::RED);
+          display.setColor(UIColor::warning_txt);
           display.drawTextCentered(display.width() / 2, y, "BLE disabled");
         }
         y = 64 - 11;
-        display.setColor(DisplayDriver::LIGHT);
+        display.setColor(UIColor::primary_txt);
   #if defined(HAS_HELTEC_V4_CAP_TOUCH)
         snprintf(tmp, sizeof(tmp), "%s  %s", SWIPE_HINT, _task->isBleEnabled() ? "OFF: hold" : "ON: hold");
         display.drawTextCentered(display.width() / 2, y, tmp);
@@ -384,7 +387,7 @@ public:
         display.drawTextCentered(display.width() / 2, y, _task->isBleEnabled() ? "OFF: long press" : "ON: long press");
   #endif
       } else {
-        display.setColor(DisplayDriver::GREEN);
+        display.setColor(UIColor::primary_txt);
         bool on = _task->isSerialEnabled();
         display.drawXbm((display.width() - 32) / 2, 18,
             on ? bluetooth_on : bluetooth_off,
@@ -394,7 +397,7 @@ public:
       }
 #ifdef MULTI_TRANSPORT_COMPANION
     } else if (_page == HomePage::NETWORK) {
-      display.setColor(DisplayDriver::BLUE);
+      display.setColor(UIColor::corp_blue);
       display.setTextSize(1);
       int y = 20;
 #ifndef TCP_PORT
@@ -410,13 +413,13 @@ public:
           snprintf(tmp, sizeof(tmp), "IP: %d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
           display.drawTextCentered(display.width() / 2, y, tmp);
           y += 11;
-          display.setColor(DisplayDriver::GREEN);
+          display.setColor(UIColor::primary_txt);
           snprintf(tmp, sizeof(tmp), "SSID: %.32s", WiFi.SSID().c_str());
           display.drawTextCentered(display.width() / 2, y, tmp);
         } else {
           String ssid = WiFi.SSID();
           wl_status_t ws = WiFi.status();
-          display.setColor(DisplayDriver::RED);
+          display.setColor(UIColor::warning_txt);
           if (ssid.length() == 0 || ws == WL_NO_SSID_AVAIL) {
             display.drawTextCentered(display.width() / 2, y, "WiFi not configured");
           } else {
@@ -429,11 +432,11 @@ public:
         display.drawTextCentered(display.width() / 2, y, "WiFi not configured");
 #endif
       } else {
-        display.setColor(DisplayDriver::RED);
+        display.setColor(UIColor::warning_txt);
         display.drawTextCentered(display.width() / 2, y, "TCP disabled");
       }
       y = 64 - 11;
-      display.setColor(DisplayDriver::LIGHT);
+      display.setColor(UIColor::primary_txt);
 #if defined(HAS_HELTEC_V4_CAP_TOUCH)
       snprintf(tmp, sizeof(tmp), "%s  %s", SWIPE_HINT, _task->isTcpEnabled() ? "OFF: hold" : "ON: hold");
       display.drawTextCentered(display.width() / 2, y, tmp);
@@ -444,11 +447,11 @@ public:
     }
 #ifdef MULTI_TRANSPORT_COMPANION
     else if (_page == HomePage::WSS) {
-      display.setColor(DisplayDriver::BLUE);
+      display.setColor(UIColor::corp_blue);
       display.setTextSize(1);
       int y = 20;
       if (_task->isWsStarted()) {
-        display.setColor(DisplayDriver::GREEN);
+        display.setColor(UIColor::primary_txt);
         display.drawTextCentered(display.width() / 2, y, "WS running");
         y += 11;
         snprintf(tmp, sizeof(tmp), "port: %u", (unsigned)_task->getWsPort());
@@ -458,10 +461,10 @@ public:
         snprintf(tmp, sizeof(tmp), "clients: %d", n);
         display.drawTextCentered(display.width() / 2, y, tmp);
       } else {
-        display.setColor(DisplayDriver::RED);
+        display.setColor(UIColor::warning_txt);
         display.drawTextCentered(display.width() / 2, y, "WS not running");
         y += 11;
-        display.setColor(DisplayDriver::LIGHT);
+        display.setColor(UIColor::primary_txt);
         display.drawTextCentered(display.width() / 2, y, "when WiFi has IP");
         y += 11;
         display.drawTextCentered(display.width() / 2, y, "(after boot delay)");
@@ -469,7 +472,7 @@ public:
     }
 #endif
     else if (_page == HomePage::ADVERT) {
-      display.setColor(DisplayDriver::GREEN);
+      display.setColor(UIColor::primary_txt);
       display.drawXbm((display.width() - 32) / 2, 18, advert_icon, 32, 32);
 #if defined(HAS_HELTEC_V4_CAP_TOUCH)
       snprintf(tmp, sizeof(tmp), "%s  ADVERT: hold", SWIPE_HINT);
@@ -493,31 +496,39 @@ public:
 #else
       strcpy(buf, gps_state ? "GPS on" : "GPS off");
 #endif
-      display.setColor(gps_state ? DisplayDriver::GREEN : DisplayDriver::RED);
+      display.setColor(gps_state ? UIColor::primary_txt : UIColor::warning_txt);
       display.drawTextLeftAlign(0, y, buf);
       if (nmea == NULL) {
         y = y + 12;
+        display.setColor(UIColor::secondary_txt);
         display.drawTextLeftAlign(0, y, "Can't access GPS");
       } else {
+        display.setColor(UIColor::primary_txt);
         strcpy(buf, nmea->isValid()?"fix":"no fix");
         display.drawTextRightAlign(display.width()-1, y, buf);
         y = y + 12;
+        display.setColor(UIColor::secondary_txt);
         display.drawTextLeftAlign(0, y, "sat");
+        display.setColor(UIColor::primary_txt);
         sprintf(buf, "%d", nmea->satellitesCount());
         display.drawTextRightAlign(display.width()-1, y, buf);
         y = y + 12;
+        display.setColor(UIColor::secondary_txt);
         display.drawTextLeftAlign(0, y, "pos");
+        display.setColor(UIColor::primary_txt);
         sprintf(buf, "%.4f %.4f",
           nmea->getLatitude()/1000000., nmea->getLongitude()/1000000.);
         display.drawTextRightAlign(display.width()-1, y, buf);
         y = y + 12;
+        display.setColor(UIColor::secondary_txt);
         display.drawTextLeftAlign(0, y, "alt");
+        display.setColor(UIColor::primary_txt);
         sprintf(buf, "%.2f", nmea->getAltitude()/1000.);
         display.drawTextRightAlign(display.width()-1, y, buf);
         y = y + 12;
       }
 #if defined(HAS_HELTEC_V4_CAP_TOUCH)
-      display.setColor(DisplayDriver::LIGHT);
+      display.setColor(UIColor::primary_txt);
       display.drawTextCentered(display.width() / 2, 64 - 11, "swipe < >  GPS: hold");
 #endif
 #endif
@@ -583,7 +594,9 @@ public:
             strcpy(name, "unk"); sprintf(buf, "");
         }
         display.setCursor(0, y);
+        display.setColor(UIColor::secondary_txt);
         display.print(name);
+        display.setColor(UIColor::primary_txt);
         display.setCursor(
           display.width()-display.getTextWidth(buf)-1, y
         );
@@ -595,7 +608,7 @@ public:
 #endif
 #ifdef ESP32
     } else if (_page == HomePage::RESOURCES) {
-      display.setColor(DisplayDriver::LIGHT);
+      display.setColor(UIColor::primary_txt);
       display.setTextSize(1);
       int y = 20;
       snprintf(tmp, sizeof(tmp), "CPU %u MHz", (unsigned)ESP.getCpuFreqMHz());
@@ -642,11 +655,13 @@ public:
 #else
     } else if (_page == HomePage::SHUTDOWN) {
 #endif
-      display.setColor(DisplayDriver::GREEN);
+      display.setColor(UIColor::primary_txt);
       display.setTextSize(1);
       if (_shutdown_init) {
+        display.setColor(UIColor::warning_txt);
         display.drawTextCentered(display.width() / 2, 34, "hibernating...");
       } else {
+        display.setColor(UIColor::secondary_txt);
         display.drawXbm((display.width() - 32) / 2, 18, power_icon, 32, 32);
         display.drawTextCentered(display.width() / 2, 64 - 11, "HIBERNATE:" PRESS_LABEL);
       }
@@ -670,6 +685,9 @@ public:
       if (_task->isSerialEnabled()) {
         _task->disableSerial();
       } else {
+        // No BLE capability on this board (see the guard above), so the BLUETOOTH
+        // page toggles the serial companion link. Upstream expresses this through
+        // its unified interface-manager (enableBluetooth); our transport API is explicit.
         _task->enableSerial();
       }
       return true;
@@ -761,7 +779,7 @@ public:
     char tmp[16];
     display.setCursor(0, 0);
     display.setTextSize(1);
-    display.setColor(DisplayDriver::GREEN);
+    display.setColor(UIColor::corp_blue);
     sprintf(tmp, "Unread: %d", num_unread);
     display.print(tmp);
 
@@ -781,13 +799,13 @@ public:
     display.drawRect(0, 11, display.width(), 1);  // horiz line
 
     display.setCursor(0, 14);
-    display.setColor(DisplayDriver::YELLOW);
+    display.setColor(UIColor::secondary_txt);
     char filtered_origin[sizeof(p->origin)];
     display.translateUTF8ToBlocks(filtered_origin, p->origin, sizeof(filtered_origin));
     display.print(filtered_origin);
 
     display.setCursor(0, 25);
-    display.setColor(DisplayDriver::LIGHT);
+    display.setColor(UIColor::primary_txt);
     char filtered_msg[sizeof(p->msg)];
     display.translateUTF8ToBlocks(filtered_msg, p->msg, sizeof(filtered_msg));
     display.printWordWrap(filtered_msg, display.width());
@@ -964,8 +982,7 @@ void UITask::shutdown(bool restart){
   if (restart) {
     _board->reboot();
   } else {
-    _display->turnOff();
-    radio_driver.powerOff();
+    // Power off board including radio, display, GPS and components
     _board->powerOff();
   }
 }
@@ -1013,6 +1030,16 @@ void UITask::loop() {
     c = handleDoubleClick(KEY_PREV);
   } else if (ev == BUTTON_EVENT_TRIPLE_CLICK) {
     c = handleTripleClick(KEY_SELECT);
+  }
+#endif
+#if defined(UI_HAS_ROTARY_INPUT)
+  RotaryInputEvent rotaryEv = rotary_input.poll();
+  if (c == 0 && _display != NULL && _display->isOn()) {
+    if (rotaryEv == RotaryInputEvent::Next) {
+      c = KEY_NEXT;
+    } else if (rotaryEv == RotaryInputEvent::Prev) {
+      c = KEY_PREV;
+    }
   }
 #endif
 #if defined(PIN_USER_BTN_ANA)
@@ -1076,9 +1103,9 @@ void UITask::loop() {
         _display->setTextSize(1);
         int y = _display->height() / 3;
         int p = _display->height() / 32;
-        _display->setColor(DisplayDriver::DARK);
+        _display->setColor(UIColor::popup_bkg);
         _display->fillRect(p, y, _display->width() - p*2, y);
-        _display->setColor(DisplayDriver::LIGHT);  // draw box border
+        _display->setColor(UIColor::popup_txt);  // draw box border
         _display->drawRect(p, y, _display->width() - p*2, y);
         _display->drawTextCentered(_display->width() / 2, y + p*3, _alert);
         _next_refresh = _alert_expiry;   // will need refresh when alert is dismissed
@@ -1115,7 +1142,7 @@ void UITask::loop() {
         if (_display != NULL) {
           _display->startFrame();
           _display->setTextSize(2);
-          _display->setColor(DisplayDriver::RED);
+          _display->setColor(UIColor::warning_txt);
           _display->drawTextCentered(_display->width() / 2, 20, "Low Battery.");
           _display->drawTextCentered(_display->width() / 2, 40, "Shutting Down!");
           _display->endFrame();

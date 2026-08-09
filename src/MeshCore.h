@@ -74,6 +74,10 @@ public:
   virtual void emitHttpOtaNetDiagnosticLines() { }
   virtual void pollHttpOtaReboot() { }
 
+  virtual bool setLoRaFemLnaEnabled(bool enable) { return false; }
+  virtual bool canControlLoRaFemLna() const { return false; }
+  virtual bool isLoRaFemLnaEnabled() const { return false; }
+
   // Power management interface (boards with power management override these)
   virtual bool isExternalPowered() { return false; }
   virtual uint16_t getBootVoltage() { return 0; }

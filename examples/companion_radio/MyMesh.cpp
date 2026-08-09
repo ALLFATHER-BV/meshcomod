@@ -1317,6 +1317,10 @@ int MyMesh::getInterferenceThreshold() const {
   return 0; // disabled for now, until currentRSSI() problem is resolved
 }
 
+bool MyMesh::getCADEnabled() const {
+  return false; // hardware CAD before TX (disabled by default, until configurable)
+}
+
 int MyMesh::calcRxDelay(float score, uint32_t air_time) const {
   if (_prefs.rx_delay_base <= 0.0f) return 0;
   return (int)((pow(_prefs.rx_delay_base, 0.85f - score) - 1.0) * air_time);
@@ -1491,10 +1495,14 @@ void MyMesh::uiExportBackup(Print& out, double node_lat, double node_lon) {
   out.print(first ? "],\n" : "\n  ],\n");
   out.print("  \"contacts\": [");
   first = true;
-  uint32_t nc = getNumContacts();
-  for (uint32_t i = 0; i < nc; ++i) {
+  // Real contacts live at RAW indices [MAX_ANON_CONTACTS, getTotalContactSlots()):
+  // 1.17 reserves the first MAX_ANON_CONTACTS slots for anonymous requests, and
+  // getContactByIdx() takes a raw index. Iterating 0..getNumContacts() would emit
+  // the reserved slots and drop the last MAX_ANON_CONTACTS real contacts.
+  for (uint32_t i = MAX_ANON_CONTACTS; i < (uint32_t)getTotalContactSlots(); ++i) {
     ContactInfo c;
     if (!getContactByIdx(i, c)) continue;
+    if (c.type == ADV_TYPE_NONE) continue;   // unused slot
     char l[224];
     out.print(first ? "\n    {\"type\": " : ",\n    {\"type\": ");
     first = false;
@@ -3313,6 +3321,7 @@ void MyMesh::handleCmdFrame(size_t len) {
       memcpy(anon.id.pub_key, pub_key, PUB_KEY_SIZE);
       anon.out_path_len = 0;   // default to zero-hop direct
       anon.type = ADV_TYPE_NONE;  // unknown
+      anon.lastmod = getRTCClock()->getCurrentTime();
 
       if (addContact(anon)) recipient = &anon;
     }
