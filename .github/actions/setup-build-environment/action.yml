@@ -25,11 +25,20 @@ runs:
     - name: Extract Version from Git Tag
       shell: bash
       run: |
-        GIT_TAG_NAME="${GITHUB_REF#refs/tags/}"
-        case "$GIT_TAG_NAME" in
-          companion-*)    GIT_TAG_VERSION="${GIT_TAG_NAME#companion-}" ;;
-          repeater-*)     GIT_TAG_VERSION="${GIT_TAG_NAME#repeater-}" ;;
-          room-server-*)  GIT_TAG_VERSION="${GIT_TAG_NAME#room-server-}" ;;
-          *)              GIT_TAG_VERSION="${GIT_TAG_NAME##*-}" ;;
-        esac
-        echo "GIT_TAG_VERSION=$GIT_TAG_VERSION" >> "$GITHUB_ENV"
+        if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+          # Triggered by a tag push. Strip the KNOWN track prefix rather than cutting
+          # at the last '-', so multi-dash tracks (room-server-) survive intact.
+          GIT_TAG_NAME="${GITHUB_REF#refs/tags/}"
+          case "$GIT_TAG_NAME" in
+            companion-*)    VERSION_STRING="${GIT_TAG_NAME#companion-}" ;;
+            repeater-*)     VERSION_STRING="${GIT_TAG_NAME#repeater-}" ;;
+            room-server-*)  VERSION_STRING="${GIT_TAG_NAME#room-server-}" ;;
+            *)              VERSION_STRING="${GIT_TAG_NAME##*-}" ;;
+          esac
+        else
+          # triggered by a workflow dispatch (e.g: refs/heads/main)
+          # strip "refs/heads/" prefix and replace any remaining "/" with "-" to protect file paths
+          BRANCH_NAME="${GITHUB_REF#refs/heads/}"
+          VERSION_STRING=$(echo "$BRANCH_NAME" | tr '/' '-')
+        fi
+        echo "GIT_TAG_VERSION=${VERSION_STRING}" >> "$GITHUB_ENV"

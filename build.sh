@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+# exit when any command fails
+set -e
+
 # use pio if in PATH, else python3 -m platformio (e.g. when installed via pip)
 PIO_CMD="pio"
 if ! command -v pio >/dev/null 2>&1; then
@@ -119,7 +122,11 @@ get_pio_envs_ending_with_string() {
 get_platform_for_env() {
   local env_name=$1
   local result
-  result=$($PIO_CMD project config --json-output | python3 -c "
+  # Cache the (slow) pio config lookup on first use; every env query reuses it.
+  if [ -z "$PIO_CONFIG_JSON" ]; then
+    PIO_CONFIG_JSON=$($PIO_CMD project config --json-output)
+  fi
+  result=$(printf '%s' "$PIO_CONFIG_JSON" | python3 -c "
 import sys, json, re
 data = json.load(sys.stdin)
 env_name = sys.argv[1] if len(sys.argv) > 1 else ''
@@ -353,4 +360,11 @@ elif [[ $1 == "build-room-multitransport-firmwares" ]]; then
   rm -rf out
   mkdir -p out
   build_room_multitransport_firmwares
+elif [[ $1 == "get-companion-firmwares-to-build" ]]; then
+  get_pio_envs_ending_with_string "_companion_radio_usb"
+  get_pio_envs_ending_with_string "_companion_radio_ble"
+elif [[ $1 == "get-repeater-firmwares-to-build" ]]; then
+  get_pio_envs_ending_with_string "_repeater"
+elif [[ $1 == "get-room-server-firmwares-to-build" ]]; then
+  get_pio_envs_ending_with_string "_room_server"
 fi

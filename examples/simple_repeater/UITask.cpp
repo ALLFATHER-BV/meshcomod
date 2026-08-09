@@ -1,4 +1,5 @@
 #include "UITask.h"
+#include "target.h"
 #include <Arduino.h>
 #include <cctype>
 #include <cstring>
@@ -338,6 +339,8 @@ static void render_http_ota_screen(DisplayDriver &display) {
 #define AUTO_OFF_MILLIS      20000  // 20 seconds
 #define BOOT_SCREEN_MILLIS   4000   // 4 seconds
 
+#define POWEROFF_DELAY 3000
+
 // 'meshcore', 128x13px
 static const uint8_t meshcore_logo [] PROGMEM = {
     0x3c, 0x01, 0xe3, 0xff, 0xc7, 0xff, 0x8f, 0x03, 0x87, 0xfe, 0x1f, 0xfe, 0x1f, 0xfe, 0x1f, 0xfe, 
@@ -365,6 +368,7 @@ void UITask::begin(NodePrefs* node_prefs, const char* build_date, const char* fi
 #endif
   _prevBtnState = HIGH;
   _auto_off = millis() + AUTO_OFF_MILLIS;
+  _started_at = millis();
   _node_prefs = node_prefs;
   _display->turnOn();
 
@@ -444,11 +448,10 @@ void UITask::renderCurrScreen() {
   } else {
     _display->setCursor(0, 0);
     _display->setTextSize(1);
-    _display->setColor(DisplayDriver::GREEN);
+    _display->setColor(UIColor::primary_txt);
     _display->print(_node_prefs->node_name);
 
     _display->setCursor(0, 20);
-    _display->setColor(DisplayDriver::YELLOW);
     sprintf(tmp, "FREQ: %06.3f SF%d", _node_prefs->freq, _node_prefs->sf);
     _display->print(tmp);
 
@@ -542,6 +545,15 @@ void UITask::loop() {
     }
     if (millis() > _auto_off) {
       _display->turnOff();
+    }
+  }
+
+  if (_powering_off_at > 0) { // power off timer armed
+#ifdef LED_PIN
+    digitalWrite(LED_PIN, LED_STATE_ON); // switch on the led until poweroff
+#endif
+    if (millis() > _powering_off_at) {
+      _board->powerOff();  // should not return
     }
   }
 }
