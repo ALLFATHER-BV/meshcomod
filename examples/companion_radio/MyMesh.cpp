@@ -1083,6 +1083,17 @@ static bool containsIgnoreCaseAscii(const char* haystack, const char* needle) {
   return false;
 }
 
+// A client_id made only of blanks is not an identity -- it is padding from a stock
+// CMD_APP_START frame being misread as a length-prefixed client_id. Reject it so those
+// clients fall back to their per-connection id instead of all sharing one table slot.
+static bool isBlankClientId(const char* s) {
+  if (!s) return true;
+  for (const char* p = s; *p; ++p) {
+    if (*p != ' ' && *p != '\t') return false;
+  }
+  return true;
+}
+
 static bool appPrefersLiveAdvance(const char* app_name) {
   if (!app_name || !app_name[0]) return false;
   // meshcomod/web clients explicitly identify as mccli / meshcomod-*
@@ -2553,16 +2564,28 @@ void MyMesh::handleCmdFrame(size_t len) {
   } else if (cmd_frame[0] == CMD_APP_START &&
              len >= 8) { // sent when app establishes connection, respond with node ID
     // Optional client_id: byte 1 = length (0 = none), bytes 2..1+len = client_id. Then app_name.
+    //
+    // Stock MeshCore clients (meshcore-py, the MeshCore app, MeshCore ONE) put the protocol
+    // VERSION in byte 1 and 6 bytes of padding in bytes 2..7. This extension therefore read a
+    // 3-byte client_id consisting entirely of spaces, so every stock client shared one identity
+    // and they overwrote each other's entry in proto_clients -- the last client to connect
+    // decided prefer_live_advance for all of them. Treat an all-blank client_id as absent and
+    // fall back to the per-connection id so each connection keeps a distinct identity.
     char* app_name;
+    bool have_client_id = false;
+    char cid_buf[MAX_CLIENT_ID_LEN + 1];
     if (len >= 2 && cmd_frame[1] > 0 && len >= 2 + (size_t)cmd_frame[1]) {
       uint8_t cid_len = cmd_frame[1];
       if (cid_len > MAX_CLIENT_ID_LEN) cid_len = MAX_CLIENT_ID_LEN;
-      char cid_buf[MAX_CLIENT_ID_LEN + 1];
       memcpy(cid_buf, &cmd_frame[2], cid_len);
       cid_buf[cid_len] = '\0';
+      have_client_id = !isBlankClientId(cid_buf);
+    }
+    if (have_client_id) {
       _serial->setCurrentClientId(cid_buf);
       app_name = (char*)&cmd_frame[2 + cmd_frame[1]];
     } else {
+      _serial->setCurrentClientId(NULL);  // fall back to the connection-based id
       app_name = (char*)&cmd_frame[8];
     }
     cmd_frame[len] = 0; // make app_name null terminated

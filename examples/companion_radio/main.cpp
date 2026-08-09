@@ -475,6 +475,9 @@ void loop() {
   static bool wifi_started = false;
   static uint32_t last_wifi_retry_ms = 0;
   static const uint32_t WIFI_RETRY_INTERVAL_MS = 10000;
+  // How long a station may stay associated with no address before we force a clean
+  // re-association. Longer than a normal DHCP exchange, short enough to self-heal fast.
+  static const uint32_t WIFI_NO_IP_GRACE_MS = 20000;
   static bool wifi_radio_prev = true;
   static bool wifi_radio_inited = false;
   /* BLE-vs-WiFi mutex (chosen at setup based on saved creds + radio_en pref):
@@ -535,7 +538,29 @@ void loop() {
       }
     }
     // Automatic WiFi recovery for TCP mode: retry connection periodically if link drops.
-    if (wifiConfigHasRuntime() && WiFi.status() != WL_CONNECTED) {
+    //
+    // A station can stay associated (WL_CONNECTED) while holding no address: a DHCP lease
+    // that expires without a successful renewal leaves localIP() at 0.0.0.0 while status()
+    // still reports connected. Every TCP/WebSocket listener is then unreachable and the
+    // association-only check below never fires, so the node sits there until rebooted.
+    // Track how long we have been associated without an address and force a clean
+    // re-association past WIFI_NO_IP_GRACE_MS. The grace period avoids tearing down a link
+    // that is merely still completing its initial DHCP exchange.
+    static uint32_t assoc_no_ip_since_ms = 0;
+    bool wifi_assoc = (WiFi.status() == WL_CONNECTED);
+    bool wifi_has_ip = false;
+    if (wifi_assoc) {
+      IPAddress ip = WiFi.localIP();
+      wifi_has_ip = !(ip[0] == 0 && ip[1] == 0 && ip[2] == 0 && ip[3] == 0);
+    }
+    if (!wifi_assoc || wifi_has_ip) {
+      assoc_no_ip_since_ms = 0;
+    } else if (assoc_no_ip_since_ms == 0) {
+      assoc_no_ip_since_ms = millis();
+    }
+    bool wifi_stuck_no_ip = (assoc_no_ip_since_ms != 0) &&
+        ((uint32_t)(millis() - assoc_no_ip_since_ms) >= WIFI_NO_IP_GRACE_MS);
+    if (wifiConfigHasRuntime() && (!wifi_assoc || wifi_stuck_no_ip)) {
       uint32_t now = millis();
       if ((uint32_t)(now - last_wifi_retry_ms) >= WIFI_RETRY_INTERVAL_MS) {
         last_wifi_retry_ms = now;
@@ -544,6 +569,12 @@ void loop() {
         wifiConfigGetSsid(ssid, sizeof(ssid));
         wifiConfigGetPwd(pwd, sizeof(pwd));
         if (strlen(ssid) > 0) {
+          if (wifi_stuck_no_ip) {
+            // Associated but address-less: drop the association so the next begin()
+            // runs a fresh DHCP exchange instead of resuming the dead lease.
+            WiFi.disconnect();
+            assoc_no_ip_since_ms = 0;
+          }
           WiFi.begin(ssid, pwd[0] ? pwd : nullptr);
         }
       }
