@@ -465,8 +465,24 @@ PacketMillis RadioLibWrapper::calcMaxPacketMillis(uint8_t sf, float bw, uint8_t 
   
   // airtime for max packet at current radio settings
   uint32_t total_us   = _radio->getTimeOnAir(MAX_TRANS_UNIT);
-  // airtime for payload only (no preamble, header or SOF)
-  uint32_t payload_us = total_us > preamble_us ? total_us - preamble_us : 4000 - preamble_us; // fallback to 4 secs at worst case
+  // airtime for payload only (no preamble, header or SOF).
+  //
+  // The fallback taken when getTimeOnAir() is not usable yet (it can return 0,
+  // or a value for the pre-config modem params, depending on when the radio is
+  // brought up) must never underflow: these are UNSIGNED, and the intended
+  // "4 secs at worst case" was written as 4000 — microseconds, so 4 ms. Any
+  // config whose preamble runs longer than that wrapped the subtraction to
+  // ~4.29e9 us. SF8 at 62.5 kHz has a ~4.1 ms symbol time and a ~83 ms
+  // preamble, so EU/UK Narrow hit it every time.
+  //
+  // The result was a silently deaf radio: _maxPayloadMillis became ~4.29
+  // million seconds, so isReceiving() could never time out a detected header,
+  // and startRecv() — which returns early while isReceivingPacket() is true —
+  // stopped re-arming RX. No acks, no channel messages, no adverts, while a
+  // raw-SPI spectrum sweep still showed the traffic arriving.
+  static const uint32_t kFallbackTotalUs = 4000000;   // 4 SECONDS, in microseconds
+  const uint32_t base_us = (total_us > preamble_us) ? total_us : kFallbackTotalUs;
+  uint32_t payload_us = (base_us > preamble_us) ? (base_us - preamble_us) : (base_us / 2);
   // rescale payload_us for max possible CR
   if (cr >= 5 && cr < 8) { payload_us = (payload_us * 8) / cr; }
 
