@@ -65,6 +65,7 @@ void BaseChatMesh::sendAckTo(const ContactInfo& dest, const uint8_t* ack_hash, u
 
 void BaseChatMesh::bootstrapRTCfromContacts() {
   uint32_t latest = 0;
+  if (!contacts) return;   // nothing loaded yet — the table is allocated lazily
   for (int i = 0; i < num_contacts; i++) {
     if (contacts[i].lastmod > latest) {
       latest = contacts[i].lastmod;
@@ -91,6 +92,9 @@ ContactInfo* BaseChatMesh::allocateContactSlot(bool transient_only) {
 #endif
     if (!contacts) return NULL;   // out of memory: behave as "no slot"
     memset(contacts, 0, sizeof(ContactInfo) * (MAX_CONTACTS+MAX_ANON_CONTACTS));
+    // The table now exists, so claim the reserved anon slots resetContacts()
+    // could not (see the invariant note there). Real contacts start after them.
+    if (num_contacts < MAX_ANON_CONTACTS) num_contacts = MAX_ANON_CONTACTS;
   }
   int oldest_idx = -1;
   uint32_t oldest_lastmod = 0xFFFFFFFF;
@@ -1081,9 +1085,16 @@ int BaseChatMesh::findChannelIdx(const mesh::GroupChannel& ch) {
 #endif
 
 bool BaseChatMesh::getContactByIdx(uint32_t idx, ContactInfo& contact) {
-  if (idx >= num_contacts) return false;
+  // idx is an index into the REAL contacts — the natural partner of
+  // getNumContacts(), which also excludes the reserved anon slots. 1.17 moved
+  // real contacts to start at MAX_ANON_CONTACTS but left this raw, so every
+  // caller pairing it with getNumContacts() (the companion app's contact sync,
+  // the touch UI's lists and action sheets) read the empty anon slots and could
+  // never reach the newest MAX_ANON_CONTACTS entries — a freshly added contact
+  // was invisible until enough others were added to push it down the table.
+  if (idx >= (uint32_t)getNumContacts()) return false;
 
-  contact = contacts[idx];
+  contact = contacts[idx + MAX_ANON_CONTACTS];
   return true;
 }
 

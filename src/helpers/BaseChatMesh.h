@@ -120,10 +120,21 @@ protected:
   void resetContacts() {
     // `contacts` is lazily allocated in PSRAM (see allocateContactSlot), so it is
     // still null when this runs at construction — upstream's array is static, ours
-    // is not. The lazy alloc zeroes the whole table itself, so skipping the memset
-    // while unallocated is safe; doing it unguarded NULL-derefs on boot.
-    if (contacts) memset(contacts, 0, sizeof(contacts[0])*MAX_ANON_CONTACTS);   // set all to have type = ADV_TYPE_NONE(0)
-    num_contacts = MAX_ANON_CONTACTS;  // seed the first contacts for anon requests
+    // is not, and allocating this early would land in internal DRAM before PSRAM
+    // is up. The INVARIANT every reader depends on is `num_contacts > 0` implies
+    // `contacts != NULL`: readers are gated by `i < num_contacts` and index
+    // straight into the table. So the anon-slot reservation is only claimed once
+    // the table actually exists — allocateContactSlot seeds it at alloc time.
+    // Claiming MAX_ANON_CONTACTS unconditionally here broke that invariant and
+    // NULL-deref'd at boot on any device whose contact store loaded nothing
+    // (fresh install / erase-flash / SD not mounted yet) via the 1.17 addition
+    // bootstrapRTCfromContacts().
+    if (contacts) {
+      memset(contacts, 0, sizeof(contacts[0])*MAX_ANON_CONTACTS);   // set all to have type = ADV_TYPE_NONE(0)
+      num_contacts = MAX_ANON_CONTACTS;  // seed the first contacts for anon requests
+    } else {
+      num_contacts = 0;
+    }
   }
   void populateContactFromAdvert(ContactInfo& ci, const mesh::Identity& id, const AdvertDataParser& parser, uint32_t timestamp);
   ContactInfo* allocateContactSlot(bool transient_only=false); // helper to find slot for new contact
@@ -202,7 +213,10 @@ public:
   bool  removeContact(ContactInfo& contact);
   bool  addContact(const ContactInfo& contact);
   int getTotalContactSlots() const { return num_contacts; }
-  int getNumContacts() const { return num_contacts - MAX_ANON_CONTACTS; }  // don't include the reserved slots at start
+  // don't include the reserved slots at start. Clamped at 0: before the table is
+  // allocated num_contacts is 0 (see resetContacts), and a negative count cast to
+  // unsigned by a caller's bounds check would wave every index through.
+  int getNumContacts() const { return num_contacts > MAX_ANON_CONTACTS ? num_contacts - MAX_ANON_CONTACTS : 0; }
   bool getLastTxtTxHash4(uint32_t& out_hash4) const {
     if (!has_last_txt_tx_hash4) return false;
     out_hash4 = last_txt_tx_hash4;
