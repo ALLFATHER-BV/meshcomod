@@ -100,52 +100,17 @@ class CustomSX1262 : public SX1262 {
       return true;  // success
     }
 
-    int16_t startReceive() override {
-      // include the PREAMBLE_DETECTED irq bit in reported flags
-      return SX1262::startReceive(RADIOLIB_SX126X_RX_TIMEOUT_INF, RADIOLIB_IRQ_RX_DEFAULT_FLAGS | (1UL << RADIOLIB_IRQ_PREAMBLE_DETECTED), RADIOLIB_IRQ_RX_DEFAULT_MASK, 0);
-    }
-
     bool isReceiving() {
+      // 1.16 behaviour, restored: report only. The 1.17 rewrite ran its own
+      // timers and CLEARED the receive IRQ flags (preamble/header/sync-word).
+      // On a board whose DIO1 reaches no host GPIO -- the T-Display P4 wires it
+      // to an I2C expander -- polling those flags is the only way a packet is
+      // ever noticed, so wiping them made the radio permanently deaf: it could
+      // transmit, but nothing was ever received (wadamesh#253). Boards with a
+      // real DIO1 line were unaffected because their ISR had already latched
+      // RX_DONE before anything cleared it.
       uint32_t irq = getIrqFlags();
-      bool preamble = irq & RADIOLIB_SX126X_IRQ_PREAMBLE_DETECTED; // bit 2
-      bool header   = irq & RADIOLIB_SX126X_IRQ_HEADER_VALID;      // bit 4
-      bool hdrErr   = irq & RADIOLIB_SX126X_IRQ_HEADER_ERR;        // bit 5
-      uint32_t now  = millis();
-      if (hdrErr) {
-        clearIrqFlags(RADIOLIB_SX126X_IRQ_PREAMBLE_DETECTED | RADIOLIB_SX126X_IRQ_HEADER_VALID | RADIOLIB_SX126X_IRQ_HEADER_ERR | RADIOLIB_SX126X_IRQ_SYNC_WORD_VALID);
-        _activityAt = 0;
-        _headerSeen = false;
-        return false;
-      }
-      if (!header && _headerSeen) {
-        // something cleared the header flag, reset our state.
-        _activityAt = 0; _headerSeen = false;
-        return false;
-      }
-
-      if (header) {
-        if (!_headerSeen) { _headerSeen = true; _activityAt = now; };
-        if (now - _activityAt > _maxPayloadMillis) {
-          MESH_DEBUG_PRINTLN("Clearing header IRQ after %ums", _maxPayloadMillis);
-          clearIrqFlags(RADIOLIB_SX126X_IRQ_PREAMBLE_DETECTED | RADIOLIB_SX126X_IRQ_HEADER_VALID | RADIOLIB_SX126X_IRQ_HEADER_ERR | RADIOLIB_SX126X_IRQ_SYNC_WORD_VALID);
-          _activityAt = 0; _headerSeen = false;
-          return false;
-        }
-        return true;
-      }
-      if (preamble) {
-        if (_activityAt == 0) _activityAt = now;
-        if (now - _activityAt > _preambleMillis) {
-          clearIrqFlags(RADIOLIB_SX126X_IRQ_PREAMBLE_DETECTED);
-          _activityAt = 0;
-          MESH_DEBUG_PRINTLN("Clearing preamble IRQ after %ums", _preambleMillis);
-
-          return false;
-        }
-        return true;
-      }
-      _activityAt = 0; _headerSeen = false;
-      return false;
+      return (irq & RADIOLIB_SX126X_IRQ_HEADER_VALID) || (irq & RADIOLIB_SX126X_IRQ_PREAMBLE_DETECTED);
     }
 
     void setPreambleMillis(uint32_t preambleMillis) {
