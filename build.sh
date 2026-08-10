@@ -45,6 +45,10 @@ $ sh build.sh build-room-server-firmwares
 Environment Variables:
   DISABLE_DEBUG=1: Disables all debug logging flags (MESH_DEBUG, MESH_PACKET_LOGGING, etc.)
                    If not set, debug flags from variant platformio.ini files are used.
+  MERGE_BIN=1:     Also produce out/<env>-<version>-<sha>-merged.bin (bootloader + partitions
+                   + app, flash at 0x0) for ESP32 targets whose env name isn't already merged
+                   by default. Needed for boards outside the release matrix, e.g. ThinkNode M7.
+                   See docs/LOCAL_BUILD_M7.md.
   REPEATER_FIRMWARE_VERSION: For env names ending in _repeater_tcp only, overrides FIRMWARE_VERSION
                    for the compile-time version string and out/ filenames. **Recommended:** repeater train
                    r1.14.1.x — e.g. r1.14.1.0-repeater-tcp (then copy-repeater-release-bins.sh r1.14.1.0).
@@ -203,8 +207,10 @@ build_firmware() {
   # App image only in out/ (flash at partition app offset).
   if [ "$ENV_PLATFORM" == "ESP32_PLATFORM" ]; then
     cp .pio/build/$1/firmware.bin out/${FIRMWARE_FILENAME}.bin 2>/dev/null || true
-    # Companions (USB+TCP) + Heltec TCP repeaters: merged image at 0x0 for flasher / full-chip flash
-    if [[ "$1" == *companion_radio_usb_tcp* ]] || [[ "$1" == *_repeater_tcp ]] || [[ "$1" == *_room_server_multitransport ]]; then
+    # Companions (USB+TCP) + Heltec TCP repeaters: merged image at 0x0 for flasher / full-chip flash.
+    # MERGE_BIN=1 opts any other ESP32 env in, for boards outside the release matrix
+    # (e.g. ThinkNode M7), whose env names match none of the suffixes below.
+    if [ "$MERGE_BIN" = "1" ] || [[ "$1" == *companion_radio_usb_tcp* ]] || [[ "$1" == *_repeater_tcp ]] || [[ "$1" == *_room_server_multitransport ]]; then
       if $PIO_CMD run -t mergebin -e "$1"; then
         if [ -f ".pio/build/$1/firmware-merged.bin" ]; then
           cp ".pio/build/$1/firmware-merged.bin" "out/${FIRMWARE_FILENAME}-merged.bin" 2>/dev/null || true

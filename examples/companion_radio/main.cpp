@@ -55,6 +55,46 @@ static uint32_t _atoi(const char* sp) {
   #endif
 #endif
 
+// Ethernet-capable board with none of the other exclusive transports selected.
+// USB and Ethernet run together through MultiSerialInterface, each registered as its own transport.
+// Ordered after BLE_PIN_CODE so the BLE companion envs keep their existing behavior.
+#if defined(ESP32) && defined(ETHERNET_ENABLED) && !defined(MULTI_TRANSPORT_COMPANION) \
+    && !defined(WIFI_SSID) && !defined(BLE_PIN_CODE)
+  #define COMPANION_USB_ETHERNET 1
+
+// The ethernet debug macros print to Serial, which carries the companion protocol here.
+// Their output lands mid-frame and a client decodes it as garbage contacts and messages.
+// Tested by value, matching SerialEthernetInterface, so an explicit zero stays a valid way to disable it.
+#if ETHERNET_DEBUG_LOGGING
+  #error "ETHERNET_DEBUG_LOGGING corrupts the USB companion stream, which shares Serial"
+#endif
+
+// Reduces a node name to an RFC 1123 label, since a name is free text and a hostname is not.
+// Underscore and every other character outside letters and digits becomes a hyphen, and runs collapse.
+// A label cannot open or close on a hyphen, so the edges are trimmed and an empty result falls back.
+// Output is lowercased by convention, names being case-insensitive, and the caller's buffer caps the 63 octet limit.
+// The read is bounded by name_len because node_name can load without a terminator.
+// A skipped character does not advance w, so the output bound does not bound the input.
+static void toHostLabel(const char* name, size_t name_len, char* out, size_t out_len) {
+  if (out == NULL || out_len == 0) return;
+  if (name == NULL) name_len = 0;
+
+  size_t w = 0;
+  for (size_t r = 0; r < name_len && name[r] && w + 1 < out_len; r++) {
+    char c = name[r];
+    if (c >= 'A' && c <= 'Z') c += 32;
+    if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) {
+      out[w++] = c;
+    } else if (w > 0 && out[w - 1] != '-') {
+      out[w++] = '-';
+    }
+  }
+  while (w > 0 && out[w - 1] == '-') w--;
+  out[w] = 0;
+  if (w == 0) StrHelper::strncpy(out, "meshcore", out_len);
+}
+#endif
+
 #ifdef ESP32
   #ifdef MULTI_TRANSPORT_COMPANION
     #include <helpers/esp32/MultiTransportCompanionInterface.h>
@@ -74,6 +114,14 @@ static uint32_t _atoi(const char* sp) {
   #elif defined(BLE_PIN_CODE)
     #include <helpers/esp32/SerialBLEInterface.h>
     SerialBLEInterface serial_interface;
+  #elif defined(COMPANION_USB_ETHERNET)
+    #include <ESPmDNS.h>
+    #include <helpers/MultiSerialInterface.h>
+    #include <helpers/ArduinoSerialInterface.h>
+    #include <helpers/ethernet/EthernetInterface.h>
+    MultiSerialInterface serial_interface;        // fans out to both transports below
+    ArduinoSerialInterface usb_serial_interface;  // config / CLI over USB
+    ETHERNET_CLASS ethernet_interface;            // CH390: DHCP + companion TCP on ETHERNET_TCP_PORT
   #elif defined(SERIAL_RX)
     #include <helpers/ArduinoSerialInterface.h>
     ArduinoSerialInterface serial_interface;
@@ -443,6 +491,29 @@ void setup() {
     WiFi.begin(WIFI_SSID, WIFI_PWD);
   }
   serial_interface.begin(TCP_PORT);
+#elif defined(COMPANION_USB_ETHERNET)
+  usb_serial_interface.begin(Serial);
+  serial_interface.addInterface(InterfaceType::USB, &usb_serial_interface);
+  // A failed begin() means the controller is missing or miswired rather than the cable being unplugged.
+  if (ethernet_interface.begin()) {
+    // A DHCP lease carrying the node name gives a stable name to reach the device by.
+    // Without it the server invents one from the MAC, which can hold a space and resolve nowhere.
+    char hostname[33];
+    NodePrefs* np = the_mesh.getNodePrefs();
+    toHostLabel(np->node_name, sizeof(np->node_name), hostname, sizeof(hostname));
+    bool host_ok = ethernet_interface.setHostname(hostname);
+    // A DHCP hostname only resolves where the server registers it in DNS, which many do not.
+    // An mDNS responder answers for the same label as <name>.local regardless of the server.
+    // The responder starts before the lease arrives and answers once the interface holds an address.
+    bool mdns_ok = MDNS.begin(hostname);
+    if (mdns_ok) MDNS.addService("meshcore", "tcp", ETHERNET_TCP_PORT);
+    serial_interface.addInterface(InterfaceType::Ethernet, &ethernet_interface);
+    // Both results are reported because a silent failure here looks identical to a server that did not register the name.
+    Serial.printf("[BOOT] usb+ethernet ok, hostname '%s' dhcp=%s mdns=%s\n",
+                  hostname, host_ok ? "ok" : "FAILED", mdns_ok ? "ok" : "FAILED");
+  } else {
+    Serial.println("[BOOT] ethernet FAILED (CH390 init) - USB only");
+  }
 #elif defined(BLE_PIN_CODE)
   serial_interface.begin(BLE_NAME_PREFIX, the_mesh.getNodePrefs()->node_name, the_mesh.getBLEPin());
 #elif defined(SERIAL_RX)
@@ -626,6 +697,10 @@ void loop() {
   }
 #endif
   the_mesh.loop();
+#ifdef COMPANION_USB_ETHERNET
+  // Nothing else drives BaseSerialInterface::loop(), which the Ethernet transport needs to accept clients.
+  serial_interface.loop();
+#endif
   sensors.loop();
   rtc_clock.tick();
 

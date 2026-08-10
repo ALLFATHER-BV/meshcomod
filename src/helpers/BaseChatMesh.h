@@ -115,6 +115,8 @@ protected:
     _txt_last_ts = 0;
   }
 
+  // Allocates the lazily-created contact table, returning false when out of memory.
+  bool ensureContacts();
   void bootstrapRTCfromContacts();
 
   void resetContacts() {
@@ -122,8 +124,14 @@ protected:
     // still null when this runs at construction — upstream's array is static, ours
     // is not. The lazy alloc zeroes the whole table itself, so skipping the memset
     // while unallocated is safe; doing it unguarded NULL-derefs on boot.
-    if (contacts) memset(contacts, 0, sizeof(contacts[0])*MAX_ANON_CONTACTS);   // set all to have type = ADV_TYPE_NONE(0)
-    num_contacts = MAX_ANON_CONTACTS;  // seed the first contacts for anon requests
+    if (contacts) {
+      memset(contacts, 0, sizeof(contacts[0])*MAX_ANON_CONTACTS);   // set all to have type = ADV_TYPE_NONE(0)
+      num_contacts = MAX_ANON_CONTACTS;  // seed the first contacts for anon requests
+    } else {
+      // Every reader loops on this count and indexes the table without allocating first.
+      // Zero keeps them safe until the table exists, and ensureContacts() restores the floor.
+      num_contacts = 0;
+    }
   }
   void populateContactFromAdvert(ContactInfo& ci, const mesh::Identity& id, const AdvertDataParser& parser, uint32_t timestamp);
   ContactInfo* allocateContactSlot(bool transient_only=false); // helper to find slot for new contact
@@ -202,7 +210,8 @@ public:
   bool  removeContact(ContactInfo& contact);
   bool  addContact(const ContactInfo& contact);
   int getTotalContactSlots() const { return num_contacts; }
-  int getNumContacts() const { return num_contacts - MAX_ANON_CONTACTS; }  // don't include the reserved slots at start
+  // Clamped because num_contacts is zeroed when allocation fails, which would otherwise report a negative count.
+  int getNumContacts() const { return num_contacts > MAX_ANON_CONTACTS ? num_contacts - MAX_ANON_CONTACTS : 0; }
   bool getLastTxtTxHash4(uint32_t& out_hash4) const {
     if (!has_last_txt_tx_hash4) return false;
     out_hash4 = last_txt_tx_hash4;

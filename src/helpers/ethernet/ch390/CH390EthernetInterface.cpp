@@ -56,6 +56,20 @@ bool CH390EthernetInterface::begin() {
   return true;
 }
 
+bool CH390EthernetInterface::setHostname(const char* hostname) {
+  if (!CH390.setHostname(hostname)) return false;
+
+  // The hostname is copied into the DISCOVER, so a client already running carries the old one.
+  // Restarting it costs nothing before link-up and guarantees the first lease carries the name.
+  // A static address configuration has already stopped the client.
+  // Restarting it there would discard that address and wait on a server the build does not use.
+#if !(defined(ETHERNET_STATIC_IP) && defined(ETHERNET_STATIC_GATEWAY) && defined(ETHERNET_STATIC_SUBNET))
+  CH390.disableDHCP();
+  CH390.enableDHCP();
+#endif
+  return true;
+}
+
 int CH390EthernetInterface::available() {
   return client.available();
 }

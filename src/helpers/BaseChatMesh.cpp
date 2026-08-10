@@ -64,6 +64,11 @@ void BaseChatMesh::sendAckTo(const ContactInfo& dest, const uint8_t* ack_hash, u
 }
 
 void BaseChatMesh::bootstrapRTCfromContacts() {
+  // Callers arrive with num_contacts seeded to MAX_ANON_CONTACTS while the table is still unallocated.
+  // Without this the loop below walks a null pointer on a device holding no stored contacts.
+  // Allocating here also keeps every later contacts[] reader safe, since begin() runs with PSRAM up.
+  if (!ensureContacts()) return;
+
   uint32_t latest = 0;
   for (int i = 0; i < num_contacts; i++) {
     if (contacts[i].lastmod > latest) {
@@ -75,23 +80,35 @@ void BaseChatMesh::bootstrapRTCfromContacts() {
   }
 }
 
-ContactInfo* BaseChatMesh::allocateContactSlot(bool transient_only) {
-  // Lazily allocate the contact table on first use. On ESP32 we put the table in
-  // PSRAM to keep it off scarce internal DRAM (WiFi needs internal heap). Sized
-  // MAX_CONTACTS + MAX_ANON_CONTACTS to match the upstream array, whose first
-  // MAX_ANON_CONTACTS slots are reserved for transient/anonymous requests.
-  // MUST stay ahead of every contacts[] access below: upstream's array is static
-  // and can be indexed immediately, ours cannot.
-  if (!contacts) {
+// Allocates the contact table on first use, in PSRAM where available to keep it off internal DRAM.
+// Sized MAX_CONTACTS + MAX_ANON_CONTACTS, whose first MAX_ANON_CONTACTS slots hold anonymous requests.
+// Must run ahead of every contacts[] access, and cannot run from the constructor because PSRAM is not up yet.
+bool BaseChatMesh::ensureContacts() {
+  if (contacts) return true;
 #if defined(ESP32)
-    contacts = (ContactInfo*)heap_caps_malloc(sizeof(ContactInfo) * (MAX_CONTACTS+MAX_ANON_CONTACTS), MALLOC_CAP_SPIRAM);
-    if (!contacts) contacts = (ContactInfo*)heap_caps_malloc(sizeof(ContactInfo) * (MAX_CONTACTS+MAX_ANON_CONTACTS), MALLOC_CAP_8BIT);
+  contacts = (ContactInfo*)heap_caps_malloc(sizeof(ContactInfo) * (MAX_CONTACTS+MAX_ANON_CONTACTS), MALLOC_CAP_SPIRAM);
+  if (!contacts) contacts = (ContactInfo*)heap_caps_malloc(sizeof(ContactInfo) * (MAX_CONTACTS+MAX_ANON_CONTACTS), MALLOC_CAP_8BIT);
 #else
-    contacts = (ContactInfo*)malloc(sizeof(ContactInfo) * (MAX_CONTACTS+MAX_ANON_CONTACTS));
+  contacts = (ContactInfo*)malloc(sizeof(ContactInfo) * (MAX_CONTACTS+MAX_ANON_CONTACTS));
 #endif
-    if (!contacts) return NULL;   // out of memory: behave as "no slot"
-    memset(contacts, 0, sizeof(ContactInfo) * (MAX_CONTACTS+MAX_ANON_CONTACTS));
+  if (!contacts) {
+    // Readers loop on num_contacts without allocating first.
+    // Leaving it seeded here would fault exactly as an unallocated table did.
+    num_contacts = 0;
+    return false;
   }
+  memset(contacts, 0, sizeof(ContactInfo) * (MAX_CONTACTS+MAX_ANON_CONTACTS));
+
+  // A failed attempt zeroed the count, so restore the floor that resetContacts() seeds.
+  // Leaving it at zero would hand the reserved anonymous slots out as permanent contacts.
+  if (num_contacts < MAX_ANON_CONTACTS) num_contacts = MAX_ANON_CONTACTS;
+  return true;
+}
+
+ContactInfo* BaseChatMesh::allocateContactSlot(bool transient_only) {
+  // Out of memory behaves as "no slot".
+  if (!ensureContacts()) return NULL;
+
   int oldest_idx = -1;
   uint32_t oldest_lastmod = 0xFFFFFFFF;
   if (transient_only) {

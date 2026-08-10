@@ -44,6 +44,10 @@ class SerialEthernetInterface : public BaseSerialInterface {
     }
     bool begin();
 
+    // Sets the DHCP client hostname, which drivers without netif support decline.
+    // Call after begin() so the interface exists, and before the link comes up so the lease carries it.
+    virtual bool setHostname(const char* hostname) { (void)hostname; return false; }
+
     void onClientConnected();
 
     // BaseSerialInterface methods
