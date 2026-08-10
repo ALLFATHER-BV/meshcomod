@@ -43,6 +43,11 @@ public:
 
   void doResetAGC() override { sx126xResetAGC((SX126x *)_radio); }
 
+  // See RadioLibWrapper::pollRxIfNoIrq — RX-done straight from the IRQ register.
+  bool pollRxDone() override {
+    return (((CustomSX1262 *)_radio)->getIrqFlags() & RADIOLIB_SX126X_IRQ_RX_DONE) != 0;
+  }
+
   bool setRxBoostedGainMode(bool en) override {
     return ((CustomSX1262 *)_radio)->setRxBoostedGainMode(en) == RADIOLIB_ERR_NONE;
   }

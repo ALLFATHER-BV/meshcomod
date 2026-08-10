@@ -53,6 +53,17 @@ public:
 
   bool isReceiving() override;   // in .cpp — takes the radio mutex (SPI reads)
 
+  // ---- Polled receive, for boards whose DIO1 reaches no host GPIO ----------
+  // The T-Display P4 wires the SX1262 IRQ to an I2C expander, so the setFlag()
+  // ISR can never run: nothing sets STATE_INT_READY and BOTH receive paths
+  // (buffered drain and legacy read) wait forever. pollRxDone() lets the
+  // concrete wrapper report RX-done straight from the radio's IRQ register,
+  // and pollRxIfNoIrq() turns that into exactly what the ISR would have done.
+  // Compiled in only where MESH_RADIO_DIO1_POLLED is defined, so IRQ boards
+  // pay nothing (not even the SPI read).
+  virtual bool pollRxDone() { return false; }
+  void pollRxIfNoIrq();
+
   virtual void setParams(float freq, float bw, uint8_t sf, uint8_t cr) = 0;
   uint32_t getRngSeed();
   void setTxPower(int8_t dbm);

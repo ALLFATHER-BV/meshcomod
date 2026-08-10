@@ -48,6 +48,7 @@ void rlwRxqTask(void*) {
     // Semaphore wake on RX-done; the timeout is a lost-wake safety net only.
     xSemaphoreTake(rxq_sem, pdMS_TO_TICKS(250));
     if (!rxq_enabled || rxq_suspend || !rxq_owner) continue;
+    rxq_owner->pollRxIfNoIrq();   // polled boards: the 250ms tick IS the interrupt
     rlwLock();
     if (rxq_enabled && !rxq_suspend &&
         (state & STATE_INT_READY) && (state & ~STATE_INT_READY) == STATE_RX) {
@@ -226,8 +227,26 @@ void RadioLibWrapper::rxqDrainOne() {
 }
 #endif
 
+void RadioLibWrapper::pollRxIfNoIrq() {
+#if defined(MESH_RADIO_DIO1_POLLED)
+  // Stand in for the DIO1 ISR on a board that cannot have one. Same effect as
+  // setFlag(): count the event, latch STATE_INT_READY so a reader will lift the
+  // packet out, and kick the drain task if the buffered path owns servicing.
+  rlwLock();
+  if (!(state & STATE_INT_READY) && (state & ~STATE_INT_READY) == STATE_RX && pollRxDone()) {
+    rx_evt_count++;
+    state |= STATE_INT_READY;
+#if defined(ESP32)
+    if (rxq_sem && rxq_enabled && !rxq_suspend) xSemaphoreGive(rxq_sem);
+#endif
+  }
+  rlwUnlock();
+#endif
+}
+
 int RadioLibWrapper::recvRaw(uint8_t* bytes, int sz) {
   int len = 0;
+  pollRxIfNoIrq();      // no-op unless this board polls (see the header)
   rlwLock();
 #if defined(ESP32)
   // Buffered path: pop a packet the drain task already lifted out of the radio.
