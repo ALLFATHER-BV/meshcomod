@@ -10,6 +10,9 @@
 #include <helpers/MeshTouchTxTrace.h>
 #include <helpers/esp32/TouchPrefsStore.h>   // touchPrefsGetUiRotation for the boot wordmark
 #endif
+#if defined(ESP32_PLATFORM)
+#include <esp_system.h>   // esp_reset_reason() for the boot log (include-guarded; touch pulls it in above too)
+#endif
 
 // Believe it or not, this std C function is busted on some platforms!
 static uint32_t _atoi(const char* sp) {
@@ -147,10 +150,37 @@ void halt() {
   unsigned long last_wifi_reconnect_attempt = 0;
 #endif
 
+#if defined(ESP32_PLATFORM)
+/* Decode the last reset cause for the boot log. Non-touch builds never decoded it, so a
+ * spontaneous reboot was indistinguishable from a clean power-up in the serial log. That
+ * matters more now that the Wi-Fi watchdog above can restart the node deliberately: without
+ * this line there is no way to tell a dead-link reboot from a panic, a brownout or a
+ * watchdog, and each implies a different fix. */
+static const char* meshcomodResetReasonStr() {
+  switch (esp_reset_reason()) {
+    case ESP_RST_POWERON:   return "Power-on";
+    case ESP_RST_EXT:       return "External pin";
+    case ESP_RST_SW:        return "Software (esp_restart)";
+    case ESP_RST_PANIC:     return "Panic / exception";
+    case ESP_RST_INT_WDT:   return "Interrupt watchdog";
+    case ESP_RST_TASK_WDT:  return "Task watchdog";
+    case ESP_RST_WDT:       return "Other watchdog";
+    case ESP_RST_DEEPSLEEP: return "Deep sleep wake";
+    case ESP_RST_BROWNOUT:  return "Brownout";
+    case ESP_RST_SDIO:      return "SDIO";
+    default:                return "Unknown";
+  }
+}
+#endif
+
 void setup() {
   Serial.begin(115200);
   delay(200);
   Serial.println("[BOOT] setup start");
+#if defined(ESP32_PLATFORM)
+  Serial.printf("[BOOT] reset reason: %s (%d)\n",
+                meshcomodResetReasonStr(), (int)esp_reset_reason());
+#endif
 
 #if defined(ESP32_PLATFORM) && defined(HAS_TOUCH_UI)
   // Record which slot we booted from so the recovery's "Boot firmware" can return
@@ -478,6 +508,15 @@ void loop() {
   // How long a station may stay associated with no address before we force a clean
   // re-association. Longer than a normal DHCP exchange, short enough to self-heal fast.
   static const uint32_t WIFI_NO_IP_GRACE_MS = 20000;
+  // After this many consecutive failed recovery attempts, stop retrying the same way and
+  // tear the radio all the way down before re-initialising it.
+  static const uint8_t  WIFI_RECOVERY_ESCALATE_AFTER = 3;
+  // Last resort for an unattended node: reboot if the link has been unusable this long
+  // despite every retry and escalation. Generous enough that a slow AP reboot or a DHCP
+  // server restart resolves on its own well before we bounce.
+  static const uint32_t WIFI_DEAD_REBOOT_MS = 15UL * 60UL * 1000UL;
+  static uint32_t wifi_down_since_ms = 0;   // first moment the link stopped being usable
+  static uint8_t  wifi_retry_count = 0;     // consecutive failed recovery attempts
   static bool wifi_radio_prev = true;
   static bool wifi_radio_inited = false;
   /* BLE-vs-WiFi mutex (chosen at setup based on saved creds + radio_en pref):
@@ -498,6 +537,10 @@ void loop() {
       WiFi.mode(WIFI_OFF);
     }
     wifi_started = false;
+    // Deliberate downtime is not a dead link. Clear the counters so re-enabling the radio
+    // does not immediately trip the dead-link reboot on a stale timestamp.
+    wifi_down_since_ms = 0;
+    wifi_retry_count = 0;
   }
   /* UI may have changed SSID/PWD and asked for a re-apply. Trigger re-begin
    * by forcing wifi_started=false; on next iter the block below will WiFi.begin
@@ -521,11 +564,21 @@ void loop() {
     }
     wifi_started = false;
     last_wifi_retry_ms = 0;
+    // Credentials just changed; any prior failures relate to the old ones.
+    wifi_down_since_ms = 0;
+    wifi_retry_count = 0;
   }
   if (wifi_radio_en) {
     if (!wifi_started) {
       wifi_started = true;
       WiFi.mode(WIFI_STA);
+      /* DO NOT call WiFi.setSleep(false) here. Modem power save is a plausible contributor
+       * to missed DHCP renewals (the station keeps reporting WL_CONNECTED while its address
+       * silently goes to 0.0.0.0), but this is a multi-transport build: NimBLE co-inits with
+       * Wi-Fi, and esp_wifi aborts at runtime when modem sleep is disabled while Bluetooth is
+       * enabled ("Should enable WiFi modem sleep when both WiFi and Bluetooth are enabled").
+       * That turns a rare drop into a guaranteed boot loop. Tried, panicked, reverted.
+       * If modem sleep ever needs disabling, BLE must be off for the whole session. */
       if (wifiConfigHasRuntime()) {
         char ssid[WIFI_CONFIG_SSID_MAX];
         char pwd[WIFI_CONFIG_PWD_MAX];
@@ -560,10 +613,25 @@ void loop() {
     }
     bool wifi_stuck_no_ip = (assoc_no_ip_since_ms != 0) &&
         ((uint32_t)(millis() - assoc_no_ip_since_ms) >= WIFI_NO_IP_GRACE_MS);
+    /* A link only counts as usable once it holds an address. Track how long it has been
+     * unusable so an unattended node can escalate its recovery and, failing that, reboot
+     * itself rather than sit dead until someone walks over to it. */
+    if (wifi_assoc && wifi_has_ip) {
+      if (wifi_down_since_ms != 0) {
+        Serial.printf("[wifi] link restored after %lus, %u retries\n",
+                      (unsigned long)((millis() - wifi_down_since_ms) / 1000),
+                      (unsigned)wifi_retry_count);
+      }
+      wifi_down_since_ms = 0;
+      wifi_retry_count = 0;
+    } else if (wifi_down_since_ms == 0) {
+      wifi_down_since_ms = millis();
+    }
     if (wifiConfigHasRuntime() && (!wifi_assoc || wifi_stuck_no_ip)) {
       uint32_t now = millis();
       if ((uint32_t)(now - last_wifi_retry_ms) >= WIFI_RETRY_INTERVAL_MS) {
         last_wifi_retry_ms = now;
+        if (wifi_retry_count < 255) wifi_retry_count++;
         char ssid[WIFI_CONFIG_SSID_MAX];
         char pwd[WIFI_CONFIG_PWD_MAX];
         wifiConfigGetSsid(ssid, sizeof(ssid));
@@ -575,9 +643,37 @@ void loop() {
             WiFi.disconnect();
             assoc_no_ip_since_ms = 0;
           }
+          /* Escalation: a plain disconnect+begin cannot recover a driver that has wedged
+           * deeper (auth loop, stale AP record, an interface the SDK still believes is up).
+           * Every WIFI_RECOVERY_ESCALATE_AFTER failed cycles, tear the radio all the way
+           * down and re-init it before trying again. */
+          if ((wifi_retry_count % WIFI_RECOVERY_ESCALATE_AFTER) == 0) {
+            Serial.printf("[wifi] escalating: full radio re-init after %u failed retries\n",
+                          (unsigned)wifi_retry_count);
+            WiFi.disconnect(true, false);
+            delay(100);
+            WiFi.mode(WIFI_OFF);
+            delay(200);
+            WiFi.mode(WIFI_STA);
+            delay(100);
+          }
           WiFi.begin(ssid, pwd[0] ? pwd : nullptr);
         }
       }
+    }
+    /* Last resort. Everything above has had WIFI_DEAD_REBOOT_MS to bring the link back.
+     * A reboot is the only remaining lever, and for an unattended node an automatic one
+     * beats staying dark until someone is physically present. Gated on runtime credentials
+     * for the same reason the retry above is: with none there is no recovery path to have
+     * failed, so rebooting on a loop would be worse than sitting idle. */
+    if (wifiConfigHasRuntime() && wifi_down_since_ms != 0 &&
+        (uint32_t)(millis() - wifi_down_since_ms) >= WIFI_DEAD_REBOOT_MS) {
+      Serial.printf("[wifi] link unusable for %lus after %u retries, rebooting\n",
+                    (unsigned long)((millis() - wifi_down_since_ms) / 1000),
+                    (unsigned)wifi_retry_count);
+      Serial.flush();
+      delay(200);
+      ESP.restart();
     }
     /* SNTP: kick off when Wi-Fi associates; once system time syncs, push it
      * into the mesh RTC so timestamps on messages are accurate. */
