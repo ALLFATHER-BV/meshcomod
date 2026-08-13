@@ -1495,11 +1495,9 @@ void MyMesh::uiExportBackup(Print& out, double node_lat, double node_lon) {
   out.print(first ? "],\n" : "\n  ],\n");
   out.print("  \"contacts\": [");
   first = true;
-  // Real contacts live at RAW indices [MAX_ANON_CONTACTS, getTotalContactSlots()):
-  // 1.17 reserves the first MAX_ANON_CONTACTS slots for anonymous requests, and
-  // getContactByIdx() takes a raw index. Iterating 0..getNumContacts() would emit
-  // the reserved slots and drop the last MAX_ANON_CONTACTS real contacts.
-  for (uint32_t i = MAX_ANON_CONTACTS; i < (uint32_t)getTotalContactSlots(); ++i) {
+  // getContactByIdx() indexes the REAL contacts and applies the reserved-anon-slot
+  // offset itself, so it pairs directly with getNumContacts().
+  for (uint32_t i = 0; i < (uint32_t)getNumContacts(); ++i) {
     ContactInfo c;
     if (!getContactByIdx(i, c)) continue;
     if (c.type == ADV_TYPE_NONE) continue;   // unused slot
