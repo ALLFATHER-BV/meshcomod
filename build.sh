@@ -293,6 +293,12 @@ MESHCOMOD_COMPANION_ENVS=(
   "Heltec_v3_companion_radio_usb_tcp"            # Heltec WiFi LoRa 32 V3 (OLED)
   "Heltec_Wireless_Paper_companion_radio_usb_tcp" # Heltec Wireless Paper (E213)
   "Xiao_S3_WIO_companion_radio_usb_tcp"          # Seeed Xiao S3 WIO (SX1262)
+  # Elecrow ThinkNode M7 (ESP32-S3 + LR1110). No _usb_tcp multi-transport variant
+  # exists for this board, so these are the stock single-transport companions.
+  # Hardware-validated by @ptr727 in #47; we hold none, so treat regressions here
+  # as reported-not-observed.
+  "ThinkNode_M7_companion_radio_ble"             # ThinkNode M7 — BLE companion
+  "ThinkNode_M7_companion_radio_ethernet"        # ThinkNode M7 — PoE/Ethernet companion
 )
 build_meshcomod_companion_firmwares() {
   for env in "${MESHCOMOD_COMPANION_ENVS[@]}"; do
