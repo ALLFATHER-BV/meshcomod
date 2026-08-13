@@ -208,9 +208,12 @@ build_firmware() {
   if [ "$ENV_PLATFORM" == "ESP32_PLATFORM" ]; then
     cp .pio/build/$1/firmware.bin out/${FIRMWARE_FILENAME}.bin 2>/dev/null || true
     # Companions (USB+TCP) + Heltec TCP repeaters: merged image at 0x0 for flasher / full-chip flash.
-    # MERGE_BIN=1 opts any other ESP32 env in, for boards outside the release matrix
-    # (e.g. ThinkNode M7), whose env names match none of the suffixes below.
-    if [ "$MERGE_BIN" = "1" ] || [[ "$1" == *companion_radio_usb_tcp* ]] || [[ "$1" == *_repeater_tcp ]] || [[ "$1" == *_room_server_multitransport ]]; then
+    # Anything in the release matrix gets one too, whatever its env name: the ThinkNode M7
+    # ships as _companion_radio_ble / _ethernet and matches none of the suffixes below, and a
+    # board we publish must be first-time flashable from the web flasher — app-only at 0x10000
+    # assumes a partition table the device may not have yet.
+    # MERGE_BIN=1 still opts in any other ESP32 env for local builds.
+    if [ "$MERGE_BIN" = "1" ] || meshcomod_release_env "$1" || [[ "$1" == *companion_radio_usb_tcp* ]] || [[ "$1" == *_repeater_tcp ]] || [[ "$1" == *_room_server_multitransport ]]; then
       if $PIO_CMD run -t mergebin -e "$1"; then
         if [ -f ".pio/build/$1/firmware-merged.bin" ]; then
           cp ".pio/build/$1/firmware-merged.bin" "out/${FIRMWARE_FILENAME}-merged.bin" 2>/dev/null || true
@@ -300,6 +303,16 @@ MESHCOMOD_COMPANION_ENVS=(
   "ThinkNode_M7_companion_radio_ble"             # ThinkNode M7 — BLE companion
   "ThinkNode_M7_companion_radio_ethernet"        # ThinkNode M7 — PoE/Ethernet companion
 )
+# True if $1 is one of the boards we publish, so build_firmware knows to emit a merged image
+# regardless of how the env happens to be named.
+meshcomod_release_env() {
+  local e
+  for e in "${MESHCOMOD_COMPANION_ENVS[@]}"; do
+    [ "$e" = "$1" ] && return 0
+  done
+  return 1
+}
+
 build_meshcomod_companion_firmwares() {
   for env in "${MESHCOMOD_COMPANION_ENVS[@]}"; do
     build_firmware "$env"
