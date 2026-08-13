@@ -588,6 +588,12 @@ void loop() {
   static const uint32_t WIFI_DEAD_REBOOT_MS = 15UL * 60UL * 1000UL;
   static uint32_t wifi_down_since_ms = 0;   // first moment the link stopped being usable
   static uint8_t  wifi_retry_count = 0;     // consecutive failed recovery attempts
+  /* Only reboot for a link that WORKED and then died — that is the wedge this targets.
+   * A companion carried out of range of its AP never associates, and rebooting cannot
+   * conjure an access point; without this it would bounce every WIFI_DEAD_REBOOT_MS for
+   * as long as it is away from home, dropping BLE and USB sessions each time. A node that
+   * boots while its AP is still down is covered by the retry and escalation above. */
+  static bool     wifi_was_ever_usable = false;
   static bool wifi_radio_prev = true;
   static bool wifi_radio_inited = false;
   /* BLE-vs-WiFi mutex (chosen at setup based on saved creds + radio_en pref):
@@ -612,6 +618,7 @@ void loop() {
     // does not immediately trip the dead-link reboot on a stale timestamp.
     wifi_down_since_ms = 0;
     wifi_retry_count = 0;
+    wifi_was_ever_usable = false;
   }
   /* UI may have changed SSID/PWD and asked for a re-apply. Trigger re-begin
    * by forcing wifi_started=false; on next iter the block below will WiFi.begin
@@ -638,6 +645,7 @@ void loop() {
     // Credentials just changed; any prior failures relate to the old ones.
     wifi_down_since_ms = 0;
     wifi_retry_count = 0;
+    wifi_was_ever_usable = false;
   }
   if (wifi_radio_en) {
     if (!wifi_started) {
@@ -688,6 +696,7 @@ void loop() {
      * unusable so an unattended node can escalate its recovery and, failing that, reboot
      * itself rather than sit dead until someone walks over to it. */
     if (wifi_assoc && wifi_has_ip) {
+      wifi_was_ever_usable = true;
       if (wifi_down_since_ms != 0) {
         Serial.printf("[wifi] link restored after %lus, %u retries\n",
                       (unsigned long)((millis() - wifi_down_since_ms) / 1000),
@@ -737,14 +746,20 @@ void loop() {
      * beats staying dark until someone is physically present. Gated on runtime credentials
      * for the same reason the retry above is: with none there is no recovery path to have
      * failed, so rebooting on a loop would be worse than sitting idle. */
-    if (wifiConfigHasRuntime() && wifi_down_since_ms != 0 &&
+    if (wifiConfigHasRuntime() && wifi_was_ever_usable && wifi_down_since_ms != 0 &&
         (uint32_t)(millis() - wifi_down_since_ms) >= WIFI_DEAD_REBOOT_MS) {
       Serial.printf("[wifi] link unusable for %lus after %u retries, rebooting\n",
                     (unsigned long)((millis() - wifi_down_since_ms) / 1000),
                     (unsigned)wifi_retry_count);
+      /* Flush pending contact writes first. Contact updates are rate-capped behind
+       * dirty_contacts_expiry to spare the flash, so a bare restart drops whatever has
+       * not been written yet — the same data loss the CMD_REBOOT handler avoids by
+       * saving before it reboots. A deliberate reboot must not cost the user contacts.
+       * board.reboot() rather than ESP.restart() to match every other reset path here. */
+      the_mesh.uiPersistContacts();
       Serial.flush();
       delay(200);
-      ESP.restart();
+      board.reboot();
     }
     /* SNTP: kick off when Wi-Fi associates; once system time syncs, push it
      * into the mesh RTC so timestamps on messages are accurate. */
