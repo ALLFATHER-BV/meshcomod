@@ -115,6 +115,8 @@ protected:
     _txt_last_ts = 0;
   }
 
+  // Allocates the lazily-created contact table, returning false when out of memory.
+  bool ensureContacts();
   void bootstrapRTCfromContacts();
 
   void resetContacts() {
@@ -124,7 +126,7 @@ protected:
     // is up. The INVARIANT every reader depends on is `num_contacts > 0` implies
     // `contacts != NULL`: readers are gated by `i < num_contacts` and index
     // straight into the table. So the anon-slot reservation is only claimed once
-    // the table actually exists — allocateContactSlot seeds it at alloc time.
+    // the table actually exists — ensureContacts() seeds it at alloc time.
     // Claiming MAX_ANON_CONTACTS unconditionally here broke that invariant and
     // NULL-deref'd at boot on any device whose contact store loaded nothing
     // (fresh install / erase-flash / SD not mounted yet) via the 1.17 addition
@@ -133,6 +135,8 @@ protected:
       memset(contacts, 0, sizeof(contacts[0])*MAX_ANON_CONTACTS);   // set all to have type = ADV_TYPE_NONE(0)
       num_contacts = MAX_ANON_CONTACTS;  // seed the first contacts for anon requests
     } else {
+      // Every reader loops on this count and indexes the table without allocating first.
+      // Zero keeps them safe until the table exists, and ensureContacts() restores the floor.
       num_contacts = 0;
     }
   }
@@ -213,9 +217,7 @@ public:
   bool  removeContact(ContactInfo& contact);
   bool  addContact(const ContactInfo& contact);
   int getTotalContactSlots() const { return num_contacts; }
-  // don't include the reserved slots at start. Clamped at 0: before the table is
-  // allocated num_contacts is 0 (see resetContacts), and a negative count cast to
-  // unsigned by a caller's bounds check would wave every index through.
+  // Clamped because num_contacts is zeroed when allocation fails, which would otherwise report a negative count.
   int getNumContacts() const { return num_contacts > MAX_ANON_CONTACTS ? num_contacts - MAX_ANON_CONTACTS : 0; }
   bool getLastTxtTxHash4(uint32_t& out_hash4) const {
     if (!has_last_txt_tx_hash4) return false;

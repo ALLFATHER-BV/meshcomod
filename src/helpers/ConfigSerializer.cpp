@@ -1,5 +1,9 @@
 #include "ConfigSerializer.h"
 
+// atoi/atof: pulled in transitively by libstdc++ but not by libc++, so the native
+// (host clang) test build fails without it.
+#include <cstdlib>
+
 bool ConfigSerializer::saveSerial(Stream& s) {
   Context context(&s, OP::WRITE);
   _context = &context;  // set the context for structure() call

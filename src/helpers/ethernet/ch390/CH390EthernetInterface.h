@@ -19,6 +19,7 @@ class CH390EthernetInterface : public SerialEthernetInterface {
     }
     
     bool begin();
+    bool setHostname(const char* hostname) override;
     void loop() override;
 
     // BaseSerialInterface methods
