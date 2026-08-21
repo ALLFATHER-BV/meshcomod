@@ -612,6 +612,11 @@ void loop() {
       WiFi.disconnect(true);
       delay(50);
       WiFi.mode(WIFI_OFF);
+      /* Same hazard as the escalation path: WIFI_OFF invalidates the listener
+       * sockets, and startTcpServer() would no-op on the stale _tcp_started flag
+       * when the user turns the radio back on. */
+      serial_interface.stopTcpServer();
+      serial_interface.enableTcp();
     }
     wifi_started = false;
     // Deliberate downtime is not a dead link. Clear the counters so re-enabling the radio
@@ -736,6 +741,15 @@ void loop() {
             delay(200);
             WiFi.mode(WIFI_STA);
             delay(100);
+            /* WIFI_OFF destroys the netif, which invalidates the sockets the TCP and
+             * WebSocket listeners are bound to. They were started once in setup(), and
+             * startTcpServer() is idempotent on _tcp_started, so without clearing that
+             * flag it no-ops forever and the companion link stays dead while the node
+             * itself runs on happily. stopTcpServer() also clears _tcp_enabled, so
+             * re-enable it and let the existing per-loop startTcpServer() re-arm once
+             * the link is back. */
+            serial_interface.stopTcpServer();
+            serial_interface.enableTcp();
           }
           WiFi.begin(ssid, pwd[0] ? pwd : nullptr);
         }

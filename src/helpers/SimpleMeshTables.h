@@ -52,6 +52,16 @@ public:
   void markSeen(const mesh::Packet* packet) override {
     uint8_t hash[MAX_HASH_SIZE];
     packet->calculatePacketHash(hash);
+
+    // Idempotent, as the single hasSeen() this replaced was: it inserted only when
+    // the hash was absent. markSeen() inserting unconditionally lets repeat sends of
+    // one packet occupy several slots of a fixed ring, which shortens the window and
+    // lets a late echo of our own flood read as new traffic.
+    const uint8_t* sp = _hashes;
+    for (int i = 0; i < MAX_PACKET_HASHES; i++, sp += MAX_HASH_SIZE) {
+      if (memcmp(hash, sp, MAX_HASH_SIZE) == 0) return;   // already recorded
+    }
+
     memcpy(&_hashes[_next_idx * MAX_HASH_SIZE], hash, MAX_HASH_SIZE);
     _next_idx = (_next_idx + 1) % MAX_PACKET_HASHES;
   }
