@@ -25,7 +25,7 @@ extern "C" void set_boot_phase(int phase) {
 
 #ifdef DISPLAY_CLASS
 #include "UITask.h"
-static UITask ui_task(display);
+static UITask ui_task(board, display);
 #endif
 
 #ifndef TCP_PORT
