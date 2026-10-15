@@ -1048,6 +1048,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#view-or-change-the-lora-fem-transmit-path-gain-state-on-supported-boards" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        View or change the LoRa FEM transmit-path gain state on supported boards
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2156,6 +2167,33 @@
   
   
     <li class="md-nav__item">
+      <a href="../radio_presets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Radio Presets
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../stats_binary_frames/" class="md-nav__link">
         
   
@@ -2689,6 +2727,17 @@
     <span class="md-ellipsis">
       
         View or change the LoRa FEM receive-path gain state on supported boards
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#view-or-change-the-lora-fem-transmit-path-gain-state-on-supported-boards" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        View or change the LoRa FEM transmit-path gain state on supported boards
       
     </span>
   </a>
@@ -3711,7 +3760,7 @@
 - <code>sf</code>: Spreading factor (5-12)
 - <code>cr</code>: Coding rate (5-8)</p>
 <p><strong>Set by build flag:</strong> <code>LORA_FREQ</code>, <code>LORA_BW</code>, <code>LORA_SF</code>, <code>LORA_CR</code></p>
-<p><strong>Default:</strong> <code>869.525,250,11,5</code></p>
+<p><strong>Default:</strong> <code>869.618,62.5,8,5</code></p>
 <p><strong>Note:</strong> Requires reboot to apply</p>
 <hr />
 <h4 id="view-or-change-this-nodes-transmit-power">View or change this node's transmit power</h4>
@@ -3741,7 +3790,7 @@
 - <code>set freq &lt;frequency&gt;</code></p>
 <p><strong>Parameters:</strong>
 - <code>frequency</code>: Frequency in MHz</p>
-<p><strong>Default:</strong> <code>869.525</code></p>
+<p><strong>Default:</strong> <code>869.618</code></p>
 <p><strong>Note:</strong> Requires reboot to apply
 <strong>Serial Only:</strong> <code>set freq &lt;frequency&gt;</code></p>
 <hr />
@@ -3763,6 +3812,18 @@
 <p><strong>Notes:</strong>
 - This controls the external LoRa FEM receive-path LNA where the board supports it.
 - This is separate from <code>radio.rxgain</code>, which controls the radio chip receive gain mode.</p>
+<hr />
+<h4 id="view-or-change-the-lora-fem-transmit-path-gain-state-on-supported-boards">View or change the LoRa FEM transmit-path gain state on supported boards</h4>
+<p><strong>Usage:</strong>
+- <code>get radio.fem.txgain</code>
+- <code>set radio.fem.txgain &lt;state&gt;</code></p>
+<p><strong>Parameters:</strong>
+- <code>state</code>: <code>on</code>|<code>off</code></p>
+<p><strong>Notes:</strong>
+- This controls a software-selectable external LoRa FEM transmit gain where the board supports it.
+- On Station G3, remove the PA PL1 jumper to allow software control. <code>on</code> selects PA PL1 high/short and <code>off</code> selects PA PL1 low/open. The PA PL2 hardware jumper determines whether this switches between power levels 1/3 or 2/4.
+- Select an operating level and SX1262 transmit power that comply with local RF limits and the Station G3 power-supply requirements.
+- The setting is saved immediately, but on Station G3 the level is applied to the hardware at the start of the next transmit, so that the PA supply rail is never re-targeted while the PA is being driven. <code>get</code> reports the configured state, which may lead the hardware until the node next transmits.</p>
 <hr />
 <h3 id="system">System</h3>
 <h4 id="view-or-change-this-nodes-name">View or change this node's name</h4>
@@ -3914,7 +3975,7 @@
 - <code>set direct.txdelay &lt;value&gt;</code></p>
 <p><strong>Parameters:</strong>
 - <code>value</code>: Direct transmit delay factor (0-2)</p>
-<p><strong>Default:</strong> <code>0.2</code></p>
+<p><strong>Default:</strong> <code>0.3</code> (Repeater) - <code>0.2</code> (Room Server, Sensor)</p>
 <p><strong>Note:</strong> Same collision-avoidance random window as <code>txdelay</code>, but applied to direct (non-flood, routed) traffic. The default is lower because direct packets are addressed to a specific next hop, so far fewer nodes compete to retransmit them.</p>
 <hr />
 <h4 id="experimental-view-or-change-the-processing-delay-for-received-traffic">[Experimental] View or change the processing delay for received traffic</h4>
@@ -3980,7 +4041,7 @@
 - <code>get agc.reset.interval</code>
 - <code>set agc.reset.interval &lt;value&gt;</code></p>
 <p><strong>Parameters:</strong>
-- <code>value</code>: Interval in seconds rounded down to a multiple of 4 (17 becomes 16). 0 to disable.</p>
+- <code>value</code>: Interval in seconds, 0-1020, rounded down to a multiple of 4 (17 becomes 16). 0 to disable.</p>
 <p><strong>Default:</strong> <code>0.0</code></p>
 <hr />
 <h4 id="enable-or-disable-multi-acks-support">Enable or disable Multi-Acks support</h4>
@@ -3997,7 +4058,7 @@
 - <code>set flood.advert.interval &lt;hours&gt;</code></p>
 <p><strong>Parameters:</strong>
 - <code>hours</code>: Interval in hours (3-168)</p>
-<p><strong>Default:</strong> <code>12</code> (Repeater) - <code>0</code> (Sensor)</p>
+<p><strong>Default:</strong> <code>47</code> (Repeater, Room Server) - <code>0</code>, disabled (Sensor)</p>
 <hr />
 <h4 id="view-or-change-the-zero-hop-advert-interval">View or change the zero-hop advert interval</h4>
 <p><strong>Usage:</strong>
@@ -4005,7 +4066,11 @@
 - <code>set advert.interval &lt;minutes&gt;</code></p>
 <p><strong>Parameters:</strong>
 - <code>minutes</code>: Interval in minutes rounded down to the nearest multiple of 2 (61 becomes 60) (60-240)</p>
-<p><strong>Default:</strong> <code>0</code></p>
+<p><strong>Default:</strong> <code>2</code> on a factory-fresh node, then <code>0</code> (disabled) once configured.</p>
+<p><strong>Note:</strong> A new install ships with a 2 minute zero-hop advert interval. Saving
+any setting resets an interval below the 60 minute minimum to <code>0</code>, on the
+assumption that the node has now been deliberately configured. To keep zero-hop
+adverts running, set an explicit value in the 60-240 range.</p>
 <hr />
 <h4 id="limit-the-number-of-hops-for-a-flood-message">Limit the number of hops for a flood message</h4>
 <p><strong>Usage:</strong>
