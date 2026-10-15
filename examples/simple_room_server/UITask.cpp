@@ -89,7 +89,7 @@ static void render_room_mt_boot_splash(DisplayDriver &display) {
   char ver_info[12];
   room_mt_splash_version_buf(ver_info, FIRMWARE_VERSION);
 
-  display.setColor(DisplayDriver::LIGHT);
+  display.setColor(UIColor::primary_txt);
   display.setTextSize(2);
   display.drawTextCentered(display.width() / 2, 4, "meshcomod");
 
@@ -104,11 +104,11 @@ static void render_room_mt_radio(DisplayDriver &display, NodePrefs *prefs) {
   char tmp[80];
   display.setCursor(0, 0);
   display.setTextSize(1);
-  display.setColor(DisplayDriver::GREEN);
+  display.setColor(UIColor::primary_txt);
   display.print(prefs->node_name);
 
   display.setCursor(0, 20);
-  display.setColor(DisplayDriver::YELLOW);
+  display.setColor(UIColor::warning_txt);
   snprintf(tmp, sizeof(tmp), "FREQ: %06.3f SF%d", prefs->freq, prefs->sf);
   display.print(tmp);
 
@@ -121,24 +121,24 @@ static void render_room_mt_network(DisplayDriver &display) {
   char tmp[80];
   const int foot_y = display.height() - 11;
 
-  display.setColor(DisplayDriver::BLUE);
+  display.setColor(UIColor::corp_blue);
   display.setTextSize(1);
   int y = 10;
   display.drawTextCentered(display.width() / 2, y, "Network (TCP)");
   y += 12;
 
   if (!wifiConfigGetRadioEnabled()) {
-    display.setColor(DisplayDriver::RED);
+    display.setColor(UIColor::warning_txt);
     display.drawTextCentered(display.width() / 2, y, "WiFi radio off");
-    display.setColor(DisplayDriver::LIGHT);
+    display.setColor(UIColor::primary_txt);
     display.drawTextCentered(display.width() / 2, foot_y, "USB: set wifi.radio 1");
     return;
   }
 
   if (!serial_interface.isTcpEnabled()) {
-    display.setColor(DisplayDriver::RED);
+    display.setColor(UIColor::warning_txt);
     display.drawTextCentered(display.width() / 2, y, "TCP/WS off");
-    display.setColor(DisplayDriver::LIGHT);
+    display.setColor(UIColor::primary_txt);
     display.drawTextCentered(display.width() / 2, foot_y, "ON: long press");
     return;
   }
@@ -153,24 +153,24 @@ static void render_room_mt_network(DisplayDriver &display) {
   if (WiFi.status() == WL_CONNECTED) {
     IPAddress ip = WiFi.localIP();
     if (ip[0] != 0 || ip[1] != 0 || ip[2] != 0 || ip[3] != 0) {
-      display.setColor(DisplayDriver::LIGHT);
+      display.setColor(UIColor::primary_txt);
       snprintf(tmp, sizeof(tmp), "IP: %d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
       display.drawTextCentered(display.width() / 2, y, tmp);
       y += 10;
       snprintf(tmp, sizeof(tmp), "TCP:%d WS:%d", (int)TCP_PORT, (int)WS_PORT);
       display.drawTextCentered(display.width() / 2, y, tmp);
       y += 10;
-      display.setColor(DisplayDriver::GREEN);
+      display.setColor(UIColor::primary_txt);
       snprintf(tmp, sizeof(tmp), "%.32s", WiFi.SSID().c_str());
       display.drawTextCentered(display.width() / 2, y, tmp);
     } else {
-      display.setColor(DisplayDriver::RED);
+      display.setColor(UIColor::warning_txt);
       display.drawTextCentered(display.width() / 2, y, "WiFi connecting...");
     }
   } else {
     String ssid = WiFi.SSID();
     wl_status_t ws = WiFi.status();
-    display.setColor(DisplayDriver::RED);
+    display.setColor(UIColor::warning_txt);
     if (!have_runtime && !compile_cred) {
       display.drawTextCentered(display.width() / 2, y, "WiFi not configured");
     } else if (ssid.length() == 0 || ws == WL_NO_SSID_AVAIL) {
@@ -182,7 +182,7 @@ static void render_room_mt_network(DisplayDriver &display) {
     display.drawTextCentered(display.width() / 2, y, "IP: 0.0.0.0");
   }
 
-  display.setColor(DisplayDriver::LIGHT);
+  display.setColor(UIColor::primary_txt);
   display.drawTextCentered(display.width() / 2, foot_y, "off: long press");
 }
 
@@ -190,7 +190,7 @@ static void render_room_mt_ble(DisplayDriver &display) {
   char tmp[80];
   const int foot_y = display.height() - 11;
 
-  display.setColor(DisplayDriver::BLUE);
+  display.setColor(UIColor::corp_blue);
   display.setTextSize(1);
   int y = 10;
   display.drawTextCentered(display.width() / 2, y, "Bluetooth (BLE)");
@@ -199,7 +199,7 @@ static void render_room_mt_ble(DisplayDriver &display) {
 #ifdef BLE_PIN_CODE
   if (serial_interface.hasBleCapability()) {
     if (serial_interface.isBleEnabled()) {
-      display.setColor(DisplayDriver::GREEN);
+      display.setColor(UIColor::primary_txt);
       snprintf(tmp, sizeof(tmp), "Pin: %lu", (unsigned long)(uint32_t)BLE_PIN_CODE);
       display.drawTextCentered(display.width() / 2, y, tmp);
       y += 11;
@@ -213,19 +213,19 @@ static void render_room_mt_ble(DisplayDriver &display) {
         display.drawTextCentered(display.width() / 2, y, "Waiting for device");
       }
     } else {
-      display.setColor(DisplayDriver::RED);
+      display.setColor(UIColor::warning_txt);
       display.drawTextCentered(display.width() / 2, y, "BLE disabled");
     }
   } else {
-    display.setColor(DisplayDriver::RED);
+    display.setColor(UIColor::warning_txt);
     display.drawTextCentered(display.width() / 2, y, "BLE n/a");
   }
 #else
-  display.setColor(DisplayDriver::RED);
+  display.setColor(UIColor::warning_txt);
   display.drawTextCentered(display.width() / 2, y, "BLE n/a");
 #endif
 
-  display.setColor(DisplayDriver::LIGHT);
+  display.setColor(UIColor::primary_txt);
 #ifdef BLE_PIN_CODE
   if (serial_interface.hasBleCapability()) {
     display.drawTextCentered(display.width() / 2, foot_y,
@@ -238,30 +238,30 @@ static void render_room_mt_ws(DisplayDriver &display) {
   char tmp[80];
   const int foot_y = display.height() - 11;
 
-  display.setColor(DisplayDriver::BLUE);
+  display.setColor(UIColor::corp_blue);
   display.setTextSize(1);
   int y = 10;
   display.drawTextCentered(display.width() / 2, y, "WebSocket (WS)");
   y += 12;
 
   if (!serial_interface.isTcpEnabled()) {
-    display.setColor(DisplayDriver::RED);
+    display.setColor(UIColor::warning_txt);
     display.drawTextCentered(display.width() / 2, y, "Off with TCP");
-    display.setColor(DisplayDriver::LIGHT);
+    display.setColor(UIColor::primary_txt);
     display.drawTextCentered(display.width() / 2, foot_y, "ON: Network page");
     return;
   }
 
-  display.setColor(DisplayDriver::GREEN);
+  display.setColor(UIColor::primary_txt);
   snprintf(tmp, sizeof(tmp), "Port %d", (int)WS_PORT);
   display.drawTextCentered(display.width() / 2, y, tmp);
   y += 11;
 
   if (WiFi.status() != WL_CONNECTED) {
-    display.setColor(DisplayDriver::YELLOW);
+    display.setColor(UIColor::warning_txt);
     display.drawTextCentered(display.width() / 2, y, "Waiting WiFi");
     y += 11;
-    display.setColor(DisplayDriver::LIGHT);
+    display.setColor(UIColor::primary_txt);
     display.drawTextCentered(display.width() / 2, y, "WS off until IP");
     display.drawTextCentered(display.width() / 2, foot_y, "mirrors TCP on/off");
     return;
@@ -269,15 +269,15 @@ static void render_room_mt_ws(DisplayDriver &display) {
 
   IPAddress ip = WiFi.localIP();
   if (ip[0] == 0 && ip[1] == 0 && ip[2] == 0 && ip[3] == 0) {
-    display.setColor(DisplayDriver::YELLOW);
+    display.setColor(UIColor::warning_txt);
     display.drawTextCentered(display.width() / 2, y, "Waiting IP...");
     return;
   }
 
-  display.setColor(DisplayDriver::GREEN);
+  display.setColor(UIColor::primary_txt);
   snprintf(tmp, sizeof(tmp), "ws://%d.%d.%d.%d:%d", ip[0], ip[1], ip[2], ip[3], (int)WS_PORT);
   display.drawTextCentered(display.width() / 2, y, tmp);
-  display.setColor(DisplayDriver::LIGHT);
+  display.setColor(UIColor::primary_txt);
   display.drawTextCentered(display.width() / 2, foot_y, "mirrors TCP on/off");
 }
 
@@ -296,26 +296,26 @@ static void draw_room_page_dots(DisplayDriver &display) {
 
 static void render_room_http_ota_screen(DisplayDriver &display) {
   display.setTextSize(1);
-  display.setColor(DisplayDriver::GREEN);
+  display.setColor(UIColor::primary_txt);
   display.drawTextCentered(display.width() / 2, 6, "WiFi OTA");
-  display.setColor(DisplayDriver::YELLOW);
+  display.setColor(UIColor::warning_txt);
   display.drawTextCentered(display.width() / 2, 20, g_meshcore_http_ota_display_line);
   int bw = display.width() - 8;
   int bx = 4;
   int by = 34;
-  display.setColor(DisplayDriver::DARK);
+  display.setColor(UIColor::window_bkg);
   display.fillRect(bx, by, bw, 10);
-  display.setColor(DisplayDriver::LIGHT);
+  display.setColor(UIColor::primary_txt);
   display.drawRect(bx, by, bw, 10);
   int pct = (int)(unsigned)g_meshcore_http_ota_display_pct;
   if (pct >= 0 && pct <= 100) {
     int fill = (bw - 2) * pct / 100;
     if (fill > 0) {
-      display.setColor(DisplayDriver::GREEN);
+      display.setColor(UIColor::primary_txt);
       display.fillRect(bx + 1, by + 1, fill, 8);
     }
   } else {
-    display.setColor(DisplayDriver::GREEN);
+    display.setColor(UIColor::primary_txt);
     int seg = (bw - 2) / 4;
     if (seg > 2) {
       uint32_t t = millis() / 400;
@@ -323,7 +323,7 @@ static void render_room_http_ota_screen(DisplayDriver &display) {
       display.fillRect(bx + 1 + phase * seg, by + 2, seg - 2, 6);
     }
   }
-  display.setColor(DisplayDriver::LIGHT);
+  display.setColor(UIColor::primary_txt);
   display.drawTextCentered(display.width() / 2, 50, "do not power off");
 }
 
@@ -382,18 +382,6 @@ void UITask::begin(NodePrefs* node_prefs, const char* build_date, const char* fi
   _auto_off = millis() + AUTO_OFF_MILLIS;
   _node_prefs = node_prefs;
   _display->turnOn();
-
-  // strip off dash and commit hash by changing dash to null terminator
-  // e.g: v1.2.3-abcdef -> v1.2.3
-  char *version = strdup(firmware_version);
-  char *dash = strchr(version, '-');
-  if(dash){
-    *dash = 0;
-  }
-
-  // v1.2.3 (1 Jan 2025)
-  snprintf(_version_info, sizeof(_version_info), "%s (%s)", version, build_date);
-  free(version);
 }
 
 void UITask::renderCurrScreen() {
@@ -423,9 +411,9 @@ void UITask::renderCurrScreen() {
     int p = _display->height() / 32;
     if (p < 2) p = 2;
     _display->setTextSize(1);
-    _display->setColor(DisplayDriver::DARK);
+    _display->setColor(UIColor::popup_bkg);
     _display->fillRect(p, y, _display->width() - p * 2, y);
-    _display->setColor(DisplayDriver::LIGHT);
+    _display->setColor(UIColor::popup_txt);
     _display->drawRect(p, y, _display->width() - p * 2, y);
     _display->drawTextCentered(_display->width() / 2, y + p * 3, s_room_alert);
   }

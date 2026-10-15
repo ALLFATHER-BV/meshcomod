@@ -90,7 +90,7 @@ static void render_repeater_tcp_boot_splash(DisplayDriver &display) {
   char ver_info[12];
   repeater_tcp_splash_version_buf(ver_info, FIRMWARE_VERSION);
 
-  display.setColor(DisplayDriver::LIGHT);
+  display.setColor(UIColor::primary_txt);
   display.setTextSize(2);
   display.drawTextCentered(display.width() / 2, 4, "meshcomod");
 
@@ -105,11 +105,11 @@ static void render_repeater_tcp_home(DisplayDriver &display, NodePrefs *prefs) {
   char tmp[80];
   display.setCursor(0, 0);
   display.setTextSize(1);
-  display.setColor(DisplayDriver::GREEN);
+  display.setColor(UIColor::primary_txt);
   display.print(prefs->node_name);
 
   display.setCursor(0, 20);
-  display.setColor(DisplayDriver::YELLOW);
+  display.setColor(UIColor::warning_txt);
   sprintf(tmp, "FREQ: %06.3f SF%d", prefs->freq, prefs->sf);
   display.print(tmp);
 
@@ -120,17 +120,17 @@ static void render_repeater_tcp_home(DisplayDriver &display, NodePrefs *prefs) {
 
 static void render_repeater_tcp_network(DisplayDriver &display) {
   char tmp[80];
-  display.setColor(DisplayDriver::BLUE);
+  display.setColor(UIColor::corp_blue);
   display.setTextSize(1);
   int y = 10;
   display.drawTextCentered(display.width() / 2, y, "Network");
   y += 12;
 
   if (!repeater_transport_enabled) {
-    display.setColor(DisplayDriver::RED);
+    display.setColor(UIColor::warning_txt);
     display.drawTextCentered(display.width() / 2, y, "TCP/WS off");
     y = 64 - 11;
-    display.setColor(DisplayDriver::LIGHT);
+    display.setColor(UIColor::primary_txt);
     display.drawTextCentered(display.width() / 2, y, "ON: long press");
     return;
   }
@@ -145,24 +145,24 @@ static void render_repeater_tcp_network(DisplayDriver &display) {
   if (WiFi.status() == WL_CONNECTED) {
     IPAddress ip = WiFi.localIP();
     if (ip[0] != 0 || ip[1] != 0 || ip[2] != 0 || ip[3] != 0) {
-      display.setColor(DisplayDriver::LIGHT);
+      display.setColor(UIColor::primary_txt);
       snprintf(tmp, sizeof(tmp), "IP: %d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
       display.drawTextCentered(display.width() / 2, y, tmp);
       y += 10;
       snprintf(tmp, sizeof(tmp), "TCP:%d WS:%d", (int)TCP_PORT, (int)WS_PORT);
       display.drawTextCentered(display.width() / 2, y, tmp);
       y += 10;
-      display.setColor(DisplayDriver::GREEN);
+      display.setColor(UIColor::primary_txt);
       snprintf(tmp, sizeof(tmp), "%.32s", WiFi.SSID().c_str());
       display.drawTextCentered(display.width() / 2, y, tmp);
     } else {
-      display.setColor(DisplayDriver::RED);
+      display.setColor(UIColor::warning_txt);
       display.drawTextCentered(display.width() / 2, y, "WiFi connecting...");
     }
   } else {
     String ssid = WiFi.SSID();
     wl_status_t ws = WiFi.status();
-    display.setColor(DisplayDriver::RED);
+    display.setColor(UIColor::warning_txt);
     if (!have_runtime && !compile_cred) {
       display.drawTextCentered(display.width() / 2, y, "WiFi not configured");
     } else if (ssid.length() == 0 || ws == WL_NO_SSID_AVAIL) {
@@ -175,63 +175,63 @@ static void render_repeater_tcp_network(DisplayDriver &display) {
   }
 
   y = 64 - 11;
-  display.setColor(DisplayDriver::LIGHT);
+  display.setColor(UIColor::primary_txt);
   display.drawTextCentered(display.width() / 2, y, "off: long press");
 }
 
 static void render_repeater_tcp_ws(DisplayDriver &display) {
   char tmp[80];
-  display.setColor(DisplayDriver::BLUE);
+  display.setColor(UIColor::corp_blue);
   display.setTextSize(1);
   int y = 10;
   display.drawTextCentered(display.width() / 2, y, "WebSocket (WS)");
   y += 12;
 
   if (!repeater_transport_enabled) {
-    display.setColor(DisplayDriver::RED);
+    display.setColor(UIColor::warning_txt);
     display.drawTextCentered(display.width() / 2, y, "Off with TCP");
     y += 11;
-    display.setColor(DisplayDriver::LIGHT);
+    display.setColor(UIColor::primary_txt);
     display.drawTextCentered(display.width() / 2, y, "ON: Network page");
     y = 64 - 11;
     display.drawTextCentered(display.width() / 2, y, "long press there");
     return;
   }
 
-  display.setColor(DisplayDriver::GREEN);
+  display.setColor(UIColor::primary_txt);
   snprintf(tmp, sizeof(tmp), "Port %d", (int)WS_PORT);
   display.drawTextCentered(display.width() / 2, y, tmp);
   y += 11;
 
   if (WiFi.status() != WL_CONNECTED) {
-    display.setColor(DisplayDriver::YELLOW);
+    display.setColor(UIColor::warning_txt);
     display.drawTextCentered(display.width() / 2, y, "Waiting WiFi");
     y += 11;
-    display.setColor(DisplayDriver::LIGHT);
+    display.setColor(UIColor::primary_txt);
     display.drawTextCentered(display.width() / 2, y, "WS off until IP");
     return;
   }
 
   IPAddress ip = WiFi.localIP();
   if (ip[0] == 0 && ip[1] == 0 && ip[2] == 0 && ip[3] == 0) {
-    display.setColor(DisplayDriver::YELLOW);
+    display.setColor(UIColor::warning_txt);
     display.drawTextCentered(display.width() / 2, y, "Waiting IP...");
     return;
   }
 
-  display.setColor(DisplayDriver::GREEN);
+  display.setColor(UIColor::primary_txt);
   snprintf(tmp, sizeof(tmp), "ws://%d.%d.%d.%d:%d", ip[0], ip[1], ip[2], ip[3], (int)WS_PORT);
   display.drawTextCentered(display.width() / 2, y, tmp);
   y = 64 - 11;
-  display.setColor(DisplayDriver::LIGHT);
+  display.setColor(UIColor::primary_txt);
   display.drawTextCentered(display.width() / 2, y, "mirrors TCP on/off");
 }
 
 static void render_repeater_tcp_advert(DisplayDriver &display) {
-  display.setColor(DisplayDriver::GREEN);
+  display.setColor(UIColor::primary_txt);
   display.setTextSize(1);
   display.drawTextCentered(display.width() / 2, 20, "Flood advert");
-  display.setColor(DisplayDriver::LIGHT);
+  display.setColor(UIColor::primary_txt);
   display.drawTextCentered(display.width() / 2, 34, "long press: send");
   display.drawTextCentered(display.width() / 2, 48, "click: next page");
 }
@@ -239,7 +239,7 @@ static void render_repeater_tcp_advert(DisplayDriver &display) {
 // Keep this page byte-for-byte aligned with companion `ui-new` Resources tab.
 static void render_repeater_tcp_resources(DisplayDriver &display) {
   char tmp[80];
-  display.setColor(DisplayDriver::LIGHT);
+  display.setColor(UIColor::primary_txt);
   display.setTextSize(1);
   int y = 20;
   snprintf(tmp, sizeof(tmp), "CPU %u MHz", (unsigned)ESP.getCpuFreqMHz());
@@ -298,26 +298,26 @@ static void draw_page_dots(DisplayDriver &display) {
 
 static void render_http_ota_screen(DisplayDriver &display) {
   display.setTextSize(1);
-  display.setColor(DisplayDriver::GREEN);
+  display.setColor(UIColor::primary_txt);
   display.drawTextCentered(display.width() / 2, 6, "WiFi OTA");
-  display.setColor(DisplayDriver::YELLOW);
+  display.setColor(UIColor::warning_txt);
   display.drawTextCentered(display.width() / 2, 20, g_meshcore_http_ota_display_line);
   int bw = display.width() - 8;
   int bx = 4;
   int by = 34;
-  display.setColor(DisplayDriver::DARK);
+  display.setColor(UIColor::window_bkg);
   display.fillRect(bx, by, bw, 10);
-  display.setColor(DisplayDriver::LIGHT);
+  display.setColor(UIColor::primary_txt);
   display.drawRect(bx, by, bw, 10);
   int pct = (int)(unsigned)g_meshcore_http_ota_display_pct;
   if (pct >= 0 && pct <= 100) {
     int fill = (bw - 2) * pct / 100;
     if (fill > 0) {
-      display.setColor(DisplayDriver::GREEN);
+      display.setColor(UIColor::primary_txt);
       display.fillRect(bx + 1, by + 1, fill, 8);
     }
   } else {
-    display.setColor(DisplayDriver::GREEN);
+    display.setColor(UIColor::primary_txt);
     int seg = (bw - 2) / 4;
     if (seg > 2) {
       uint32_t t = millis() / 400;
@@ -325,7 +325,7 @@ static void render_http_ota_screen(DisplayDriver &display) {
       display.fillRect(bx + 1 + phase * seg, by + 2, seg - 2, 6);
     }
   }
-  display.setColor(DisplayDriver::LIGHT);
+  display.setColor(UIColor::primary_txt);
   display.drawTextCentered(display.width() / 2, 50, "do not power off");
 }
 
@@ -421,9 +421,9 @@ void UITask::renderCurrScreen() {
     int y = _display->height() / 3;
     int p = _display->height() / 32;
     _display->setTextSize(1);
-    _display->setColor(DisplayDriver::DARK);
+    _display->setColor(UIColor::popup_bkg);
     _display->fillRect(p, y, _display->width() - p * 2, y);
-    _display->setColor(DisplayDriver::LIGHT);
+    _display->setColor(UIColor::popup_txt);
     _display->drawRect(p, y, _display->width() - p * 2, y);
     _display->drawTextCentered(_display->width() / 2, y + p * 3, s_alert);
   }
@@ -431,11 +431,11 @@ void UITask::renderCurrScreen() {
 #endif
   char tmp[80];
   if (millis() < BOOT_SCREEN_MILLIS) {
-    _display->setColor(DisplayDriver::BLUE);
+    _display->setColor(UIColor::corp_blue);
     int logoWidth = 128;
     _display->drawXbm((_display->width() - logoWidth) / 2, 3, meshcore_logo, logoWidth, 13);
 
-    _display->setColor(DisplayDriver::LIGHT);
+    _display->setColor(UIColor::primary_txt);
     _display->setTextSize(1);
     uint16_t versionWidth = _display->getTextWidth(_version_info);
     _display->setCursor((_display->width() - versionWidth) / 2, 22);
