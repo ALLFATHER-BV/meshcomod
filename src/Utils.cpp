@@ -281,15 +281,18 @@ int Utils::encryptThenMAC(const uint8_t* shared_secret, uint8_t* dest, const uin
 int Utils::MACThenDecrypt(const uint8_t* shared_secret, uint8_t* dest, const uint8_t* src, int src_len) {
   if (src_len <= CIPHER_MAC_SIZE) return 0;  // invalid src bytes
 
+  int enc_len = src_len - CIPHER_MAC_SIZE;
+  if (enc_len % CIPHER_BLOCK_SIZE != 0) return 0;  // reject non-block-aligned ciphertext
+
   uint8_t hmac[CIPHER_MAC_SIZE];
   {
     SHA256 sha;
     sha.resetHMAC(shared_secret, PUB_KEY_SIZE);
-    sha.update(src + CIPHER_MAC_SIZE, src_len - CIPHER_MAC_SIZE);
+    sha.update(src + CIPHER_MAC_SIZE, enc_len);
     sha.finalizeHMAC(shared_secret, PUB_KEY_SIZE, hmac, CIPHER_MAC_SIZE);
   }
   if (memcmp(hmac, src, CIPHER_MAC_SIZE) == 0) {
-    return decrypt(shared_secret, dest, src + CIPHER_MAC_SIZE, src_len - CIPHER_MAC_SIZE);
+    return decrypt(shared_secret, dest, src + CIPHER_MAC_SIZE, enc_len);
   }
   return 0; // invalid HMAC
 }
@@ -324,6 +327,15 @@ static uint8_t hexVal(char c) {
 
 bool Utils::isHexChar(char c) {
   return c == '0' || hexVal(c) > 0;
+}
+
+bool Utils::isZeroes(const uint8_t* buf, size_t len) {
+  while (len > 0) {
+    if (*buf != 0) return false;
+    buf++;
+    len--;
+  }
+  return true;
 }
 
 bool Utils::fromHex(uint8_t* dest, int dest_size, const char *src_hex) {

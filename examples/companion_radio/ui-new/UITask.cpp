@@ -196,11 +196,22 @@ class HomeScreen : public UIScreen {
       display.fillRect(iconX + 1, iconY + 1, fillWidth, iconHeight - 2);
     }
 
-    // show muted icon if buzzer is muted
+    // while charging, show a bolt (or a plug once full) just left of the battery (from 1.18)
+    bool charging = board.isExternalPowered();
+    if (charging) {
+      // There's no charge-complete signal on most boards, so "full" is a high
+      // voltage band rather than an exact 100% (a real pack rarely reads 4.2V).
+      const int BATT_FULL_PCT = 95;
+      const uint8_t* symbol = (batteryPercentage >= BATT_FULL_PCT) ? plug_icon : charging_icon;
+      display.setColor(UIColor::title_txt);
+      display.drawXbm(iconX - 9, 0, symbol, 8, 8);
+    }
+
+    // show muted icon if buzzer is muted (one slot further left while charging)
 #ifdef PIN_BUZZER
     if (_task->isBuzzerQuiet()) {
       display.setColor(UIColor::warning_txt);
-      display.drawXbm(iconX - 9, 0, muted_icon, 8, 8);
+      display.drawXbm(iconX - (charging ? 18 : 9), 0, muted_icon, 8, 8);
     }
 #endif
   }
