@@ -72,6 +72,13 @@ public:
     (void)is_flood; (void)snr_q4; (void)rssi;
     newMsgFromPub(path_len, from_pub, from_name, text, msgcount);
   }
+
+  // 1.18 names for the same thing. Upstream's UI calls these through its interface manager;
+  // here they map onto meshcomod's explicit BLE controls, so shared UI code compiles and
+  // toggles the right transport.
+  bool isBluetoothEnabled() const { return _serial->hasBleCapability() && _serial->isBleEnabled(); }
+  void enableBluetooth() { _serial->enableBle(); }
+  void disableBluetooth() { _serial->disableBle(); }
   virtual void notify(UIEventType t = UIEventType::none) = 0;
   virtual void appendDiag(const char* message) { (void)message; }
   /** Notify UI of an advert reception. `is_new=true` means the contact is NOT in

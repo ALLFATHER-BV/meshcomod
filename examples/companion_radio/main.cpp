@@ -109,7 +109,7 @@ static void toHostLabel(const char* name, size_t name_len, char* out, size_t out
       #define WS_PORT 8765
     #endif
   #elif defined(WIFI_SSID)
-    #include <helpers/esp32/SerialWifiInterface.h>
+    #include <helpers/wifi/SerialWifiInterface.h>
     SerialWifiInterface serial_interface;
     #ifndef TCP_PORT
       #define TCP_PORT 5000
@@ -828,6 +828,9 @@ void loop() {
 #endif
   sensors.loop();
   rtc_clock.tick();
+  // Variant hook from 1.18. A no-op for the boards meshcomod ships, but several boards in
+  // the tree override it (solar, trackers, M1, T1000-E), and upstream's own loop calls it.
+  board.loop();
 
   // (1.16) sleep when there's no pending work — nRF power saving
   if (!the_mesh.hasPendingWork()) {
