@@ -38,6 +38,22 @@
     #endif
 #endif
 
+#ifndef GPS_STANDBY
+    #ifdef PIN_GPS_STANDBY
+        #define GPS_STANDBY PIN_GPS_STANDBY
+    #else
+        #define GPS_STANDBY (-1)
+    #endif
+#endif
+
+#ifndef GPS_STANDBY_ACTIVE
+    #ifdef PIN_GPS_STANDBY_ACTIVE
+        #define GPS_STANDBY_ACTIVE PIN_GPS_STANDBY_ACTIVE
+    #else
+        #define GPS_STANDBY_ACTIVE LOW
+    #endif
+#endif
+
 class MicroNMEALocationProvider : public LocationProvider {
     char _nmeaBuffer[100];
     MicroNMEA nmea;
@@ -47,6 +63,7 @@ class MicroNMEALocationProvider : public LocationProvider {
     int8_t _claims = 0;
     int _pin_reset;
     int _pin_en;
+    int _pin_standby;
     unsigned long next_check = 0;
     long time_valid = 0;
     unsigned long _last_time_sync = 0;
@@ -89,8 +106,8 @@ class MicroNMEALocationProvider : public LocationProvider {
     }
 
 public :
-    MicroNMEALocationProvider(Stream& ser, mesh::RTCClock* clock = NULL, int pin_reset = GPS_RESET, int pin_en = GPS_EN,RefCountedDigitalPin* peripher_power=NULL) :
-    nmea(_nmeaBuffer, sizeof(_nmeaBuffer)), _clock(clock), _gps_serial(&ser), _peripher_power(peripher_power), _pin_reset(pin_reset), _pin_en(pin_en) {
+    MicroNMEALocationProvider(Stream& ser, mesh::RTCClock* clock = NULL, int pin_reset = GPS_RESET, int pin_en = GPS_EN, RefCountedDigitalPin* peripher_power=NULL, int pin_standby = GPS_STANDBY) :
+    nmea(_nmeaBuffer, sizeof(_nmeaBuffer)), _clock(clock), _gps_serial(&ser), _peripher_power(peripher_power), _pin_reset(pin_reset), _pin_en(pin_en), _pin_standby(pin_standby) {
         if (_pin_reset != -1) {
             pinMode(_pin_reset, OUTPUT);
             digitalWrite(_pin_reset, GPS_RESET_ACTIVE);
@@ -98,6 +115,10 @@ public :
         if (_pin_en != -1) {
             pinMode(_pin_en, OUTPUT);
             digitalWrite(_pin_en, !GPS_EN_ACTIVE);
+        }
+        if (_pin_standby != -1) {
+            pinMode(_pin_standby, OUTPUT);
+            digitalWrite(_pin_standby, GPS_STANDBY_ACTIVE); // start asleep until begin() wakes it
         }
     }
 
@@ -121,6 +142,9 @@ public :
         if (_pin_reset != -1) {
             digitalWrite(_pin_reset, !GPS_RESET_ACTIVE);
         }
+        if (_pin_standby != -1) {
+            digitalWrite(_pin_standby, !GPS_STANDBY_ACTIVE); // force wake
+        }
     }
 
     void reset() override {
@@ -143,6 +167,9 @@ public :
         }
         if (_pin_reset != -1) {
             digitalWrite(_pin_reset, GPS_RESET_ACTIVE);
+        }
+        if (_pin_standby != -1) {
+            digitalWrite(_pin_standby, GPS_STANDBY_ACTIVE); // allow sleep
         }
         release();
     }
