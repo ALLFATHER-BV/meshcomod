@@ -113,7 +113,11 @@ void CommonCLI::loadPrefsInt(FILESYSTEM* fs, const char* filename) {  // Legacy 
     _prefs->tx_delay_factor = constrain(_prefs->tx_delay_factor, 0, 2.0f);
     _prefs->direct_tx_delay_factor = constrain(_prefs->direct_tx_delay_factor, 0, 2.0f);
     _prefs->airtime_factor = constrain(_prefs->airtime_factor, 0, 9.0f);
+#if defined(USE_LR1110)
+    _prefs->freq = constrain(_prefs->freq, 150.0f, 960.0f);
+#else
     _prefs->freq = constrain(_prefs->freq, 150.0f, 2500.0f);
+#endif
     _prefs->bw = constrain(_prefs->bw, 7.8f, 500.0f);
     _prefs->sf = constrain(_prefs->sf, 5, 12);
     _prefs->cr = constrain(_prefs->cr, 5, 8);

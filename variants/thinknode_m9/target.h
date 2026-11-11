@@ -14,10 +14,25 @@
   #include <helpers/ui/MomentaryButton.h>
 #endif
 
+class ThinkNodeM9SensorManager : public EnvironmentSensorManager {
+  bool last_gps_switch_state = false;
+public:
+#if ENV_INCLUDE_GPS
+  ThinkNodeM9SensorManager(LocationProvider &location) : EnvironmentSensorManager(location) {}
+  void start_gps();
+  void stop_gps();
+#else
+  ThinkNodeM9SensorManager() : EnvironmentSensorManager() {}
+#endif
+  bool begin() override;
+  void loop() override;
+  bool setSettingValue(const char* name, const char* value) override;
+};
+
 extern ThinkNodeM9Board board;
 extern WRAPPER_CLASS radio_driver;
 extern AutoDiscoverRTCClock rtc_clock;
-extern EnvironmentSensorManager sensors;
+extern ThinkNodeM9SensorManager sensors;
 
 #ifdef DISPLAY_CLASS
   extern DISPLAY_CLASS display;

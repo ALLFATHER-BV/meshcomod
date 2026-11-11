@@ -3,6 +3,13 @@
 #include "CustomLR1110.h"
 #include "RadioLibWrappers.h"
 #include "LR11x0Reset.h"
+#if defined(ESP32)
+#include <esp_system.h>
+#endif
+
+#ifndef USE_LR1110
+#define USE_LR1110
+#endif
 
 class CustomLR1110Wrapper : public RadioLibWrapper {
 public:
@@ -34,14 +41,37 @@ public:
   }
 
   void onSendFinished() override {
+    radioAcquire();
     RadioLibWrapper::onSendFinished();
     _radio->setPreambleLength(preambleLengthForSF(getSpreadingFactor())); // overcomes weird issues with small and big pkts
+    radioRelease();
   }
 
-  float getLastRSSI() const override { return ((CustomLR1110 *)_radio)->getRSSI(); }
-  float getLastSNR() const override { return ((CustomLR1110 *)_radio)->getSNR(); }
+  float packetScore(float snr, int packet_len) override {
+    int sf = getSpreadingFactor();
+    return packetScoreInt(snr, sf, packet_len);
+  }
 
   uint8_t getSpreadingFactor() const override { return ((CustomLR1110 *)_radio)->getSpreadingFactor(); }
+
+  void powerOff() override {
+    rxQueueEnable(false);
+    radioAcquire();
+    ((CustomLR1110 *)_radio)->sleep(false, 0);
+    radioRelease();
+  }
+
+  // Recover from missed DIO1 rising edges during shared-SPI contention (see RadioLibWrapper::pollRxIfNoIrq).
+  bool pollRxDone() override {
+    return (((CustomLR1110 *)_radio)->getIrqStatus() & RADIOLIB_LR11X0_IRQ_RX_DONE) != 0;
+  }
+
+#if defined(ESP32)
+  // Avoid 248 SPI RSSI mode-switching transactions at boot; use ESP32-S3 hardware TRNG.
+  uint32_t getRngSeed() override {
+    return esp_random() & 0x7FFFFFFFu;
+  }
+#endif
   
   bool setRxBoostedGainMode(bool en) override {
     return ((CustomLR1110 *)_radio)->setRxBoostedGainMode(en) == RADIOLIB_ERR_NONE;

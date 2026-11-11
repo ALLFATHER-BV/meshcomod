@@ -1,7 +1,13 @@
 /*Power*/
 #define VEXT_ENABLE 18
 #define VEXT_ON_VALUE LOW
+#ifndef PIN_PERIPH_POWER
+#define PIN_PERIPH_POWER 18
+#endif
 #define PIN_GPS_EN 11
+#ifndef PIN_GPS_SWITCH
+#define PIN_GPS_SWITCH 11
+#endif
 #define GPS_EN_ACTIVE LOW
 
 /*Wire Interface*/
@@ -10,20 +16,35 @@
 #define I2C_SCL1 21
 #define I2C_SDA1 20
 #define KB_INT 12
+#ifndef PIN_KB_WAKEUP
+#define PIN_KB_WAKEUP 12
+#endif
 // I2C peripheral`
 #define I2C_SCL 6
 #define I2C_SDA 7
 
 /*LED*/
-#define PIN_LED 13
+// Note: GPIO13 is BAT_ADC (PIN_VBAT_READ), not a status LED.
 #define KB_LED 46
+#ifndef PIN_KEY_LED
+#define PIN_KEY_LED 46
+#endif
 
 /*BUZZER*/
 #define PIN_BUZZER 9
+#ifndef THINKNODE_M9_BUZZER_PIN
+#define THINKNODE_M9_BUZZER_PIN 9
+#endif
 
 /*CHARGE_CHECK*/
 #define DONE 8
+#ifndef PIN_CHG_DONE
+#define PIN_CHG_DONE 8
+#endif
 #define EXT_PWR_DETECT 1
+#ifndef PIN_USB_5V_SENSE
+#define PIN_USB_5V_SENSE 1
+#endif
 #define EXT_CHRG_DETECT 1
 #define EXT_CHRG_DETECT_VALUE LOW
 /*GPS*/
@@ -31,7 +52,9 @@
 #define GPS_BAUDRATE 9600
 #define PIN_GPS_RESET 5
 #define PIN_GPS_PPS 4
+#ifndef PIN_GPS_STANDBY
 #define PIN_GPS_STANDBY 10 // An output to wake GPS, low means allow sleep, high means force wake
+#endif
 #define GPS_TX_PIN 3
 #define GPS_RX_PIN 2
 #define GPS_THREAD_INTERVAL 50
@@ -43,11 +66,17 @@
 
 /*SD Card*/
 #define SDCARD_CS 48
+#ifndef PIN_SD_CS
+#define PIN_SD_CS 48
+#endif
 #define SD_SPI_FREQUENCY 80000000U
 
 /*Screen*/
 // #define USE_ST7789 1
 #define ST7789_CS 16
+#ifndef PIN_TFT_CS
+#define PIN_TFT_CS 16
+#endif
 #define ST7789_RS 15
 #define ST7789_TE 19
 #define ST7789_SDA SPI_MOSI // MOSI
@@ -56,6 +85,9 @@
 #define ST7789_MISO SPI_MISO
 #define ST7789_BUSY -1
 #define ST7789_BL 17
+#ifndef PIN_TFT_BL_EN
+#define PIN_TFT_BL_EN 17
+#endif
 #define ST7789_SPI_HOST SPI2_HOST
 #define SPI_FREQUENCY 80000000
 #define SPI_READ_FREQUENCY 16000000
