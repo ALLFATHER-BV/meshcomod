@@ -65,7 +65,7 @@ public:
   void pollRxIfNoIrq();
 
   virtual void setParams(float freq, float bw, uint8_t sf, uint8_t cr) = 0;
-  uint32_t getRngSeed();
+  virtual uint32_t getRngSeed();
   void setTxPower(int8_t dbm);
 
   virtual float getCurrentRSSI() =0;

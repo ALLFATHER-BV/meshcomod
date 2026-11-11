@@ -1,6 +1,9 @@
 #include <Arduino.h>   // needed for PlatformIO
 #include <Mesh.h>
 #include "MyMesh.h"
+#ifdef THINKNODE_M9
+SET_LOOP_TASK_STACK_SIZE(12 * 1024);
+#endif
 #if defined(ESP32_PLATFORM) && defined(HAS_TOUCH_UI)
 #include <Preferences.h>
 #include <esp_system.h>
