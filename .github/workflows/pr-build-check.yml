@@ -28,6 +28,7 @@ jobs:
           # ESP32-S3 (most common platform)
           - Heltec_v3_companion_radio_usb_tcp
           - heltec_v4_companion_radio_usb_tcp
+          - heltec_v4_r8_companion_radio_usb_tcp
           - heltec_v4_tft_companion_radio_usb_tcp_touch
 
     steps:

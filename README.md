@@ -34,6 +34,7 @@ Otherwise this is the same codebase as MeshCore; we sync from upstream and add o
 | Device | MCU | Display | Build env |
 |---|---|---|---|
 | **Heltec WiFi LoRa 32 V4** | ESP32-S3 | 128×64 OLED | `heltec_v4_companion_radio_usb_tcp` |
+| **Heltec WiFi LoRa 32 V4.3 R8** | ESP32-S3R8 (8 MB OPI PSRAM) | 128×64 OLED | `heltec_v4_r8_companion_radio_usb_tcp` |
 | **Heltec WiFi LoRa 32 V3** | ESP32-S3 | 128×64 OLED | `Heltec_v3_companion_radio_usb_tcp` |
 | **Heltec Wireless Paper** | ESP32-S3 | 213×104 e-ink | `Heltec_Wireless_Paper_companion_radio_usb_tcp` |
 | **Seeed Xiao S3 WIO** | ESP32-S3 | optional 128×64 OLED | `Xiao_S3_WIO_companion_radio_usb_tcp` |
